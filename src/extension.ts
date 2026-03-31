@@ -1,7 +1,7 @@
 import * as vscode from 'vscode';
 import * as fs from 'fs';
 import * as path from 'path';
-import { readDesignContext, validateDesignContext, writeDesignContext } from './designContext';
+import { readDesignContext, summarizeDesignContextForPrompt, validateDesignContext, writeDesignContext } from './designContext';
 import { composeStoryExecutionPrompt } from './promptContext';
 import {
 	hasProjectConstraintsArtifacts,
@@ -643,6 +643,13 @@ async function startRalph(): Promise<void> {
 		log(`Description: ${nextStory.description}`);
 		log(`Priority: ${nextStory.priority}`);
 
+		const missingRequiredDesignContext = getMissingRequiredDesignContextReason(workspaceRoot, nextStory);
+		if (missingRequiredDesignContext) {
+			log(`  ${missingRequiredDesignContext}`);
+			vscode.window.showWarningMessage(missingRequiredDesignContext);
+			break;
+		}
+
 		// Guard: ensure no other task is inprogress before queuing this one.
 		await ensureNoActiveTask(workspaceRoot);
 
@@ -718,11 +725,13 @@ async function executeStory(story: UserStory, workspaceRoot: string): Promise<vo
 
 function buildCopilotPromptForStory(story: UserStory, workspaceRoot: string): string {
 	const projectConstraintsLines = getProjectConstraintsPromptLines(workspaceRoot, story.id);
+	const designContextLines = getDesignContextPromptLines(workspaceRoot, story);
 
 	return composeStoryExecutionPrompt({
 		story,
 		workspaceRoot,
 		projectConstraintsLines,
+		designContextLines,
 		completionSignalPath: resolveTaskStatusPath(workspaceRoot, story.id).replace(/\\/g, '/'),
 		additionalExecutionRules: [
 			'Greedily execute as many sub-tasks as possible in a single pass.',
@@ -761,6 +770,87 @@ function getProjectConstraintsPromptLines(workspaceRoot: string, storyId: string
 		return [];
 	}
 }
+
+function getDesignContextPromptLines(workspaceRoot: string, story: UserStory): string[] {
+	const config = getConfig();
+	if (!config.AUTO_INJECT_DESIGN_CONTEXT) {
+		log(`  Design context injection disabled by settings for story ${story.id}.`);
+		return [];
+	}
+
+	const designContext = readDesignContext(workspaceRoot, story.id);
+	if (!designContext) {
+		log(`  No design context found for story ${story.id}; continuing without injected design guidance.`);
+		return [];
+	}
+
+	const validation = validateDesignContext(designContext, story.id);
+	if (!validation.isValid) {
+		log(`  Design context for story ${story.id} has validation warnings: ${validation.errors.join(' | ')}`);
+	}
+
+	const promptLines = summarizeDesignContextForPrompt(validation.artifact);
+	if (promptLines.length === 0) {
+		log(`  Design context loaded for story ${story.id}, but no prompt lines were produced.`);
+		return [];
+	}
+
+	log(`  Injecting ${promptLines.length} design context prompt lines for story ${story.id}.`);
+	return promptLines;
+}
+
+function getMissingRequiredDesignContextReason(workspaceRoot: string, story: UserStory): string | null {
+	const config = getConfig();
+	if (!config.REQUIRE_DESIGN_CONTEXT_FOR_TAGGED_STORIES) {
+		return null;
+	}
+
+	if (!isDesignSensitiveStory(story)) {
+		return null;
+	}
+
+	if (readDesignContext(workspaceRoot, story.id)) {
+		return null;
+	}
+
+	return `RALPH: Design context is required before executing ${story.id}. Run "RALPH: Record Design Context" first.`;
+}
+
+function isDesignSensitiveStory(story: UserStory): boolean {
+	const tags = extractStoryTags(story);
+	if (tags.some(tag => DESIGN_SENSITIVE_TAGS.has(tag))) {
+		return true;
+	}
+
+	const searchableText = [story.title, story.description, ...story.acceptanceCriteria]
+		.filter((value): value is string => typeof value === 'string')
+		.join(' ')
+		.toLowerCase();
+
+	return DESIGN_SENSITIVE_KEYWORDS.some(keyword => searchableText.includes(keyword));
+}
+
+function extractStoryTags(story: UserStory): string[] {
+	const values: string[] = [];
+	for (const key of ['tags', 'labels', 'categories']) {
+		const rawValue = story[key];
+		if (!Array.isArray(rawValue)) {
+			continue;
+		}
+
+		for (const item of rawValue) {
+			if (typeof item === 'string' && item.trim().length > 0) {
+				values.push(item.trim().toLowerCase());
+			}
+		}
+	}
+
+	return Array.from(new Set(values));
+}
+
+const DESIGN_SENSITIVE_TAGS = new Set(['design', 'ui', 'ux', 'frontend', 'visual', 'figma']);
+
+const DESIGN_SENSITIVE_KEYWORDS = ['design', 'figma', 'layout', 'responsive', 'ui', 'ux', 'visual', 'token', 'spacing'];
 
 async function sendToCopilot(prompt: string, taskId: string, workspaceRoot: string): Promise<void> {
 	log('  Sending prompt to Copilot Chat...');

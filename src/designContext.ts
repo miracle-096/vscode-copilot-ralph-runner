@@ -103,27 +103,33 @@ export function summarizeDesignContextForPrompt(designContext: DesignContextArti
 	if (!designContext) {
 		return [];
 	}
-	return [
-		`Source Type: ${designContext.sourceType}`,
-		...(designContext.figmaUrl ? [`Figma URL: ${designContext.figmaUrl}`, ''] : []),
-		...prefixLines('Screenshot Paths', designContext.screenshotPaths),
-		...prefixLines('Manual Notes', designContext.manualNotes),
-		...prefixLines('Reference Docs', designContext.referenceDocs),
-		...(designContext.summary ? [`Summary: ${designContext.summary}`, ''] : []),
-		...prefixLines('Layout Constraints', designContext.layoutConstraints),
-		...prefixLines('Component Reuse Targets', designContext.componentReuseTargets),
-		...prefixLines('Token Rules', designContext.tokenRules),
-		...prefixLines('Responsive Rules', designContext.responsiveRules),
-		...prefixLines('Do Not Change', designContext.doNotChange),
-		...prefixLines('Acceptance Checks', designContext.acceptanceChecks),
-	];
-}
+	const lines: string[] = [`Primary Source: ${designContext.sourceType}`];
 
-function prefixLines(label: string, values: string[]): string[] {
-	if (values.length === 0) {
-		return [];
+	if (designContext.pageOrScreenName) {
+		lines.push(`Screen: ${designContext.pageOrScreenName}`);
 	}
-	return [label, ...values.map(value => `- ${value}`), ''];
+	if (designContext.summary) {
+		lines.push(`Design Intent: ${designContext.summary}`);
+	}
+	if (designContext.figmaUrl) {
+		lines.push(`Figma URL: ${designContext.figmaUrl}`);
+	}
+	if (designContext.referenceDocs.length > 0) {
+		lines.push(`Reference Docs: ${designContext.referenceDocs.join('; ')}`);
+	}
+	if (designContext.screenshotPaths.length > 0) {
+		lines.push(`Screenshot Inputs: ${designContext.screenshotPaths.join('; ')}`);
+	}
+
+	appendConstraintBlock(lines, 'Layout Constraints', designContext.layoutConstraints);
+	appendConstraintBlock(lines, 'Component Reuse Requirements', designContext.componentReuseTargets);
+	appendConstraintBlock(lines, 'Token Usage Rules', designContext.tokenRules);
+	appendConstraintBlock(lines, 'Responsive Rules', designContext.responsiveRules);
+	appendConstraintBlock(lines, 'Protected Areas', designContext.doNotChange);
+	appendConstraintBlock(lines, 'Visual Acceptance Checks', designContext.acceptanceChecks);
+	appendConstraintBlock(lines, 'Implementation Notes', selectImplementationNotes(designContext.manualNotes));
+
+	return lines;
 }
 
 function normalizeOptionalString(value: unknown): string | undefined {
@@ -144,4 +150,25 @@ function toStringArray(value: unknown): string[] {
 		.filter(item => item.length > 0);
 
 	return Array.from(new Set(normalizedItems));
+}
+
+function appendConstraintBlock(lines: string[], label: string, values: string[]): void {
+	if (values.length === 0) {
+		return;
+	}
+
+	lines.push(`${label}:`);
+	for (const value of values) {
+		lines.push(`- ${value}`);
+	}
+}
+
+function selectImplementationNotes(notes: string[]): string[] {
+	if (notes.length === 0) {
+		return [];
+	}
+
+	return notes
+		.filter(note => !/^screenshot:|^image:|^mockup:/i.test(note))
+		.slice(0, 4);
 }

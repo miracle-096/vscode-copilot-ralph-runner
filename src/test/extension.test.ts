@@ -18,6 +18,7 @@ import {
 	hasDesignContextArtifact,
 	normalizeDesignContext,
 	readDesignContext,
+	summarizeDesignContextForPrompt,
 	validateDesignContext,
 	writeDesignContext,
 } from '../designContext';
@@ -162,5 +163,33 @@ suite('Extension Test Suite', () => {
 		const validation = validateDesignContext({ sourceType: 'screenshots', screenshotPaths: [] }, 'US-103');
 		assert.strictEqual(validation.isValid, false);
 		assert.ok(validation.errors[0].includes('screenshot'));
+	});
+
+	test('Design context prompt summary emphasizes implementation constraints', () => {
+		const lines = summarizeDesignContextForPrompt({
+			storyId: 'US-104',
+			sourceType: 'figma',
+			figmaUrl: 'https://figma.example/file?node-id=1-2',
+			screenshotPaths: ['images/hero.png'],
+			manualNotes: ['Match the card elevation token', 'Reuse the existing Button component'],
+			referenceDocs: ['docs/ui.md'],
+			summary: 'Marketing hero redesign',
+			pageOrScreenName: 'Homepage Hero',
+			layoutConstraints: ['Preserve two-column desktop layout'],
+			componentReuseTargets: ['Button', 'HeroCard'],
+			tokenRules: ['Use semantic spacing tokens'],
+			responsiveRules: ['Stack content on mobile'],
+			doNotChange: ['Global header'],
+			acceptanceChecks: ['Hero hierarchy matches design'],
+			updatedAt: new Date().toISOString(),
+		});
+
+		assert.ok(lines.includes('Layout Constraints:'));
+		assert.ok(lines.includes('- Preserve two-column desktop layout'));
+		assert.ok(lines.includes('Component Reuse Requirements:'));
+		assert.ok(lines.includes('Token Usage Rules:'));
+		assert.ok(lines.includes('Visual Acceptance Checks:'));
+		assert.ok(lines.includes('Implementation Notes:'));
+		assert.strictEqual(lines.includes('Manual Notes'), false);
 	});
 });
