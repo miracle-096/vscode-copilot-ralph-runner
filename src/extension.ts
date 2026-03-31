@@ -2,7 +2,12 @@ import * as vscode from 'vscode';
 import * as fs from 'fs';
 import * as path from 'path';
 import { composeStoryExecutionPrompt } from './promptContext';
-import { hasProjectConstraintsArtifacts, initializeProjectConstraintsArtifacts } from './projectConstraints';
+import {
+	hasProjectConstraintsArtifacts,
+	initializeProjectConstraintsArtifacts,
+	loadMergedProjectConstraints,
+	summarizeProjectConstraintsForPrompt,
+} from './projectConstraints';
 import {
 	BasePrdFile,
 	PrdFile,
@@ -708,9 +713,12 @@ async function executeStory(story: UserStory, workspaceRoot: string): Promise<vo
 // ── Copilot Integration ─────────────────────────────────────────────────────
 
 function buildCopilotPromptForStory(story: UserStory, workspaceRoot: string): string {
+	const projectConstraintsLines = getProjectConstraintsPromptLines(workspaceRoot, story.id);
+
 	return composeStoryExecutionPrompt({
 		story,
 		workspaceRoot,
+		projectConstraintsLines,
 		completionSignalPath: resolveTaskStatusPath(workspaceRoot, story.id).replace(/\\/g, '/'),
 		additionalExecutionRules: [
 			'Greedily execute as many sub-tasks as possible in a single pass.',
@@ -719,6 +727,35 @@ function buildCopilotPromptForStory(story: UserStory, workspaceRoot: string): st
 			'Make the actual code changes to the files in the workspace.',
 		],
 	});
+}
+
+function getProjectConstraintsPromptLines(workspaceRoot: string, storyId: string): string[] {
+	const config = getConfig();
+	if (!config.AUTO_INJECT_PROJECT_CONSTRAINTS) {
+		log(`  Project constraints injection disabled by settings for story ${storyId}.`);
+		return [];
+	}
+
+	if (!hasProjectConstraintsArtifacts(workspaceRoot)) {
+		log(`  Project constraints not initialized for story ${storyId}; continuing without injected constraints.`);
+		return [];
+	}
+
+	try {
+		const mergedConstraints = loadMergedProjectConstraints(workspaceRoot);
+		const promptLines = summarizeProjectConstraintsForPrompt(mergedConstraints);
+		if (promptLines.length === 0) {
+			log(`  Project constraints loaded for story ${storyId}, but no normalized prompt lines were produced.`);
+			return [];
+		}
+
+		log(`  Injecting ${promptLines.length} project constraint prompt lines for story ${storyId}.`);
+		return promptLines;
+	} catch (error: unknown) {
+		const message = error instanceof Error ? error.message : String(error);
+		log(`  WARNING: Failed to load project constraints for story ${storyId}: ${message}`);
+		return [];
+	}
 }
 
 async function sendToCopilot(prompt: string, taskId: string, workspaceRoot: string): Promise<void> {
