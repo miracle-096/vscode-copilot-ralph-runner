@@ -22,6 +22,16 @@ import {
 	validateDesignContext,
 	writeDesignContext,
 } from '../designContext';
+import {
+	hasTaskMemoryArtifact,
+	readTaskMemory,
+	readTaskMemoryIndex,
+	rebuildTaskMemoryIndex,
+	summarizeTaskMemoryForPrompt,
+	upsertTaskMemoryIndexEntry,
+	validateTaskMemory,
+	writeTaskMemory,
+} from '../taskMemory';
 // import * as myExtension from '../../extension';
 
 suite('Extension Test Suite', () => {
@@ -191,5 +201,95 @@ suite('Extension Test Suite', () => {
 		assert.ok(lines.includes('Visual Acceptance Checks:'));
 		assert.ok(lines.includes('Implementation Notes:'));
 		assert.strictEqual(lines.includes('Manual Notes'), false);
+	});
+
+	test('Task memory artifact can be written, read, and indexed per story', () => {
+		const workspaceRoot = fs.mkdtempSync(path.join(os.tmpdir(), 'ralph-task-memory-'));
+		try {
+			const storyId = 'US-201';
+			const memoryPath = writeTaskMemory(workspaceRoot, storyId, {
+				title: 'Implement record design context command',
+				summary: 'Added design context prompt injection and validation paths.',
+				changedFiles: ['src/extension.ts', 'src/designContext.ts'],
+				changedModules: ['extension', 'designContext'],
+				keyDecisions: ['Summarize design data before prompt injection'],
+				patternsUsed: ['Structured prompt sections'],
+				constraintsConfirmed: ['Do not edit prd.json'],
+				testsRun: ['npm run compile'],
+				risks: ['Tagged-story heuristic may need refinement'],
+				followUps: ['Add memory recall scoring'],
+				searchKeywords: ['design context', 'prompt injection'],
+				relatedStories: ['US-013'],
+				source: 'copilot',
+			});
+
+			assert.ok(fs.existsSync(memoryPath));
+			assert.strictEqual(hasTaskMemoryArtifact(workspaceRoot, storyId), true);
+
+			const memory = readTaskMemory(workspaceRoot, storyId);
+			assert.ok(memory);
+			assert.strictEqual(memory?.summary, 'Added design context prompt injection and validation paths.');
+			assert.deepStrictEqual(memory?.changedFiles, ['src/extension.ts', 'src/designContext.ts']);
+
+			const index = upsertTaskMemoryIndexEntry(workspaceRoot, memory ?? {}, storyId);
+			assert.strictEqual(index.entries.length, 1);
+			assert.strictEqual(index.entries[0].storyId, storyId);
+			assert.deepStrictEqual(index.entries[0].searchKeywords, ['design context', 'prompt injection']);
+
+			const persistedIndex = readTaskMemoryIndex(workspaceRoot);
+			assert.strictEqual(persistedIndex.entries.length, 1);
+			assert.ok(persistedIndex.entries[0].memoryPath.endsWith(path.join('.ralph', 'memory', 'US-201.json')));
+		} finally {
+			fs.rmSync(workspaceRoot, { recursive: true, force: true });
+		}
+	});
+
+	test('Task memory normalization, validation, and rebuild handle invalid input safely', () => {
+		const workspaceRoot = fs.mkdtempSync(path.join(os.tmpdir(), 'ralph-task-memory-index-'));
+		try {
+			const validation = validateTaskMemory({
+				summary: '   ',
+				changedFiles: ['src/extension.ts', 'src/extension.ts', ''],
+				keyDecisions: [],
+				searchKeywords: ['memory recall', 'memory recall'],
+			}, 'US-202');
+
+			assert.strictEqual(validation.isValid, false);
+			assert.deepStrictEqual(validation.artifact.changedFiles, ['src/extension.ts']);
+			assert.deepStrictEqual(validation.artifact.searchKeywords, ['memory recall']);
+			assert.ok(validation.errors.some(error => error.includes('summary')));
+
+			writeTaskMemory(workspaceRoot, 'US-202', {
+				title: 'Task memory model',
+				summary: 'Persist task memory artifacts.',
+				changedFiles: ['src/taskMemory.ts'],
+				changedModules: ['taskMemory'],
+				keyDecisions: ['Store one artifact per story'],
+				constraintsConfirmed: ['Keep artifacts under .ralph'],
+				testsRun: ['npm run compile'],
+				searchKeywords: ['task memory'],
+			});
+			writeTaskMemory(workspaceRoot, 'US-203', {
+				title: 'Memory index',
+				summary: 'Rebuild a compact memory index.',
+				changedFiles: ['src/taskMemory.ts', 'src/types.ts'],
+				changedModules: ['taskMemory', 'types'],
+				keyDecisions: ['Index entries should be sorted by recency'],
+				constraintsConfirmed: ['Index should tolerate invalid files'],
+				testsRun: ['npm run compile'],
+				searchKeywords: ['memory index', 'recall'],
+			});
+
+			const rebuiltIndex = rebuildTaskMemoryIndex(workspaceRoot);
+			assert.strictEqual(rebuiltIndex.entries.length, 2);
+			assert.ok(rebuiltIndex.entries.some(entry => entry.storyId === 'US-202'));
+
+			const promptLines = summarizeTaskMemoryForPrompt(readTaskMemory(workspaceRoot, 'US-202'));
+			assert.ok(promptLines.includes('Changed Files'));
+			assert.ok(promptLines.includes('Key Decisions'));
+			assert.ok(promptLines.includes('Tests Run'));
+		} finally {
+			fs.rmSync(workspaceRoot, { recursive: true, force: true });
+		}
 	});
 });
