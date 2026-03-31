@@ -1,8 +1,8 @@
 {
   "name": "ralph-runner",
-  "displayName": "ralph-runner",
+  "displayName": "Ralph Runner",
   "description": "Autonomous task runner — reads prd.json user stories, tracks progress inline, and drives Copilot Chat to execute each story in an automated loop",
-  "version": "0.0.3",
+  "version": "0.0.4",
   "publisher": "recent-graduates",
   "repository": {
     "type": "git",
@@ -45,6 +45,18 @@
       {
         "command": "ralph-runner.quickStart",
         "title": "RALPH: Generate PRD"
+      },
+      {
+        "command": "ralph-runner.splitPrd",
+        "title": "RALPH: Split PRD"
+      },
+      {
+        "command": "ralph-runner.mergePrd",
+        "title": "RALPH: Merge PRD"
+      },
+      {
+        "command": "ralph-runner.openUserStoryEditor",
+        "title": "RALPH: Edit User Stories"
       }
     ],
     "configuration": {
@@ -91,6 +103,7 @@
     "watch:esbuild": "node esbuild.js --watch",
     "watch:tsc": "tsc --noEmit --watch --project tsconfig.json",
     "package": "npm run check-types && npm run lint && node esbuild.js --production",
+    "package:vsix": "npx @vscode/vsce package",
     "compile-tests": "tsc -p . --outDir out",
     "watch-tests": "tsc -p . -w --outDir out",
     "pretest": "npm run compile-tests && npm run compile && npm run lint",

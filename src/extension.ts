@@ -34,6 +34,7 @@ interface PrdFile {
 	branchName: string;
 	description: string;
 	userStories: UserStory[];
+	[key: string]: unknown;
 }
 
 interface UserStory {
@@ -42,6 +43,18 @@ interface UserStory {
 	description: string;
 	acceptanceCriteria: string[];
 	priority: number;
+	status?: string;
+	[key: string]: unknown;
+}
+
+type StoryExecutionStatus = '未开始' | 'inprogress' | 'completed' | 'failed';
+
+const STORY_STATUSES: StoryExecutionStatus[] = ['未开始', 'inprogress', 'completed', 'failed'];
+
+type BasePrdFile = Omit<PrdFile, 'userStories'>;
+
+interface SplitUserStory extends UserStory {
+	status: StoryExecutionStatus;
 }
 
 // ── Filesystem Task State Manager ────────────────────────────────────────────
@@ -49,8 +62,12 @@ interface UserStory {
 // execution lock.  File content is either "inprogress" or "completed".
 
 const RALPH_DIR = '.ralph';
+const PRD_DIR = '.prd';
+const USER_STORIES_DIR = 'user_stories';
 const PRD_FILENAME = 'prd.json';
+const BASE_PRD_FILENAME = 'base_prd.json';
 const PROGRESS_FILENAME = 'progress.txt';
+const STORY_STATUS_FILENAME = 'story-status.json';
 
 class RalphStateManager {
 
@@ -62,6 +79,11 @@ class RalphStateManager {
 	/** Absolute path to the status file for a given task id. */
 	static getTaskStatusPath(workspaceRoot: string, taskId: string): string {
 		return path.join(RalphStateManager.getRalphDir(workspaceRoot), `task-${taskId}-status`);
+	}
+
+	/** Absolute path to the story status registry stored under .ralph/. */
+	static getStoryStatusRegistryPath(workspaceRoot: string): string {
+		return path.join(RalphStateManager.getRalphDir(workspaceRoot), STORY_STATUS_FILENAME);
 	}
 
 	/**
@@ -156,6 +178,94 @@ class RalphStateManager {
 		} catch { /* ignore */ }
 	}
 
+	/** Read the persisted per-story execution status map. */
+	static readStoryStatusMap(workspaceRoot: string): Record<string, StoryExecutionStatus> {
+		const filePath = RalphStateManager.getStoryStatusRegistryPath(workspaceRoot);
+		if (!fs.existsSync(filePath)) {
+			return {};
+		}
+
+		try {
+			const content = fs.readFileSync(filePath, 'utf-8');
+			const parsed = JSON.parse(content) as Record<string, unknown>;
+			const statusMap: Record<string, StoryExecutionStatus> = {};
+
+			for (const [storyId, rawStatus] of Object.entries(parsed)) {
+				const normalized = normalizeStoryExecutionStatus(rawStatus);
+				if (normalized) {
+					statusMap[storyId] = normalized;
+				}
+			}
+
+			return statusMap;
+		} catch {
+			return {};
+		}
+	}
+
+	/** Persist the per-story execution status map to .ralph/story-status.json. */
+	static writeStoryStatusMap(workspaceRoot: string, statusMap: Record<string, StoryExecutionStatus>): void {
+		RalphStateManager.ensureDir(workspaceRoot);
+		const filePath = RalphStateManager.getStoryStatusRegistryPath(workspaceRoot);
+		fs.writeFileSync(filePath, `${JSON.stringify(statusMap, null, 2)}\n`, 'utf-8');
+	}
+
+	/** Store the latest execution status for one story. */
+	static setStoryExecutionStatus(workspaceRoot: string, taskId: string, status: StoryExecutionStatus): void {
+		const statusMap = RalphStateManager.readStoryStatusMap(workspaceRoot);
+		statusMap[taskId] = status;
+		RalphStateManager.writeStoryStatusMap(workspaceRoot, statusMap);
+		syncSplitStoryStatus(workspaceRoot, taskId, status);
+	}
+
+	/**
+	 * Resolve the latest execution status for a story.
+	 * Falls back to progress.txt and only treats lock files as in-progress signals.
+	 * task-<id>-status files are execution locks, not durable completion truth.
+	 */
+	static getStoryExecutionStatus(workspaceRoot: string, taskId: string): StoryExecutionStatus | 'none' {
+		const statusMap = RalphStateManager.readStoryStatusMap(workspaceRoot);
+		const mappedStatus = statusMap[taskId];
+		if (mappedStatus) {
+			return mappedStatus;
+		}
+
+		const progressEntry = getStoryProgress(workspaceRoot, taskId);
+		if (progressEntry?.status === 'done') {
+			return 'completed';
+		}
+		if (progressEntry?.status === 'failed') {
+			return 'failed';
+		}
+
+		const taskStatus = RalphStateManager.getTaskStatus(workspaceRoot, taskId);
+		if (taskStatus === 'inprogress') {
+			return 'inprogress';
+		}
+
+		return 'none';
+	}
+
+	/** Remove a story from the persisted execution status map. */
+	static clearStoryExecutionStatus(workspaceRoot: string, taskId: string): void {
+		const statusMap = RalphStateManager.readStoryStatusMap(workspaceRoot);
+		if (!(taskId in statusMap)) {
+			return;
+		}
+
+		delete statusMap[taskId];
+		const filePath = RalphStateManager.getStoryStatusRegistryPath(workspaceRoot);
+		syncSplitStoryStatus(workspaceRoot, taskId, '未开始');
+		if (Object.keys(statusMap).length === 0) {
+			try {
+				if (fs.existsSync(filePath)) { fs.unlinkSync(filePath); }
+			} catch { /* ignore */ }
+			return;
+		}
+
+		RalphStateManager.writeStoryStatusMap(workspaceRoot, statusMap);
+	}
+
 	/**
 	 * Ensure `.ralph/` is present in the workspace's .gitignore.
 	 * Creates .gitignore if it does not exist. Safe to call multiple times.
@@ -172,7 +282,6 @@ class RalphStateManager {
 
 			const missing: string[] = [];
 			for (const entry of entriesToIgnore) {
-				// Build a regex that matches the entry (with optional trailing slash/backslash)
 				const escaped = entry.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
 				const pattern = new RegExp(`^\\s*${escaped}\\s*$`, 'm');
 				if (!pattern.test(content)) {
@@ -182,7 +291,6 @@ class RalphStateManager {
 
 			if (missing.length === 0) { return; }
 
-			// Append with a leading newline if the file doesn't already end with one
 			const separator = content.length > 0 && !content.endsWith('\n') ? '\n' : '';
 			const block = missing.join('\n');
 			fs.writeFileSync(gitignorePath, `${content}${separator}\n# RALPH Runner task state\n${block}\n`, 'utf-8');
@@ -198,6 +306,108 @@ class RalphStateManager {
 
 function getPrdPath(workspaceRoot: string): string {
 	return path.join(workspaceRoot, PRD_FILENAME);
+}
+
+function getPrdDirectoryPath(workspaceRoot: string): string {
+	return path.join(workspaceRoot, PRD_DIR);
+}
+
+function getUserStoriesDirectoryPath(workspaceRoot: string): string {
+	return path.join(getPrdDirectoryPath(workspaceRoot), USER_STORIES_DIR);
+}
+
+function getBasePrdPath(workspaceRoot: string): string {
+	return path.join(getPrdDirectoryPath(workspaceRoot), BASE_PRD_FILENAME);
+}
+
+function getUserStoryFilePath(workspaceRoot: string, storyId: string): string {
+	return path.join(getUserStoriesDirectoryPath(workspaceRoot), `${storyId}.json`);
+}
+
+function ensurePrdDirectories(workspaceRoot: string): { prdDir: string; userStoriesDir: string } {
+	const prdDir = getPrdDirectoryPath(workspaceRoot);
+	const userStoriesDir = getUserStoriesDirectoryPath(workspaceRoot);
+
+	if (!fs.existsSync(prdDir)) {
+		fs.mkdirSync(prdDir, { recursive: true });
+	}
+	if (!fs.existsSync(userStoriesDir)) {
+		fs.mkdirSync(userStoriesDir, { recursive: true });
+	}
+
+	return { prdDir, userStoriesDir };
+}
+
+function writeJsonFile(filePath: string, content: unknown): void {
+	fs.writeFileSync(filePath, `${JSON.stringify(content, null, 2)}\n`, 'utf-8');
+}
+
+function syncSplitStoryStatus(workspaceRoot: string, storyId: string, status: StoryExecutionStatus): void {
+	const storyPath = getUserStoryFilePath(workspaceRoot, storyId);
+	if (!fs.existsSync(storyPath)) {
+		return;
+	}
+
+	const story = readJsonFile<Record<string, unknown>>(storyPath);
+	if (!story) {
+		log(`WARNING: Could not sync status for invalid split user story file ${storyId}.json.`);
+		return;
+	}
+
+	writeJsonFile(storyPath, {
+		...story,
+		status,
+	});
+}
+
+function readJsonFile<T>(filePath: string): T | null {
+	try {
+		const content = fs.readFileSync(filePath, 'utf-8');
+		return JSON.parse(content) as T;
+	} catch {
+		return null;
+	}
+}
+
+function normalizeStoryExecutionStatus(value: unknown): StoryExecutionStatus | undefined {
+	if (value === 'completed' || value === 'inprogress' || value === 'failed' || value === '未开始') {
+		return value;
+	}
+	if (value === 'not-started') {
+		return '未开始';
+	}
+	return undefined;
+}
+
+function stripStoryStatus(story: UserStory): UserStory {
+	const { status: _status, ...storyWithoutStatus } = story;
+	return storyWithoutStatus;
+}
+
+function stripUserStoriesFromPrd(prd: PrdFile): BasePrdFile {
+	const { userStories: _userStories, ...basePrd } = prd;
+	return basePrd;
+}
+
+function resolveStoryStatusForSplit(workspaceRoot: string, story: UserStory): StoryExecutionStatus {
+	const inlineStatus = normalizeStoryExecutionStatus(story.status);
+	if (inlineStatus === 'completed') {
+		return 'completed';
+	}
+
+	const trackedStatus = RalphStateManager.getStoryExecutionStatus(workspaceRoot, story.id);
+	if (trackedStatus === 'completed') {
+		return 'completed';
+	}
+
+	return '未开始';
+}
+
+function compareStoriesByPriority(left: UserStory, right: UserStory): number {
+	if (left.priority !== right.priority) {
+		return left.priority - right.priority;
+	}
+	return left.id.localeCompare(right.id);
 }
 
 function parsePrd(workspaceRoot: string): PrdFile | null {
@@ -326,7 +536,7 @@ export function activate(context: vscode.ExtensionContext) {
 
 	// ── Status bar icon ────────────────────────────────────────────────────
 	statusBarItem = vscode.window.createStatusBarItem(vscode.StatusBarAlignment.Left, 100);
-	statusBarItem.text = '$(rocket) RALPH';
+	statusBarItem.text = '$(rocket) Ralph Runner';
 	statusBarItem.tooltip = 'RALPH Runner — click to show commands';
 	statusBarItem.command = 'ralph-runner.showMenu';
 	statusBarItem.show();
@@ -341,7 +551,10 @@ export function activate(context: vscode.ExtensionContext) {
 			vscode.commands.executeCommand('workbench.action.openSettings', 'ralph-runner');
 		}),
 		vscode.commands.registerCommand('ralph-runner.showMenu', () => showCommandMenu()),
-		vscode.commands.registerCommand('ralph-runner.quickStart', () => quickStart())
+		vscode.commands.registerCommand('ralph-runner.quickStart', () => quickStart()),
+		vscode.commands.registerCommand('ralph-runner.splitPrd', () => splitPrd()),
+		vscode.commands.registerCommand('ralph-runner.mergePrd', () => mergePrd()),
+		vscode.commands.registerCommand('ralph-runner.openUserStoryEditor', () => openUserStoryEditor())
 	);
 
 	log('RALPH Runner extension activated.');
@@ -388,6 +601,7 @@ async function startRalph(): Promise<void> {
 			return;
 		}
 		RalphStateManager.clearStalledTask(workspaceRoot, stalledTaskId);
+		RalphStateManager.clearStoryExecutionStatus(workspaceRoot, stalledTaskId);
 		log(`Cleared stalled inprogress state for task ${stalledTaskId}.`);
 	}
 
@@ -444,6 +658,7 @@ async function startRalph(): Promise<void> {
 
 		// ── Persist "inprogress" state to .ralph/task-<id>-status ───────────
 		RalphStateManager.setInProgress(workspaceRoot, nextStory.id);
+		RalphStateManager.setStoryExecutionStatus(workspaceRoot, nextStory.id, 'inprogress');
 		log(`  Task state written: .ralph/task-${nextStory.id}-status = inprogress`);
 
 		try {
@@ -453,6 +668,7 @@ async function startRalph(): Promise<void> {
 
 			// Safety net: ensure the lock is always cleared on success
 			RalphStateManager.setCompleted(workspaceRoot, nextStory.id);
+			RalphStateManager.setStoryExecutionStatus(workspaceRoot, nextStory.id, 'completed');
 
 			// Write completion to progress.txt (prd.json is never modified)
 			writeProgressEntry(workspaceRoot, nextStory.id, 'done', 'Completed successfully');
@@ -464,6 +680,7 @@ async function startRalph(): Promise<void> {
 
 			// Always release the inprogress lock so the loop can advance
 			RalphStateManager.setCompleted(workspaceRoot, nextStory.id);
+			RalphStateManager.setStoryExecutionStatus(workspaceRoot, nextStory.id, 'failed');
 
 			// Write failure to progress.txt (prd.json is never modified)
 			writeProgressEntry(workspaceRoot, nextStory.id, 'failed', errMsg);
@@ -729,8 +946,370 @@ async function resetStory(): Promise<void> {
 		removeProgressEntry(workspaceRoot, selection.storyId);
 		// Also clear the .ralph status file if present
 		RalphStateManager.clearStalledTask(workspaceRoot, selection.storyId);
+		RalphStateManager.clearStoryExecutionStatus(workspaceRoot, selection.storyId);
 		vscode.window.showInformationMessage(`Story ${selection.storyId} reset.`);
 		log(`Story ${selection.storyId} reset by user.`);
+	}
+}
+
+async function splitPrd(): Promise<void> {
+	const workspaceRoot = getWorkspaceRoot();
+	if (!workspaceRoot) {
+		vscode.window.showErrorMessage('No workspace folder open.');
+		return;
+	}
+
+	const prd = parsePrd(workspaceRoot);
+	if (!prd) {
+		vscode.window.showWarningMessage('prd.json not found. Please run Generate PRD first.');
+		return;
+	}
+
+	writeSplitPrdFiles(workspaceRoot, prd);
+
+	log(`Split PRD complete — wrote ${prd.userStories.length} user stories into ${PRD_DIR}/${USER_STORIES_DIR}.`);
+	vscode.window.showInformationMessage(`RALPH: Split PRD complete. Exported ${prd.userStories.length} user stories.`);
+}
+
+async function mergePrd(): Promise<void> {
+	const workspaceRoot = getWorkspaceRoot();
+	if (!workspaceRoot) {
+		vscode.window.showErrorMessage('No workspace folder open.');
+		return;
+	}
+
+	ensurePrdDirectories(workspaceRoot);
+	const basePrd = readJsonFile<BasePrdFile>(getBasePrdPath(workspaceRoot));
+	if (!basePrd) {
+		vscode.window.showWarningMessage('base_prd.json not found. Please run Split PRD first.');
+		return;
+	}
+
+	const userStoriesDir = getUserStoriesDirectoryPath(workspaceRoot);
+	const pendingStories: UserStory[] = [];
+	let normalizedCount = 0;
+
+	for (const entry of fs.readdirSync(userStoriesDir)) {
+		if (!/^US-.*\.json$/i.test(entry)) {
+			continue;
+		}
+
+		const storyPath = path.join(userStoriesDir, entry);
+		const story = readJsonFile<SplitUserStory>(storyPath);
+		if (!story) {
+			log(`WARNING: Skipping invalid user story file: ${entry}`);
+			continue;
+		}
+
+		const normalizedStatus = normalizeStoryExecutionStatus(story.status) || '未开始';
+		if (story.status !== normalizedStatus) {
+			story.status = normalizedStatus;
+			writeJsonFile(storyPath, story);
+			normalizedCount++;
+		}
+
+		if (normalizedStatus !== 'completed') {
+			pendingStories.push(stripStoryStatus(story));
+		}
+	}
+
+	pendingStories.sort(compareStoriesByPriority);
+
+	const mergedPrd = {
+		...basePrd,
+		userStories: pendingStories,
+	} as PrdFile;
+
+	writeJsonFile(getPrdPath(workspaceRoot), mergedPrd);
+	log(`Merge PRD complete — normalized ${normalizedCount} story statuses and wrote ${pendingStories.length} pending stories to prd.json.`);
+	vscode.window.showInformationMessage(`RALPH: Merge PRD complete. Normalized ${normalizedCount} stories and kept ${pendingStories.length} pending stories.`);
+}
+
+function loadSplitUserStories(workspaceRoot: string): SplitUserStory[] {
+	const userStoriesDir = getUserStoriesDirectoryPath(workspaceRoot);
+	if (!fs.existsSync(userStoriesDir)) {
+		return [];
+	}
+
+	const stories: SplitUserStory[] = [];
+	for (const entry of fs.readdirSync(userStoriesDir)) {
+		if (!/^US-.*\.json$/i.test(entry)) {
+			continue;
+		}
+
+		const storyPath = path.join(userStoriesDir, entry);
+		const story = readJsonFile<UserStory>(storyPath);
+		if (!story) {
+			log(`WARNING: Skipping invalid user story file: ${entry}`);
+			continue;
+		}
+
+		stories.push({
+			...story,
+			status: normalizeStoryExecutionStatus(story.status) || '未开始',
+		});
+	}
+
+	return stories.sort(compareStoriesByPriority);
+}
+
+function writeSplitPrdFiles(workspaceRoot: string, prd: PrdFile): void {
+	ensurePrdDirectories(workspaceRoot);
+	const basePrd = stripUserStoriesFromPrd(prd);
+	writeJsonFile(getBasePrdPath(workspaceRoot), basePrd);
+
+	const storyIds = new Set(prd.userStories.map(story => story.id));
+	for (const story of prd.userStories) {
+		const splitStory: SplitUserStory = {
+			...stripStoryStatus(story),
+			status: resolveStoryStatusForSplit(workspaceRoot, story),
+		};
+		writeJsonFile(getUserStoryFilePath(workspaceRoot, story.id), splitStory);
+	}
+
+	const userStoriesDir = getUserStoriesDirectoryPath(workspaceRoot);
+	for (const entry of fs.readdirSync(userStoriesDir)) {
+		if (!/^US-.*\.json$/i.test(entry)) {
+			continue;
+		}
+
+		const storyId = path.basename(entry, '.json');
+		if (!storyIds.has(storyId)) {
+			fs.unlinkSync(path.join(userStoriesDir, entry));
+		}
+	}
+}
+
+
+function getExistingSplitUserStories(workspaceRoot: string): SplitUserStory[] {
+	const stories = loadSplitUserStories(workspaceRoot);
+	if (stories.length > 0) {
+		log(`User story editor loaded ${stories.length} stories from ${PRD_DIR}/${USER_STORIES_DIR}.`);
+	} else {
+		log(`User story editor found no readable stories in ${PRD_DIR}/${USER_STORIES_DIR}.`);
+	}
+	return stories;
+}
+
+function getUserStoryEditorPayload(workspaceRoot: string): SplitUserStory[] {
+	return loadSplitUserStories(workspaceRoot);
+}
+
+function getNextUserStoryId(stories: SplitUserStory[]): string {
+	let maxNumericId = 0;
+
+	for (const story of stories) {
+		const match = story.id.match(/^US-(\d+)/i);
+		if (!match) {
+			continue;
+		}
+
+		const numericId = Number(match[1]);
+		if (Number.isFinite(numericId)) {
+			maxNumericId = Math.max(maxNumericId, numericId);
+		}
+	}
+
+	return `US-${String(maxNumericId + 1).padStart(3, '0')}`;
+}
+
+function createEmptyUserStoryTemplate(stories: SplitUserStory[]): SplitUserStory {
+	const nextId = getNextUserStoryId(stories);
+	return {
+		id: nextId,
+		title: 'New User Story',
+		description: '',
+		priority: stories.length > 0 ? Math.max(...stories.map(story => Number(story.priority) || 0)) + 1 : 1,
+		acceptanceCriteria: [],
+		status: '未开始',
+		screenIds: [],
+		dependsOn: [],
+		designTrace: {},
+	};
+}
+
+function isRecord(value: unknown): value is Record<string, unknown> {
+	return typeof value === 'object' && value !== null && !Array.isArray(value);
+}
+
+async function openNativeStoryFile(workspaceRoot: string, storyId: string): Promise<void> {
+	const storyPath = getUserStoryFilePath(workspaceRoot, storyId);
+	if (!fs.existsSync(storyPath)) {
+		vscode.window.showErrorMessage(`Story file not found for ${storyId}.`);
+		return;
+	}
+
+	const document = await vscode.workspace.openTextDocument(storyPath);
+	await vscode.window.showTextDocument(document, {
+		preview: false,
+		preserveFocus: false,
+	});
+}
+
+async function createStoryFromNativeEditor(workspaceRoot: string): Promise<SplitUserStory | null> {
+	const storiesBeforeCreate = getExistingSplitUserStories(workspaceRoot);
+	const newStory = createEmptyUserStoryTemplate(storiesBeforeCreate);
+	writeJsonFile(getUserStoryFilePath(workspaceRoot, newStory.id), newStory);
+	log(`User story ${newStory.id} created from native editor.`);
+	vscode.window.showInformationMessage(`RALPH: ${newStory.id} created.`);
+	await openNativeStoryFile(workspaceRoot, newStory.id);
+	return newStory;
+}
+
+async function deleteStoryFromNativeEditor(workspaceRoot: string, story: SplitUserStory): Promise<boolean> {
+	const confirmed = await vscode.window.showWarningMessage(
+		`Delete ${story.id} — ${story.title}? This removes the split story file.`,
+		{ modal: true },
+		'Delete'
+	);
+
+	if (confirmed !== 'Delete') {
+		return false;
+	}
+
+	const storyPath = getUserStoryFilePath(workspaceRoot, story.id);
+	if (!fs.existsSync(storyPath)) {
+		vscode.window.showErrorMessage(`Story file not found for ${story.id}.`);
+		return false;
+	}
+
+	fs.unlinkSync(storyPath);
+	log(`User story ${story.id} deleted from native editor.`);
+	vscode.window.showInformationMessage(`RALPH: ${story.id} deleted.`);
+	return true;
+}
+
+async function showNativeStoryActions(workspaceRoot: string, story: SplitUserStory): Promise<'back' | 'deleted' | 'exit'> {
+	while (true) {
+		const action = await vscode.window.showQuickPick([
+			{
+				label: '$(edit) Open JSON In Editor',
+				description: `${story.id} — edit with the native VS Code text editor`,
+				value: 'open',
+			},
+			{
+				label: '$(refresh) Reopen From Disk',
+				description: 'Reload this story from disk and open it in the editor',
+				value: 'reload',
+			},
+			{
+				label: '$(trash) Delete Story',
+				description: 'Remove the split story file',
+				value: 'delete',
+			},
+			{
+				label: '$(arrow-left) Back To Story List',
+				description: 'Choose another story',
+				value: 'back',
+			},
+		], {
+			placeHolder: `${story.id} — choose an action`,
+			ignoreFocusOut: false,
+		});
+
+		if (!action) {
+			return 'exit';
+		}
+
+		if (action.value === 'open') {
+			await openNativeStoryFile(workspaceRoot, story.id);
+			return 'exit';
+		}
+
+		if (action.value === 'reload') {
+			const refreshedStory = readJsonFile<SplitUserStory>(getUserStoryFilePath(workspaceRoot, story.id));
+			if (!refreshedStory) {
+				vscode.window.showErrorMessage(`Could not reload ${story.id} from disk.`);
+				return 'back';
+			}
+			story = {
+				...refreshedStory,
+				status: normalizeStoryExecutionStatus(refreshedStory.status) || '未开始',
+			};
+			await openNativeStoryFile(workspaceRoot, story.id);
+			return 'exit';
+		}
+
+		if (action.value === 'delete') {
+			const deleted = await deleteStoryFromNativeEditor(workspaceRoot, story);
+			if (deleted) {
+				return 'deleted';
+			}
+			continue;
+		}
+
+		return 'back';
+	}
+}
+
+async function openUserStoryEditor(): Promise<void> {
+	const workspaceRoot = getWorkspaceRoot();
+	if (!workspaceRoot) {
+		vscode.window.showErrorMessage('No workspace folder open.');
+		return;
+	}
+
+	const userStoriesDir = getUserStoriesDirectoryPath(workspaceRoot);
+	if (!fs.existsSync(userStoriesDir)) {
+		vscode.window.showWarningMessage('Split user stories not found. Please run Split PRD first.');
+		return;
+	}
+
+	const stories = getExistingSplitUserStories(workspaceRoot);
+	if (stories.length === 0) {
+		vscode.window.showWarningMessage('No readable split user stories found. Please check .prd/user_stories/*.json or run Split PRD again.');
+		return;
+	}
+
+	while (true) {
+		const refreshedStories = getExistingSplitUserStories(workspaceRoot);
+		const picked = await vscode.window.showQuickPick([
+			{
+				label: '$(add) Create New Story',
+				description: 'Create a new split user story JSON file and open it in the editor',
+				value: '__create__',
+			},
+			{
+				label: '$(refresh) Refresh Story List',
+				description: 'Reload user stories from .prd/user_stories',
+				value: '__refresh__',
+			},
+			...refreshedStories.map(story => ({
+				label: `${story.id} — ${story.title || 'Untitled story'}`,
+				description: `[${normalizeStoryExecutionStatus(story.status) || '未开始'}] Priority ${story.priority}`,
+				detail: (story.description || '').trim() || 'No description.',
+				value: story.id,
+			})),
+		], {
+			matchOnDescription: true,
+			matchOnDetail: true,
+			ignoreFocusOut: false,
+			placeHolder: 'Select a user story to edit natively in VS Code',
+		});
+
+		if (!picked) {
+			return;
+		}
+
+		if (picked.value === '__refresh__') {
+			continue;
+		}
+
+		if (picked.value === '__create__') {
+			await createStoryFromNativeEditor(workspaceRoot);
+			continue;
+		}
+
+		const selectedStory = refreshedStories.find(story => story.id === picked.value);
+		if (!selectedStory) {
+			vscode.window.showWarningMessage(`Could not find user story ${picked.value}.`);
+			continue;
+		}
+
+		const result = await showNativeStoryActions(workspaceRoot, selectedStory);
+		if (result === 'exit') {
+			return;
+		}
 	}
 }
 
@@ -755,11 +1334,11 @@ function sleep(ms: number): Promise<void> {
 function updateStatusBar(state: 'idle' | 'running'): void {
 	if (!statusBarItem) { return; }
 	if (state === 'running') {
-		statusBarItem.text = '$(sync~spin) RALPH';
+		statusBarItem.text = '$(sync~spin) Ralph Runner';
 		statusBarItem.tooltip = 'RALPH Runner — task in progress (click for menu)';
 		statusBarItem.backgroundColor = new vscode.ThemeColor('statusBarItem.warningBackground');
 	} else {
-		statusBarItem.text = '$(rocket) RALPH';
+		statusBarItem.text = '$(rocket) Ralph Runner';
 		statusBarItem.tooltip = 'RALPH Runner — click to show commands';
 		statusBarItem.backgroundColor = undefined;
 	}
@@ -768,6 +1347,9 @@ function updateStatusBar(state: 'idle' | 'running'): void {
 async function showCommandMenu(): Promise<void> {
 	const items: vscode.QuickPickItem[] = [
 		{ label: '$(zap)  Generate PRD', description: 'Generate prd.json via Copilot' },
+		{ label: '$(split-horizontal)  Split PRD', description: 'Split prd.json into base_prd.json and per-story files' },
+		{ label: '$(git-merge)  Merge PRD', description: 'Merge base_prd.json and pending user story files into prd.json' },
+		{ label: '$(edit)  Edit User Stories', description: 'Open a visual editor for split user story files' },
 		{ label: '$(play)  Start', description: 'Begin or resume the autonomous task loop' },
 		{ label: '$(debug-stop)  Stop', description: 'Cancel the current run' },
 		{ label: '$(info)  Show Status', description: 'Display user story progress summary' },
@@ -783,6 +1365,9 @@ async function showCommandMenu(): Promise<void> {
 
 	const commandMap: Record<string, string> = {
 		'$(zap)  Generate PRD': 'ralph-runner.quickStart',
+		'$(split-horizontal)  Split PRD': 'ralph-runner.splitPrd',
+		'$(git-merge)  Merge PRD': 'ralph-runner.mergePrd',
+		'$(edit)  Edit User Stories': 'ralph-runner.openUserStoryEditor',
 		'$(play)  Start': 'ralph-runner.start',
 		'$(debug-stop)  Stop': 'ralph-runner.stop',
 		'$(info)  Show Status': 'ralph-runner.status',

@@ -15,6 +15,8 @@ Use it for migrations, bug fixes, feature implementation, refactoring, test crea
 - **Crash-safe execution locks** — The `.ralph/` directory stores per-task status files (`inprogress` / `completed`) that prevent overlapping tasks and survive process crashes. Stalled tasks are detected and recoverable on restart.
 - **Fully resumable** — On startup, detects stalled in-progress tasks from a previous session and offers to clear and retry. Failed stories are logged and skipped so the pipeline continues.
 - **Generate PRD workflow** — Use the built-in Generate PRD command to create `prd.json`. Either import an existing file or describe your goal and let Copilot generate user stories automatically. Generated PRDs automatically include a git commit story after every user story, using conventional commit message format.
+- **PRD split / merge workflow** — Split `prd.json` into `.prd/base_prd.json` plus one file per user story under `.prd/user_stories/`, then merge pending stories back into `prd.json` after syncing status from `.ralph/story-status.json`.
+- **Visual user story editor** — Open split user stories in a built-in editor panel, browse stories by title and summary, edit details, and save changes back to `.prd/user_stories/US-xxx.json`.
 - **Enhanced status bar integration** — Visual state indicators (🚀 idle / 🔄 running) with one-click access to the command menu.
 - **Automatic .gitignore management** — The `.ralph/` directory is automatically added to `.gitignore` to keep task state out of version control.
 
@@ -86,8 +88,16 @@ US-002 | failed | 2026-02-24 12:05:00 | Copilot timed out on task US-002
 RALPH creates a `.ralph/` directory in your workspace root to store execution state:
 
 - `task-<id>-status` — Contains `inprogress` while a story is being executed, or `completed` once Copilot finishes. This file-based lock prevents overlapping tasks and enables crash recovery.
+- `story-status.json` — Stores the durable per-story workflow status used by the Split PRD / Merge PRD commands. Values can include `未开始`, `inprogress`, `failed`, and `completed`.
 
 This directory is automatically added to `.gitignore`.
+
+### .prd/ directory
+
+When you use the PRD split workflow, RALPH creates a `.prd/` directory in your workspace root:
+
+- `base_prd.json` — Contains the project-level metadata from `prd.json` without the `userStories` array.
+- `user_stories/US-xxx.json` — One file per user story, including a `status` field for local workflow management.
 
 ## Usage
 
@@ -107,6 +117,9 @@ This directory is automatically added to `.gitignore`.
 | `RALPH: Show Status`      | $(info) Show Status            | **View progress summary** — displays story counts and next pending story in both output channel and notification.         |
 | `RALPH: Reset Story`      | $(debug-restart) Reset Story   | **Reset story status** — choose any completed or failed story to reset for re-execution.                                  |
 | `RALPH: Generate PRD`     | $(zap) Generate PRD            | **Setup wizard** — import an existing `prd.json` or describe your goal and let Copilot generate one.                      |
+| `RALPH: Split PRD`        | $(split-horizontal) Split PRD  | **Split current PRD** — creates `.prd/base_prd.json` and one `.prd/user_stories/US-xxx.json` file per story.             |
+| `RALPH: Merge PRD`        | $(git-merge) Merge PRD         | **Rebuild current PRD** — syncs local story status from `.ralph`, excludes completed stories, and overwrites `prd.json`. |
+| `RALPH: Edit User Stories`| $(edit) Edit User Stories      | **Visual editor** — opens a panel for browsing, editing, and saving split user story files.                               |
 | `RALPH: Open Settings`    | $(gear) Open Settings          | **Configure behavior** — opens VS Code settings for RALPH Runner.                                                        |
 
 ### Access Methods
@@ -134,8 +147,23 @@ Access via `RALPH: Open Settings` or VS Code Settings → Extensions → RALPH R
 4. **Lock** — Writes `inprogress` to `.ralph/task-<id>-status` to claim the execution slot.
 5. **Execute** — Builds a detailed prompt from the story's title, description, and acceptance criteria, then sends it to Copilot Chat. The prompt instructs Copilot to make code changes and write `completed` to the task status file when done.
 6. **Poll for completion** — RALPH polls `.ralph/task-<id>-status` at the configured interval (`copilotResponsePollMs`). A minimum wait (`copilotMinWaitMs`) is enforced before the first check. If Copilot doesn't complete within the timeout (`copilotTimeoutMs`), the story is marked as failed.
-7. **Record result** — The story outcome (`done` or `failed`) is appended to `progress.txt` with a timestamp and notes.
+7. **Record result** — The story outcome (`done` or `failed`) is appended to `progress.txt` with a timestamp and notes, and the durable per-story state is written to `.ralph/story-status.json`.
 8. **Loop** — Repeat from step 2 until the loop limit is reached or all stories are complete.
+
+## Split / Merge PRD Workflow
+
+1. Run `RALPH: Generate PRD` to create `prd.json` if it does not already exist.
+2. Run `RALPH: Split PRD` to create `.prd/base_prd.json` and `.prd/user_stories/US-xxx.json` files.
+3. Edit or review the individual user story files as needed. Their `status` field is used for local coordination.
+4. Let RALPH execute stories. It will keep `.ralph/story-status.json` updated.
+5. Run `RALPH: Merge PRD` to sync each story file's status from `.ralph`, exclude `completed` stories, strip the `status` field, and overwrite the workspace root `prd.json` with only pending stories.
+
+## Packaging Locally
+
+1. Run `npm install`.
+2. Run `npm run package` to build the extension.
+3. Run `npm run package:vsix` to produce a local `.vsix` package.
+4. In VS Code, open Extensions, choose `Install from VSIX...`, and select the generated package.
 
 ## Known Issues
 
