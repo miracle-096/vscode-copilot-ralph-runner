@@ -1,6 +1,7 @@
 import * as vscode from 'vscode';
 import * as fs from 'fs';
 import * as path from 'path';
+import { readDesignContext, validateDesignContext, writeDesignContext } from './designContext';
 import { composeStoryExecutionPrompt } from './promptContext';
 import {
 	hasProjectConstraintsArtifacts,
@@ -59,7 +60,9 @@ function getConfig() {
 		COPILOT_TIMEOUT_MS: cfg.get<number>('copilotTimeoutMs', 600000),
 		COPILOT_MIN_WAIT_MS: cfg.get<number>('copilotMinWaitMs', 15000),
 		AUTO_INJECT_PROJECT_CONSTRAINTS: cfg.get<boolean>('autoInjectProjectConstraints', true),
+		AUTO_INJECT_DESIGN_CONTEXT: cfg.get<boolean>('autoInjectDesignContext', true),
 		REQUIRE_PROJECT_CONSTRAINTS_BEFORE_RUN: cfg.get<boolean>('requireProjectConstraintsBeforeRun', false),
+		REQUIRE_DESIGN_CONTEXT_FOR_TAGGED_STORIES: cfg.get<boolean>('requireDesignContextForTaggedStories', false),
 	};
 }
 
@@ -526,6 +529,7 @@ export function activate(context: vscode.ExtensionContext) {
 		vscode.commands.registerCommand('ralph-runner.status', () => showStatus()),
 		vscode.commands.registerCommand('ralph-runner.resetStep', () => resetStory()),
 		vscode.commands.registerCommand('ralph-runner.initProjectConstraints', () => initializeProjectConstraints()),
+		vscode.commands.registerCommand('ralph-runner.recordDesignContext', () => recordDesignContext()),
 		vscode.commands.registerCommand('ralph-runner.openSettings', () => {
 			vscode.commands.executeCommand('workbench.action.openSettings', 'ralph-runner');
 		}),
@@ -989,6 +993,228 @@ async function initializeProjectConstraints(): Promise<void> {
 	}
 }
 
+async function recordDesignContext(): Promise<void> {
+	const workspaceRoot = getWorkspaceRoot();
+	if (!workspaceRoot) {
+		vscode.window.showErrorMessage('No workspace folder open.');
+		return;
+	}
+
+	const stories = getExistingSplitUserStories(workspaceRoot);
+	if (stories.length === 0) {
+		vscode.window.showWarningMessage('Split user stories not found. Please run Split PRD first.');
+		return;
+	}
+
+	const selectedStory = await selectStoryForDesignContext(stories);
+	if (!selectedStory) {
+		return;
+	}
+
+	const sourceType = await promptForDesignSourceType();
+	if (!sourceType) {
+		return;
+	}
+
+	const designContext = await collectDesignContextInput(workspaceRoot, selectedStory.id, sourceType);
+	if (!designContext) {
+		return;
+	}
+
+	const validation = validateDesignContext(designContext, selectedStory.id);
+	const filePath = writeDesignContext(workspaceRoot, selectedStory.id, validation.artifact);
+	log(`Design context saved for ${selectedStory.id}: ${filePath}`);
+
+	if (!validation.isValid) {
+		log(`Design context validation warnings for ${selectedStory.id}: ${validation.errors.join(' | ')}`);
+	}
+
+	const action = await vscode.window.showInformationMessage(
+		validation.isValid
+			? `RALPH: Design context saved for ${selectedStory.id}.`
+			: `RALPH: Design context saved for ${selectedStory.id} with warnings.`,
+		'Open Design Context'
+	);
+
+	if (action === 'Open Design Context') {
+		const document = await vscode.workspace.openTextDocument(filePath);
+		await vscode.window.showTextDocument(document, { preview: false });
+	}
+}
+
+async function selectStoryForDesignContext(stories: SplitUserStory[]): Promise<SplitUserStory | undefined> {
+	const selected = await vscode.window.showQuickPick(
+		stories.map(story => ({
+			label: `${story.id} — ${story.title || 'Untitled story'}`,
+			description: `[${normalizeStoryExecutionStatus(story.status) || '未开始'}] Priority ${story.priority}`,
+			detail: (story.description || '').trim() || 'No description.',
+			story,
+		})),
+		{
+			matchOnDescription: true,
+			matchOnDetail: true,
+			placeHolder: 'Select a split story to attach design context',
+		}
+	);
+
+	return selected?.story;
+}
+
+async function promptForDesignSourceType(): Promise<'figma' | 'screenshots' | 'notes' | undefined> {
+	const picked = await vscode.window.showQuickPick([
+		{
+			label: '$(figma) Figma Link',
+			description: 'Record a Figma URL plus any supporting notes',
+			value: 'figma' as const,
+		},
+		{
+			label: '$(device-camera) Screenshots',
+			description: 'Record local screenshot paths plus any supporting notes',
+			value: 'screenshots' as const,
+		},
+		{
+			label: '$(note) Manual Notes',
+			description: 'Record design guidance as structured notes only',
+			value: 'notes' as const,
+		},
+	], {
+		placeHolder: 'Choose the primary design context source',
+	});
+
+	return picked?.value;
+}
+
+async function collectDesignContextInput(
+	workspaceRoot: string,
+	storyId: string,
+	sourceType: 'figma' | 'screenshots' | 'notes',
+): Promise<Partial<import('./types').DesignContextArtifact> | undefined> {
+	const existing = readDesignContext(workspaceRoot, storyId);
+	const figmaUrl = sourceType === 'figma'
+		? await vscode.window.showInputBox({
+			title: 'Design Context — Figma URL',
+			prompt: 'Paste the Figma link for this story',
+			value: existing?.figmaUrl ?? '',
+			ignoreFocusOut: true,
+		})
+		: existing?.figmaUrl;
+
+	if (sourceType === 'figma' && figmaUrl === undefined) {
+		return undefined;
+	}
+
+	let screenshotPaths = existing?.screenshotPaths ?? [];
+	if (sourceType === 'screenshots') {
+		const uris = await vscode.window.showOpenDialog({
+			title: 'Select screenshot files for this story',
+			canSelectMany: true,
+			canSelectFiles: true,
+			canSelectFolders: false,
+			filters: { Images: ['png', 'jpg', 'jpeg', 'webp'] },
+			openLabel: 'Use Screenshots',
+		});
+		if (uris === undefined) {
+			return undefined;
+		}
+		screenshotPaths = uris.map(uri => vscode.workspace.asRelativePath(uri, false));
+	}
+
+	const summary = await promptForTextValue('Design Context — Summary', 'Summarize the design intent for this story', existing?.summary);
+	if (summary === undefined) {
+		return undefined;
+	}
+
+	const pageOrScreenName = await promptForTextValue('Design Context — Screen Name', 'Optional page or screen name', existing?.pageOrScreenName);
+	if (pageOrScreenName === undefined) {
+		return undefined;
+	}
+
+	const manualNotes = await promptForListValue('Design Context — Manual Notes', 'Optional notes, separated by commas or new lines', existing?.manualNotes ?? []);
+	if (manualNotes === undefined) {
+		return undefined;
+	}
+
+	const referenceDocs = await promptForListValue('Design Context — Reference Docs', 'Optional relative document paths or URLs', existing?.referenceDocs ?? []);
+	if (referenceDocs === undefined) {
+		return undefined;
+	}
+
+	const layoutConstraints = await promptForListValue('Design Context — Layout Constraints', 'List key layout constraints for this story', existing?.layoutConstraints ?? []);
+	if (layoutConstraints === undefined) {
+		return undefined;
+	}
+
+	const componentReuseTargets = await promptForListValue('Design Context — Component Reuse', 'List components that should be reused', existing?.componentReuseTargets ?? []);
+	if (componentReuseTargets === undefined) {
+		return undefined;
+	}
+
+	const tokenRules = await promptForListValue('Design Context — Token Rules', 'List color, spacing, or typography token rules', existing?.tokenRules ?? []);
+	if (tokenRules === undefined) {
+		return undefined;
+	}
+
+	const responsiveRules = await promptForListValue('Design Context — Responsive Rules', 'List responsive behavior requirements', existing?.responsiveRules ?? []);
+	if (responsiveRules === undefined) {
+		return undefined;
+	}
+
+	const doNotChange = await promptForListValue('Design Context — Do Not Change', 'List areas that must stay untouched', existing?.doNotChange ?? []);
+	if (doNotChange === undefined) {
+		return undefined;
+	}
+
+	const acceptanceChecks = await promptForListValue('Design Context — Acceptance Checks', 'List visual acceptance checks for implementation', existing?.acceptanceChecks ?? []);
+	if (acceptanceChecks === undefined) {
+		return undefined;
+	}
+
+	return {
+		storyId,
+		sourceType,
+		figmaUrl: figmaUrl?.trim(),
+		screenshotPaths,
+		manualNotes,
+		referenceDocs,
+		summary,
+		pageOrScreenName: pageOrScreenName?.trim(),
+		layoutConstraints,
+		componentReuseTargets,
+		tokenRules,
+		responsiveRules,
+		doNotChange,
+		acceptanceChecks,
+		updatedAt: new Date().toISOString(),
+	};
+}
+
+async function promptForTextValue(title: string, prompt: string, currentValue?: string): Promise<string | undefined> {
+	return vscode.window.showInputBox({
+		title,
+		prompt,
+		value: currentValue ?? '',
+		ignoreFocusOut: true,
+	});
+}
+
+async function promptForListValue(title: string, prompt: string, currentValue: string[]): Promise<string[] | undefined> {
+	const rawValue = await vscode.window.showInputBox({
+		title,
+		prompt,
+		value: currentValue.join(', '),
+		ignoreFocusOut: true,
+	});
+
+	if (rawValue === undefined) {
+		return undefined;
+	}
+
+	return rawValue
+		.split(/[\n,;]+/)
+		.map(item => item.trim())
+		.filter(item => item.length > 0);
+}
+
 async function splitPrd(): Promise<void> {
 	const workspaceRoot = getWorkspaceRoot();
 	if (!workspaceRoot) {
@@ -1384,6 +1610,7 @@ function updateStatusBar(state: 'idle' | 'running'): void {
 async function showCommandMenu(): Promise<void> {
 	const items: vscode.QuickPickItem[] = [
 		{ label: '$(symbol-key)  Initialize Project Constraints', description: 'Scan the repo and generate editable and machine-readable project rules' },
+		{ label: '$(device-camera-video)  Record Design Context', description: 'Attach structured design inputs to a split story' },
 		{ label: '$(zap)  Generate PRD', description: 'Generate prd.json via Copilot' },
 		{ label: '$(split-horizontal)  Split PRD', description: 'Split prd.json into base_prd.json and per-story files' },
 		{ label: '$(git-merge)  Merge PRD', description: 'Merge base_prd.json and pending user story files into prd.json' },
@@ -1403,6 +1630,7 @@ async function showCommandMenu(): Promise<void> {
 
 	const commandMap: Record<string, string> = {
 		'$(symbol-key)  Initialize Project Constraints': 'ralph-runner.initProjectConstraints',
+		'$(device-camera-video)  Record Design Context': 'ralph-runner.recordDesignContext',
 		'$(zap)  Generate PRD': 'ralph-runner.quickStart',
 		'$(split-horizontal)  Split PRD': 'ralph-runner.splitPrd',
 		'$(git-merge)  Merge PRD': 'ralph-runner.mergePrd',

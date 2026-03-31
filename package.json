@@ -39,6 +39,10 @@
         "title": "RALPH: Initialize Project Constraints"
       },
       {
+        "command": "ralph-runner.recordDesignContext",
+        "title": "RALPH: Record Design Context"
+      },
+      {
         "command": "ralph-runner.openSettings",
         "title": "RALPH: Open Settings"
       },
@@ -105,6 +109,16 @@
           "type": "boolean",
           "default": false,
           "description": "Require project constraints to be initialized before RALPH can start executing stories."
+        },
+        "ralph-runner.autoInjectDesignContext": {
+          "type": "boolean",
+          "default": true,
+          "description": "Automatically include recorded design context when building task prompts once design-context injection is enabled."
+        },
+        "ralph-runner.requireDesignContextForTaggedStories": {
+          "type": "boolean",
+          "default": false,
+          "description": "Require design context for stories that the workflow treats as design-sensitive before execution can proceed."
         }
       }
     }
