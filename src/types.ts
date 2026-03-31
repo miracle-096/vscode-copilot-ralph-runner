@@ -58,6 +58,7 @@ export interface DesignContextArtifact {
 	sourceType: 'figma' | 'screenshots' | 'notes';
 	figmaUrl?: string;
 	screenshotPaths: string[];
+	manualNotes: string[];
 	referenceDocs: string[];
 	summary: string;
 	pageOrScreenName?: string;

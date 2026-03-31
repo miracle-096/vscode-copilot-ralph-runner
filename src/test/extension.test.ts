@@ -14,6 +14,13 @@ import {
 	scanWorkspaceForProjectConstraints,
 	serializeEditableProjectConstraints,
 } from '../projectConstraints';
+import {
+	hasDesignContextArtifact,
+	normalizeDesignContext,
+	readDesignContext,
+	validateDesignContext,
+	writeDesignContext,
+} from '../designContext';
 // import * as myExtension from '../../extension';
 
 suite('Extension Test Suite', () => {
@@ -105,5 +112,55 @@ suite('Extension Test Suite', () => {
 		} finally {
 			fs.rmSync(workspaceRoot, { recursive: true, force: true });
 		}
+	});
+
+	test('Design context sidecar can be written and read per story', () => {
+		const workspaceRoot = fs.mkdtempSync(path.join(os.tmpdir(), 'ralph-design-context-'));
+		try {
+			const storyId = 'US-101';
+			const filePath = writeDesignContext(workspaceRoot, storyId, {
+				sourceType: 'figma',
+				figmaUrl: 'https://figma.com/design/file/example?node-id=1-2',
+				screenshotPaths: ['images/mockup.png'],
+				manualNotes: ['Preserve spacing scale', 'Reuse the existing button component'],
+				referenceDocs: ['docs/design-guidelines.md'],
+				summary: 'Landing page hero section',
+				layoutConstraints: ['Keep two-column layout on desktop'],
+				componentReuseTargets: ['Button', 'HeroCard'],
+				tokenRules: ['Use semantic color tokens only'],
+				responsiveRules: ['Collapse to one column below tablet breakpoint'],
+				doNotChange: ['Header navigation'],
+				acceptanceChecks: ['Matches hero layout hierarchy from design'],
+			});
+
+			assert.ok(fs.existsSync(filePath));
+			assert.strictEqual(hasDesignContextArtifact(workspaceRoot, storyId), true);
+
+			const designContext = readDesignContext(workspaceRoot, storyId);
+			assert.ok(designContext);
+			assert.strictEqual(designContext?.figmaUrl, 'https://figma.com/design/file/example?node-id=1-2');
+			assert.deepStrictEqual(designContext?.manualNotes, ['Preserve spacing scale', 'Reuse the existing button component']);
+			assert.deepStrictEqual(designContext?.componentReuseTargets, ['Button', 'HeroCard']);
+		} finally {
+			fs.rmSync(workspaceRoot, { recursive: true, force: true });
+		}
+	});
+
+	test('Design context normalization and validation handle invalid inputs safely', () => {
+		const normalized = normalizeDesignContext({
+			sourceType: 'invalid' as unknown as 'notes',
+			figmaUrl: '   ',
+			manualNotes: ['Keep spacing', '', 'Keep spacing'],
+			screenshotPaths: ['screen.png', 'screen.png'],
+		}, 'US-102');
+
+		assert.strictEqual(normalized.sourceType, 'notes');
+		assert.strictEqual(normalized.figmaUrl, undefined);
+		assert.deepStrictEqual(normalized.manualNotes, ['Keep spacing']);
+		assert.deepStrictEqual(normalized.screenshotPaths, ['screen.png']);
+
+		const validation = validateDesignContext({ sourceType: 'screenshots', screenshotPaths: [] }, 'US-103');
+		assert.strictEqual(validation.isValid, false);
+		assert.ok(validation.errors[0].includes('screenshot'));
 	});
 });
