@@ -1,7 +1,17 @@
 import { PromptSection, StoryPromptContext } from './types';
 
+const MAX_PROJECT_CONSTRAINT_LINES = 12;
+const MAX_DESIGN_CONTEXT_LINES = 12;
+const MAX_PRIOR_WORK_LINES = 14;
+const MAX_ACCEPTANCE_CRITERIA = 8;
+const MAX_LINE_LENGTH = 220;
+
 export function composePromptSections(sections: PromptSection[]): string {
 	const renderedSections = sections
+		.map(section => ({
+			...section,
+			lines: normalizeSectionLines(section.lines),
+		}))
 		.filter(section => !(section.omitWhenEmpty && section.lines.length === 0))
 		.map(section => {
 			if (section.lines.length === 0) {
@@ -14,43 +24,56 @@ export function composePromptSections(sections: PromptSection[]): string {
 }
 
 export function composeStoryExecutionPrompt(context: StoryPromptContext): string {
+	const projectConstraintsLines = boundContextLines(context.projectConstraintsLines ?? [], MAX_PROJECT_CONSTRAINT_LINES);
+	const designContextLines = boundContextLines(context.designContextLines ?? [], MAX_DESIGN_CONTEXT_LINES);
+	const priorWorkLines = boundContextLines(context.priorWorkLines ?? [], MAX_PRIOR_WORK_LINES);
+	const acceptanceCriteriaLines = context.story.acceptanceCriteria
+		.slice(0, MAX_ACCEPTANCE_CRITERIA)
+		.map((acceptanceCriteria, index) => `${index + 1}. ${truncateLine(acceptanceCriteria)}`);
+
+	if ((context.story.acceptanceCriteria?.length ?? 0) > MAX_ACCEPTANCE_CRITERIA) {
+		acceptanceCriteriaLines.push(`... ${context.story.acceptanceCriteria.length - MAX_ACCEPTANCE_CRITERIA} more acceptance criteria omitted for brevity.`);
+	}
+
 	const sections: PromptSection[] = [
 		{
-			title: `You are executing User Story ${context.story.id} of the current PRD.`,
+			title: 'System Execution Rules:',
 			lines: [
-				`Title: ${context.story.title}`,
-				`Description: ${context.story.description}`,
-				`Priority: ${context.story.priority}`,
+				`You are executing User Story ${context.story.id} of the current PRD.`,
 				`Workspace root: ${context.workspaceRoot}`,
+				'',
+				`Title: ${context.story.title}`,
+				`Priority: ${context.story.priority}`,
+				...(context.additionalExecutionRules ?? []),
 			],
 		},
 		{
-			title: 'Acceptance Criteria:',
-			lines: context.story.acceptanceCriteria.map((acceptanceCriteria, index) => `  ${index + 1}. ${acceptanceCriteria}`),
-		},
-		{
-			title: 'Execution Rules:',
-			lines: context.additionalExecutionRules ?? [],
-			omitWhenEmpty: true,
-		},
-		{
 			title: 'Project Constraints:',
-			lines: context.projectConstraintsLines ?? [],
+			lines: projectConstraintsLines,
 			omitWhenEmpty: true,
 		},
 		{
 			title: 'Design Context:',
-			lines: context.designContextLines ?? [],
+			lines: designContextLines,
 			omitWhenEmpty: true,
 		},
 		{
 			title: 'Relevant Prior Work:',
-			lines: context.priorWorkLines ?? [],
+			lines: priorWorkLines,
 			omitWhenEmpty: true,
 		},
 		{
-			title: 'Execute the following task:',
-			lines: [context.story.description],
+			title: 'Current Story:',
+			lines: [
+				`Story ID: ${context.story.id}`,
+				`Title: ${context.story.title}`,
+				`Description: ${truncateLine(context.story.description)}`,
+				'Acceptance Criteria:',
+				...acceptanceCriteriaLines,
+				'',
+				'Execute the following task:',
+				truncateLine(context.story.description),
+			],
 		},
 		{
 			title: 'Completion Contract:',
@@ -76,4 +99,49 @@ export function composeStoryExecutionPrompt(context: StoryPromptContext): string
 	];
 
 	return composePromptSections(sections);
+}
+
+function boundContextLines(lines: string[], maxLines: number): string[] {
+	const normalizedLines = normalizeSectionLines(lines);
+	if (normalizedLines.length <= maxLines) {
+		return normalizedLines;
+	}
+
+	const boundedLines = normalizedLines.slice(0, maxLines);
+	boundedLines.push(`... ${normalizedLines.length - maxLines} more lines omitted for brevity.`);
+	return boundedLines;
+}
+
+function normalizeSectionLines(lines: string[]): string[] {
+	const normalizedLines: string[] = [];
+	let lastWasBlank = false;
+
+	for (const line of lines) {
+		const normalizedLine = truncateLine(line ?? '');
+		const isBlank = normalizedLine.trim().length === 0;
+		if (isBlank) {
+			if (!lastWasBlank && normalizedLines.length > 0) {
+				normalizedLines.push('');
+			}
+			lastWasBlank = true;
+			continue;
+		}
+
+		normalizedLines.push(normalizedLine);
+		lastWasBlank = false;
+	}
+
+	if (normalizedLines[normalizedLines.length - 1] === '') {
+		normalizedLines.pop();
+	}
+
+	return normalizedLines;
+}
+
+function truncateLine(line: string): string {
+	if (line.length <= MAX_LINE_LENGTH) {
+		return line;
+	}
+
+	return `${line.slice(0, MAX_LINE_LENGTH - 3)}...`;
 }

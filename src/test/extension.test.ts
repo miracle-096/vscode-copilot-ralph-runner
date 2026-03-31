@@ -226,6 +226,63 @@ suite('Extension Test Suite', () => {
 		assert.ok(prompt.includes('Only write the completion signal after the task memory artifact exists and is complete.'));
 	});
 
+	test('Story prompt composition uses deterministic ordered sections and bounds long context', () => {
+		const prompt = composeStoryExecutionPrompt({
+			story: {
+				id: 'US-302',
+				title: 'Ordered prompt composition',
+				description: 'Refactor prompt construction into clearly ordered context sections for Copilot execution.',
+				acceptanceCriteria: Array.from({ length: 10 }, (_, index) => `Acceptance criterion ${index + 1}`),
+				priority: 2,
+			},
+			workspaceRoot: 'd:/workspace/vscode-copilot-ralph-runner',
+			projectConstraintsLines: Array.from({ length: 15 }, (_, index) => `Project constraint ${index + 1}`),
+			designContextLines: ['Design note 1', 'Design note 2'],
+			priorWorkLines: Array.from({ length: 16 }, (_, index) => `Prior work ${index + 1}`),
+			taskMemoryPath: 'd:/workspace/vscode-copilot-ralph-runner/.ralph/memory/US-302.json',
+			completionSignalPath: 'd:/workspace/vscode-copilot-ralph-runner/.ralph/task-US-302-status',
+			additionalExecutionRules: ['Do not ask questions.', 'Execute directly.'],
+		});
+
+		const systemIndex = prompt.indexOf('System Execution Rules:');
+		const projectIndex = prompt.indexOf('Project Constraints:');
+		const designIndex = prompt.indexOf('Design Context:');
+		const priorWorkIndex = prompt.indexOf('Relevant Prior Work:');
+		const currentStoryIndex = prompt.indexOf('Current Story:');
+		const completionIndex = prompt.indexOf('Completion Contract:');
+
+		assert.ok(systemIndex >= 0);
+		assert.ok(projectIndex > systemIndex);
+		assert.ok(designIndex > projectIndex);
+		assert.ok(priorWorkIndex > designIndex);
+		assert.ok(currentStoryIndex > priorWorkIndex);
+		assert.ok(completionIndex > currentStoryIndex);
+		assert.ok(prompt.includes('... 3 more lines omitted for brevity.'));
+		assert.ok(prompt.includes('... 2 more acceptance criteria omitted for brevity.'));
+	});
+
+	test('Prompt composition omits empty optional sections safely', () => {
+		const prompt = composeStoryExecutionPrompt({
+			story: {
+				id: 'US-303',
+				title: 'Minimal prompt composition',
+				description: 'Keep prompt generation resilient when context is missing.',
+				acceptanceCriteria: ['Prompt still renders'],
+				priority: 3,
+			},
+			workspaceRoot: 'd:/workspace/vscode-copilot-ralph-runner',
+			taskMemoryPath: 'd:/workspace/vscode-copilot-ralph-runner/.ralph/memory/US-303.json',
+			completionSignalPath: 'd:/workspace/vscode-copilot-ralph-runner/.ralph/task-US-303-status',
+		});
+
+		assert.ok(prompt.includes('System Execution Rules:'));
+		assert.ok(prompt.includes('Current Story:'));
+		assert.ok(prompt.includes('Completion Contract:'));
+		assert.strictEqual(prompt.includes('Project Constraints:'), false);
+		assert.strictEqual(prompt.includes('Design Context:'), false);
+		assert.strictEqual(prompt.includes('Relevant Prior Work:'), false);
+	});
+
 	test('Task memory artifact can be written, read, and indexed per story', () => {
 		const workspaceRoot = fs.mkdtempSync(path.join(os.tmpdir(), 'ralph-task-memory-'));
 		try {
