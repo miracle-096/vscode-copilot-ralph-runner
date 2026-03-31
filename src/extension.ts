@@ -1,8 +1,17 @@
+import { execSync } from 'child_process';
 import * as vscode from 'vscode';
 import * as fs from 'fs';
 import * as path from 'path';
 import { readDesignContext, summarizeDesignContextForPrompt, validateDesignContext, writeDesignContext } from './designContext';
 import { composeStoryExecutionPrompt } from './promptContext';
+import {
+	createSynthesizedTaskMemory,
+	hasTaskMemoryArtifact,
+	readTaskMemory,
+	upsertTaskMemoryIndexEntry,
+	validateTaskMemory,
+	writeTaskMemory,
+} from './taskMemory';
 import {
 	hasProjectConstraintsArtifacts,
 	initializeProjectConstraintsArtifacts,
@@ -15,6 +24,7 @@ import {
 	SplitUserStory,
 	STORY_STATUSES,
 	StoryExecutionStatus,
+	TaskMemoryArtifact,
 	UserStory,
 	normalizeStoryExecutionStatus,
 } from './types';
@@ -32,6 +42,7 @@ import {
 	getPrdPath as resolvePrdPath,
 	getRalphDir as resolveRalphDir,
 	getStoryStatusRegistryPath as resolveStoryStatusRegistryPath,
+	getTaskMemoryPath as resolveTaskMemoryPath,
 	getTaskStatusPath as resolveTaskStatusPath,
 	getUserStoriesDirectoryPath as resolveUserStoriesDirectoryPath,
 	getUserStoryFilePath as resolveUserStoryFilePath,
@@ -661,16 +672,16 @@ async function startRalph(): Promise<void> {
 		try {
 			// executeStory returns only after Copilot has written "completed"
 			// to .ralph/task-<id>-status (or after a timeout).
-			await executeStory(nextStory, workspaceRoot);
+			const taskMemoryResult = await executeStory(nextStory, workspaceRoot);
 
 			// Safety net: ensure the lock is always cleared on success
 			RalphStateManager.setCompleted(workspaceRoot, nextStory.id);
 			RalphStateManager.setStoryExecutionStatus(workspaceRoot, nextStory.id, 'completed');
 
 			// Write completion to progress.txt (prd.json is never modified)
-			writeProgressEntry(workspaceRoot, nextStory.id, 'done', 'Completed successfully');
+			writeProgressEntry(workspaceRoot, nextStory.id, 'done', `Completed successfully; task memory persisted (${taskMemoryResult.source})`);
 
-			log(`✅ Story ${nextStory.id} completed.`);
+			log(`✅ Story ${nextStory.id} completed with task memory (${taskMemoryResult.source}).`);
 		} catch (err: unknown) {
 			const errMsg = err instanceof Error ? err.message : String(err);
 			log(`❌ Story ${nextStory.id} failed: ${errMsg}`);
@@ -715,10 +726,13 @@ function stopRalph(): void {
 
 // ── Story Execution ─────────────────────────────────────────────────────────
 
-async function executeStory(story: UserStory, workspaceRoot: string): Promise<void> {
+async function executeStory(story: UserStory, workspaceRoot: string): Promise<{ filePath: string; source: 'copilot' | 'synthesized' }> {
 	const prompt = buildCopilotPromptForStory(story, workspaceRoot);
 	log('  Delegating user story to Copilot...');
 	await sendToCopilot(prompt, story.id, workspaceRoot);
+	const taskMemoryResult = ensureTaskMemoryPersistence(story, workspaceRoot);
+	log(`  Task memory ready for ${story.id}: ${taskMemoryResult.filePath} (${taskMemoryResult.source})`);
+	return taskMemoryResult;
 }
 
 // ── Copilot Integration ─────────────────────────────────────────────────────
@@ -732,6 +746,7 @@ function buildCopilotPromptForStory(story: UserStory, workspaceRoot: string): st
 		workspaceRoot,
 		projectConstraintsLines,
 		designContextLines,
+		taskMemoryPath: resolveTaskMemoryPath(workspaceRoot, story.id).replace(/\\/g, '/'),
 		completionSignalPath: resolveTaskStatusPath(workspaceRoot, story.id).replace(/\\/g, '/'),
 		additionalExecutionRules: [
 			'Greedily execute as many sub-tasks as possible in a single pass.',
@@ -906,7 +921,7 @@ async function waitForCopilotCompletion(taskId: string, workspaceRoot: string): 
 
 		const status = RalphStateManager.getTaskStatus(workspaceRoot, taskId);
 		if (status === 'completed') {
-			log(`  ✓ Copilot wrote "completed" to .ralph/task-${taskId}-status (elapsed ${Math.round(elapsed / 1000)}s)`);
+			log(`  ✓ Copilot wrote "completed" to .ralph/task-${taskId}-status (elapsed ${Math.round(elapsed / 1000)}s); validating task memory next.`);
 			return;
 		}
 
@@ -915,6 +930,134 @@ async function waitForCopilotCompletion(taskId: string, workspaceRoot: string): 
 
 	log(`  ⚠ Copilot timed out after ${Math.round(config.COPILOT_TIMEOUT_MS / 1000)}s without writing "completed" — proceeding.`);
 	throw new Error(`Copilot timed out on task ${taskId}`);
+}
+
+function ensureTaskMemoryPersistence(story: UserStory, workspaceRoot: string): { filePath: string; source: 'copilot' | 'synthesized' } {
+	const existingMemory = hasTaskMemoryArtifact(workspaceRoot, story.id) ? readTaskMemory(workspaceRoot, story.id) : null;
+	const validation = existingMemory ? validateTaskMemory(existingMemory, story.id) : null;
+
+	if (validation?.isValid) {
+		const filePath = writeTaskMemory(workspaceRoot, story.id, {
+			...validation.artifact,
+			source: validation.artifact.source ?? 'copilot',
+		});
+		upsertTaskMemoryIndexEntry(workspaceRoot, validation.artifact, story.id);
+		log(`  Valid task memory artifact accepted for ${story.id}.`);
+		return { filePath, source: validation.artifact.source ?? 'copilot' };
+	}
+
+	if (validation && !validation.isValid) {
+		log(`  WARNING: Task memory for ${story.id} failed validation: ${validation.errors.join(' | ')}`);
+	} else {
+		log(`  WARNING: Task memory artifact missing for ${story.id}; synthesizing fallback memory.`);
+	}
+
+	const fallbackMemory = synthesizeTaskMemoryForStory(story, workspaceRoot, validation?.errors ?? []);
+	const fallbackPath = writeTaskMemory(workspaceRoot, story.id, fallbackMemory);
+	upsertTaskMemoryIndexEntry(workspaceRoot, fallbackMemory, story.id);
+	log(`  Synthesized fallback task memory for ${story.id} at ${fallbackPath}.`);
+	return { filePath: fallbackPath, source: 'synthesized' };
+}
+
+function synthesizeTaskMemoryForStory(story: UserStory, workspaceRoot: string, validationErrors: string[]): TaskMemoryArtifact {
+	const changedFiles = detectChangedFilesForTaskMemory(workspaceRoot, story.id);
+	const changedModules = deriveChangedModules(changedFiles);
+	const searchKeywords = deriveTaskMemorySearchKeywords(story, changedFiles, changedModules);
+	const risks = validationErrors.length > 0
+		? validationErrors.map(error => `Recovered from invalid task memory: ${error}`)
+		: ['Changed files were inferred automatically because Copilot did not persist task memory.'];
+
+	return createSynthesizedTaskMemory(story.id, story.title, `Fallback task memory synthesized for ${story.id}: ${story.title}.`, {
+		changedFiles,
+		changedModules,
+		keyDecisions: [
+			'RALPH synthesized a task memory artifact because completion was signaled before a valid memory artifact was available.',
+			'Prompt recall should use this synthesized entry until a richer memory artifact is recorded.',
+		],
+		constraintsConfirmed: ['prd.json remained read-only during task execution.'],
+		testsRun: ['Validation occurred during post-completion finalization.'],
+		risks,
+		followUps: ['Review the synthesized memory artifact and replace it with a richer entry if needed.'],
+		searchKeywords,
+		relatedStories: extractRelatedStoryIds(story),
+	});
+}
+
+function detectChangedFilesForTaskMemory(workspaceRoot: string, storyId: string): string[] {
+	try {
+		const output = execSync('git status --short --untracked-files=all', {
+			cwd: workspaceRoot,
+			encoding: 'utf-8',
+			stdio: ['ignore', 'pipe', 'ignore'],
+		});
+
+		const changedFiles = output
+			.split(/\r?\n/)
+			.map(line => line.trim())
+			.filter(line => line.length > 0)
+			.map(line => line.slice(3).split(' -> ').pop() ?? '')
+			.map(filePath => filePath.replace(/\\/g, '/'))
+			.filter(filePath => filePath.length > 0 && !filePath.startsWith('.prd/') && filePath !== 'prd.json');
+
+		if (changedFiles.length > 0) {
+			return Array.from(new Set(changedFiles));
+		}
+	} catch {
+		log(`  WARNING: Unable to inspect git status for fallback task memory on ${storyId}.`);
+	}
+
+	return ['(unable to determine changed files automatically)'];
+}
+
+function deriveChangedModules(changedFiles: string[]): string[] {
+	const modules = changedFiles
+		.filter(filePath => !filePath.startsWith('('))
+		.map(filePath => filePath.split('/').slice(0, -1).join('/') || path.basename(filePath, path.extname(filePath)))
+		.filter(moduleName => moduleName.length > 0);
+
+	return Array.from(new Set(modules));
+}
+
+function deriveTaskMemorySearchKeywords(story: UserStory, changedFiles: string[], changedModules: string[]): string[] {
+	const keywords = new Set<string>();
+	for (const value of [story.id, story.title, ...changedModules]) {
+		if (typeof value !== 'string') {
+			continue;
+		}
+
+		for (const token of value.toLowerCase().split(/[^a-z0-9]+/)) {
+			if (token.length >= 3) {
+				keywords.add(token);
+			}
+		}
+	}
+
+	for (const filePath of changedFiles) {
+		const fileName = path.basename(filePath, path.extname(filePath)).toLowerCase();
+		if (fileName.length >= 3) {
+			keywords.add(fileName);
+		}
+	}
+
+	return Array.from(keywords).slice(0, 12);
+}
+
+function extractRelatedStoryIds(story: UserStory): string[] {
+	const relatedIds = new Set<string>();
+	for (const key of ['dependsOn', 'relatedStories']) {
+		const rawValue = story[key];
+		if (!Array.isArray(rawValue)) {
+			continue;
+		}
+
+		for (const item of rawValue) {
+			if (typeof item === 'string' && /^US-\d+$/i.test(item.trim())) {
+				relatedIds.add(item.trim().toUpperCase());
+			}
+		}
+	}
+
+	return Array.from(relatedIds);
 }
 
 /**

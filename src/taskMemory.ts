@@ -16,6 +16,18 @@ export interface TaskMemoryValidationResult {
 	isValid: boolean;
 }
 
+export interface SynthesizedTaskMemoryOptions {
+	changedFiles?: string[];
+	changedModules?: string[];
+	keyDecisions?: string[];
+	constraintsConfirmed?: string[];
+	testsRun?: string[];
+	risks?: string[];
+	followUps?: string[];
+	searchKeywords?: string[];
+	relatedStories?: string[];
+}
+
 export function createEmptyTaskMemory(storyId: string, title = ''): TaskMemoryArtifact {
 	return {
 		storyId,
@@ -33,6 +45,29 @@ export function createEmptyTaskMemory(storyId: string, title = ''): TaskMemoryAr
 		relatedStories: [],
 		createdAt: new Date().toISOString(),
 	};
+}
+
+export function createSynthesizedTaskMemory(
+	storyId: string,
+	title: string,
+	summary: string,
+	options: SynthesizedTaskMemoryOptions = {},
+): TaskMemoryArtifact {
+	return normalizeTaskMemory({
+		storyId,
+		title,
+		summary,
+		changedFiles: options.changedFiles ?? ['(unable to determine changed files automatically)'],
+		changedModules: options.changedModules ?? [],
+		keyDecisions: options.keyDecisions ?? ['RALPH synthesized this task memory because a valid artifact was not persisted before completion.'],
+		constraintsConfirmed: options.constraintsConfirmed ?? ['prd.json remained read-only during task execution.'],
+		testsRun: options.testsRun ?? [],
+		risks: options.risks ?? ['Synthesized memory may need manual review before using it for recall.'],
+		followUps: options.followUps ?? ['Review synthesized task memory fields for completeness.'],
+		searchKeywords: options.searchKeywords ?? [storyId.toLowerCase(), title.toLowerCase()],
+		relatedStories: options.relatedStories ?? [],
+		source: 'synthesized',
+	}, storyId);
 }
 
 export function createEmptyTaskMemoryIndex(): TaskMemoryIndex {

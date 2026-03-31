@@ -6,6 +6,7 @@ import * as path from 'path';
 // You can import and use all API from the 'vscode' module
 // as well as import your extension to test it
 import * as vscode from 'vscode';
+import { composeStoryExecutionPrompt } from '../promptContext';
 import {
 	createEditableProjectConstraintsTemplate,
 	mergeProjectConstraints,
@@ -23,6 +24,7 @@ import {
 	writeDesignContext,
 } from '../designContext';
 import {
+	createSynthesizedTaskMemory,
 	hasTaskMemoryArtifact,
 	readTaskMemory,
 	readTaskMemoryIndex,
@@ -203,6 +205,25 @@ suite('Extension Test Suite', () => {
 		assert.strictEqual(lines.includes('Manual Notes'), false);
 	});
 
+	test('Story prompt completion contract requires task memory before completed signal', () => {
+		const prompt = composeStoryExecutionPrompt({
+			story: {
+				id: 'US-301',
+				title: 'Persist task memory',
+				description: 'Require a task memory artifact before completion.',
+				acceptanceCriteria: ['Task memory is written first'],
+				priority: 1,
+			},
+			workspaceRoot: 'd:/workspace/vscode-copilot-ralph-runner',
+			taskMemoryPath: 'd:/workspace/vscode-copilot-ralph-runner/.ralph/memory/US-301.json',
+			completionSignalPath: 'd:/workspace/vscode-copilot-ralph-runner/.ralph/task-US-301-status',
+		});
+
+		assert.ok(prompt.includes('Before writing the completion signal, write a structured task memory artifact as valid JSON to:'));
+		assert.ok(prompt.includes('d:/workspace/vscode-copilot-ralph-runner/.ralph/memory/US-301.json'));
+		assert.ok(prompt.includes('Only write the completion signal after the task memory artifact exists and is complete.'));
+	});
+
 	test('Task memory artifact can be written, read, and indexed per story', () => {
 		const workspaceRoot = fs.mkdtempSync(path.join(os.tmpdir(), 'ralph-task-memory-'));
 		try {
@@ -291,5 +312,23 @@ suite('Extension Test Suite', () => {
 		} finally {
 			fs.rmSync(workspaceRoot, { recursive: true, force: true });
 		}
+	});
+
+	test('Synthesized task memory produces a valid fallback artifact', () => {
+		const memory = createSynthesizedTaskMemory(
+			'US-204',
+			'Fallback memory',
+			'Fallback task memory synthesized for the story.',
+			{
+				changedFiles: ['src/extension.ts'],
+				changedModules: ['src'],
+				searchKeywords: ['fallback', 'memory'],
+			}
+		);
+
+		const validation = validateTaskMemory(memory, 'US-204');
+		assert.strictEqual(validation.isValid, true);
+		assert.strictEqual(validation.artifact.source, 'synthesized');
+		assert.deepStrictEqual(validation.artifact.changedFiles, ['src/extension.ts']);
 	});
 });
