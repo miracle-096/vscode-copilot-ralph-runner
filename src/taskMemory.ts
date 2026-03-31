@@ -3,6 +3,7 @@ import {
 	TaskMemoryArtifact,
 	TaskMemoryIndex,
 	TaskMemoryIndexEntry,
+	UserStory,
 } from './types';
 import {
 	ensureTaskMemoryDirectory,
@@ -26,6 +27,15 @@ export interface SynthesizedTaskMemoryOptions {
 	followUps?: string[];
 	searchKeywords?: string[];
 	relatedStories?: string[];
+}
+
+export interface RecalledTaskMemoryMatch {
+	memory: TaskMemoryArtifact;
+	score: number;
+	reasons: string[];
+	keywordOverlap: string[];
+	moduleOverlap: string[];
+	fileOverlap: string[];
 }
 
 export function createEmptyTaskMemory(storyId: string, title = ''): TaskMemoryArtifact {
@@ -270,6 +280,68 @@ export function summarizeTaskMemoryForPrompt(memory: TaskMemoryArtifact | null):
 	];
 }
 
+export function recallRelatedTaskMemories(
+	workspaceRoot: string,
+	story: UserStory,
+	options?: { limit?: number },
+): RecalledTaskMemoryMatch[] {
+	const limit = options?.limit ?? 3;
+	const recallContext = buildStoryRecallContext(story);
+	const index = readTaskMemoryIndex(workspaceRoot);
+	const matches: RecalledTaskMemoryMatch[] = [];
+
+	for (const entry of index.entries) {
+		if (entry.storyId === story.id) {
+			continue;
+		}
+
+		const memory = readTaskMemory(workspaceRoot, entry.storyId);
+		if (!memory) {
+			continue;
+		}
+
+		const scored = scoreTaskMemoryMatch(memory, entry, recallContext, index.entries);
+		if (scored.score <= 0) {
+			continue;
+		}
+
+		matches.push(scored);
+	}
+
+	matches.sort((left, right) => {
+		if (right.score !== left.score) {
+			return right.score - left.score;
+		}
+		return right.memory.createdAt.localeCompare(left.memory.createdAt);
+	});
+
+	return matches.slice(0, limit);
+}
+
+export function summarizeRecalledTaskMemoriesForPrompt(matches: RecalledTaskMemoryMatch[], limit = 3): string[] {
+	if (matches.length === 0) {
+		return [];
+	}
+
+	const lines: string[] = [];
+	for (const match of matches.slice(0, limit)) {
+		lines.push(`${match.memory.storyId} — ${match.memory.title} (score ${match.score})`);
+		lines.push(`Why it matters: ${match.reasons.slice(0, 3).join('; ')}`);
+		if (match.memory.summary) {
+			lines.push(`Summary: ${match.memory.summary}`);
+		}
+		for (const decision of match.memory.keyDecisions.slice(0, 2)) {
+			lines.push(`- Decision: ${decision}`);
+		}
+		for (const changedFile of match.memory.changedFiles.slice(0, 2)) {
+			lines.push(`- File: ${changedFile}`);
+		}
+		lines.push('');
+	}
+
+	return lines.slice(0, lines[lines.length - 1] === '' ? lines.length - 1 : lines.length);
+}
+
 function normalizeTaskMemoryIndexEntry(value: unknown): TaskMemoryIndexEntry | null {
 	if (!value || typeof value !== 'object') {
 		return null;
@@ -325,4 +397,153 @@ function compareIndexEntries(left: TaskMemoryIndexEntry, right: TaskMemoryIndexE
 	}
 
 	return left.storyId.localeCompare(right.storyId);
+}
+
+interface StoryRecallContext {
+	storyId: string;
+	relatedStories: string[];
+	keywords: string[];
+	moduleHints: string[];
+	fileHints: string[];
+}
+
+function buildStoryRecallContext(story: UserStory): StoryRecallContext {
+	const relatedStories = new Set<string>();
+	for (const key of ['dependsOn', 'relatedStories']) {
+		const rawValue = story[key];
+		if (!Array.isArray(rawValue)) {
+			continue;
+		}
+
+		for (const item of rawValue) {
+			if (typeof item === 'string' && /^US-\d+$/i.test(item.trim())) {
+				relatedStories.add(item.trim().toUpperCase());
+			}
+		}
+	}
+
+	const keywords = extractKeywords([
+		story.id,
+		story.title,
+		story.description,
+		...story.acceptanceCriteria,
+	]);
+	const moduleHints = extractPathLikeValues(story, ['moduleHints', 'changedModules', 'paths']);
+	const fileHints = extractPathLikeValues(story, ['fileHints', 'changedFiles', 'paths']);
+
+	return {
+		storyId: story.id,
+		relatedStories: Array.from(relatedStories),
+		keywords,
+		moduleHints,
+		fileHints,
+	};
+}
+
+function scoreTaskMemoryMatch(
+	memory: TaskMemoryArtifact,
+	entry: TaskMemoryIndexEntry,
+	context: StoryRecallContext,
+	entries: TaskMemoryIndexEntry[],
+): RecalledTaskMemoryMatch {
+	let score = 0;
+	const reasons: string[] = [];
+	const keywordOverlap = intersect(context.keywords, entry.searchKeywords.map(value => value.toLowerCase()));
+	const moduleOverlap = intersect(normalizeLower(context.moduleHints), normalizeLower(entry.changedModules));
+	const fileOverlap = intersect(normalizeLower(context.fileHints), normalizeLower(entry.changedFiles));
+
+	if (context.relatedStories.includes(memory.storyId) || memory.relatedStories.includes(context.storyId)) {
+		score += 50;
+		reasons.push('direct story relationship');
+	}
+
+	const sharedRelatedStories = intersect(context.relatedStories.map(value => value.toLowerCase()), memory.relatedStories.map(value => value.toLowerCase()));
+	if (sharedRelatedStories.length > 0) {
+		score += Math.min(24, sharedRelatedStories.length * 12);
+		reasons.push(`shared related stories: ${sharedRelatedStories.join(', ')}`);
+	}
+
+	if (keywordOverlap.length > 0) {
+		score += Math.min(32, keywordOverlap.length * 8);
+		reasons.push(`keyword overlap: ${keywordOverlap.slice(0, 4).join(', ')}`);
+	}
+
+	if (moduleOverlap.length > 0) {
+		score += Math.min(24, moduleOverlap.length * 12);
+		reasons.push(`module overlap: ${moduleOverlap.slice(0, 3).join(', ')}`);
+	}
+
+	if (fileOverlap.length > 0) {
+		score += Math.min(30, fileOverlap.length * 15);
+		reasons.push(`file overlap: ${fileOverlap.slice(0, 3).join(', ')}`);
+	}
+
+	const recencyBonus = calculateRecencyBonus(entry, entries);
+	if (recencyBonus > 0) {
+		score += recencyBonus;
+		reasons.push(`recent work bonus: ${recencyBonus}`);
+	}
+
+	return {
+		memory,
+		score,
+		reasons,
+		keywordOverlap,
+		moduleOverlap,
+		fileOverlap,
+	};
+}
+
+function calculateRecencyBonus(entry: TaskMemoryIndexEntry, entries: TaskMemoryIndexEntry[]): number {
+	const orderedEntries = [...entries].sort(compareIndexEntries);
+	const index = orderedEntries.findIndex(candidate => candidate.storyId === entry.storyId);
+	if (index < 0) {
+		return 0;
+	}
+
+	return Math.max(4, 20 - index * 3);
+}
+
+function extractKeywords(values: string[]): string[] {
+	const keywords = new Set<string>();
+	for (const value of values) {
+		if (typeof value !== 'string') {
+			continue;
+		}
+
+		for (const token of value.toLowerCase().split(/[^a-z0-9_./-]+/)) {
+			if (token.length >= 3) {
+				keywords.add(token);
+			}
+		}
+	}
+
+	return Array.from(keywords);
+}
+
+function extractPathLikeValues(story: UserStory, keys: string[]): string[] {
+	const values = new Set<string>();
+	for (const key of keys) {
+		const rawValue = story[key];
+		if (!Array.isArray(rawValue)) {
+			continue;
+		}
+
+		for (const item of rawValue) {
+			if (typeof item === 'string' && item.trim().length > 0) {
+				values.add(item.trim().toLowerCase());
+			}
+		}
+	}
+
+	return Array.from(values);
+}
+
+function intersect(left: string[], right: string[]): string[] {
+	const rightValues = new Set(right);
+	return left.filter(value => rightValues.has(value));
+}
+
+function normalizeLower(values: string[]): string[] {
+	return values.map(value => value.toLowerCase());
 }

@@ -7,7 +7,9 @@ import { composeStoryExecutionPrompt } from './promptContext';
 import {
 	createSynthesizedTaskMemory,
 	hasTaskMemoryArtifact,
+	recallRelatedTaskMemories,
 	readTaskMemory,
+	summarizeRecalledTaskMemoriesForPrompt,
 	upsertTaskMemoryIndexEntry,
 	validateTaskMemory,
 	writeTaskMemory,
@@ -72,6 +74,8 @@ function getConfig() {
 		COPILOT_MIN_WAIT_MS: cfg.get<number>('copilotMinWaitMs', 15000),
 		AUTO_INJECT_PROJECT_CONSTRAINTS: cfg.get<boolean>('autoInjectProjectConstraints', true),
 		AUTO_INJECT_DESIGN_CONTEXT: cfg.get<boolean>('autoInjectDesignContext', true),
+		AUTO_RECALL_TASK_MEMORY: cfg.get<boolean>('autoRecallTaskMemory', true),
+		RECALLED_TASK_MEMORY_LIMIT: cfg.get<number>('recalledTaskMemoryLimit', 3),
 		REQUIRE_PROJECT_CONSTRAINTS_BEFORE_RUN: cfg.get<boolean>('requireProjectConstraintsBeforeRun', false),
 		REQUIRE_DESIGN_CONTEXT_FOR_TAGGED_STORIES: cfg.get<boolean>('requireDesignContextForTaggedStories', false),
 	};
@@ -541,6 +545,7 @@ export function activate(context: vscode.ExtensionContext) {
 		vscode.commands.registerCommand('ralph-runner.resetStep', () => resetStory()),
 		vscode.commands.registerCommand('ralph-runner.initProjectConstraints', () => initializeProjectConstraints()),
 		vscode.commands.registerCommand('ralph-runner.recordDesignContext', () => recordDesignContext()),
+		vscode.commands.registerCommand('ralph-runner.recallTaskMemory', () => recallRelatedTaskMemory()),
 		vscode.commands.registerCommand('ralph-runner.openSettings', () => {
 			vscode.commands.executeCommand('workbench.action.openSettings', 'ralph-runner');
 		}),
@@ -740,12 +745,14 @@ async function executeStory(story: UserStory, workspaceRoot: string): Promise<{ 
 function buildCopilotPromptForStory(story: UserStory, workspaceRoot: string): string {
 	const projectConstraintsLines = getProjectConstraintsPromptLines(workspaceRoot, story.id);
 	const designContextLines = getDesignContextPromptLines(workspaceRoot, story);
+	const priorWorkLines = getPriorWorkPromptLines(workspaceRoot, story);
 
 	return composeStoryExecutionPrompt({
 		story,
 		workspaceRoot,
 		projectConstraintsLines,
 		designContextLines,
+		priorWorkLines,
 		taskMemoryPath: resolveTaskMemoryPath(workspaceRoot, story.id).replace(/\\/g, '/'),
 		completionSignalPath: resolveTaskStatusPath(workspaceRoot, story.id).replace(/\\/g, '/'),
 		additionalExecutionRules: [
@@ -811,6 +818,26 @@ function getDesignContextPromptLines(workspaceRoot: string, story: UserStory): s
 	}
 
 	log(`  Injecting ${promptLines.length} design context prompt lines for story ${story.id}.`);
+	return promptLines;
+}
+
+function getPriorWorkPromptLines(workspaceRoot: string, story: UserStory): string[] {
+	const config = getConfig();
+	if (!config.AUTO_RECALL_TASK_MEMORY) {
+		log(`  Prior-work recall disabled by settings for story ${story.id}.`);
+		return [];
+	}
+
+	const matches = recallRelatedTaskMemories(workspaceRoot, story, {
+		limit: config.RECALLED_TASK_MEMORY_LIMIT,
+	});
+	if (matches.length === 0) {
+		log(`  No related task memories found for story ${story.id}; continuing without prior-work context.`);
+		return [];
+	}
+
+	const promptLines = summarizeRecalledTaskMemoriesForPrompt(matches, config.RECALLED_TASK_MEMORY_LIMIT);
+	log(`  Injecting ${matches.length} recalled task memories for story ${story.id}.`);
 	return promptLines;
 }
 
@@ -1273,6 +1300,110 @@ async function recordDesignContext(): Promise<void> {
 		const document = await vscode.workspace.openTextDocument(filePath);
 		await vscode.window.showTextDocument(document, { preview: false });
 	}
+}
+
+async function recallRelatedTaskMemory(): Promise<void> {
+	const workspaceRoot = getWorkspaceRoot();
+	if (!workspaceRoot) {
+		vscode.window.showErrorMessage('No workspace folder open.');
+		return;
+	}
+
+	const targetStory = await selectStoryForTaskMemoryRecall(workspaceRoot);
+	if (!targetStory) {
+		return;
+	}
+
+	const config = getConfig();
+	const matches = recallRelatedTaskMemories(workspaceRoot, targetStory, {
+		limit: config.RECALLED_TASK_MEMORY_LIMIT,
+	});
+
+	if (matches.length === 0) {
+		vscode.window.showInformationMessage(`RALPH: No related task memories found for ${targetStory.id}.`);
+		log(`No related task memories found for ${targetStory.id}.`);
+		return;
+	}
+
+	const preview = renderRecalledTaskMemoryPreview(targetStory, matches);
+	const document = await vscode.workspace.openTextDocument({
+		content: preview,
+		language: 'markdown',
+	});
+	await vscode.window.showTextDocument(document, { preview: false });
+	log(`Previewed ${matches.length} recalled task memories for ${targetStory.id}.`);
+}
+
+async function selectStoryForTaskMemoryRecall(workspaceRoot: string): Promise<UserStory | undefined> {
+	const prd = parsePrd(workspaceRoot);
+	const nextPendingStory = prd ? findNextPendingStory(prd, workspaceRoot) : null;
+	const splitStories = getExistingSplitUserStories(workspaceRoot);
+
+	const choice = await vscode.window.showQuickPick([
+		...(nextPendingStory ? [{
+			label: 'Next Pending Story',
+			description: `${nextPendingStory.id} — ${nextPendingStory.title}`,
+			value: 'next' as const,
+		}] : []),
+		...(splitStories.length > 0 ? [{
+			label: 'Choose Story',
+			description: 'Select any split user story to preview related task memories',
+			value: 'choose' as const,
+		}] : []),
+	], {
+		placeHolder: 'Choose which story to use for related task memory recall',
+	});
+
+	if (!choice) {
+		return undefined;
+	}
+
+	if (choice.value === 'next') {
+		return nextPendingStory ?? undefined;
+	}
+
+	const selected = await vscode.window.showQuickPick(
+		splitStories.map(story => ({
+			label: `${story.id} — ${story.title || 'Untitled story'}`,
+			description: `[${normalizeStoryExecutionStatus(story.status) || '未开始'}] Priority ${story.priority}`,
+			detail: (story.description || '').trim() || 'No description.',
+			story,
+		})),
+		{
+			matchOnDescription: true,
+			matchOnDetail: true,
+			placeHolder: 'Select a split story to preview related task memories',
+		}
+	);
+
+	return selected?.story;
+}
+
+function renderRecalledTaskMemoryPreview(story: UserStory, matches: ReturnType<typeof recallRelatedTaskMemories>): string {
+	const lines = [`# Related Task Memory Preview`, '', `Story: ${story.id} — ${story.title}`, ''];
+	for (const match of matches) {
+		lines.push(`## ${match.memory.storyId} — ${match.memory.title}`);
+		lines.push(`Score: ${match.score}`);
+		lines.push(`Why: ${match.reasons.join('; ')}`);
+		if (match.memory.summary) {
+			lines.push(`Summary: ${match.memory.summary}`);
+		}
+		if (match.memory.keyDecisions.length > 0) {
+			lines.push('Key Decisions:');
+			for (const decision of match.memory.keyDecisions.slice(0, 3)) {
+				lines.push(`- ${decision}`);
+			}
+		}
+		if (match.memory.changedFiles.length > 0) {
+			lines.push('Changed Files:');
+			for (const changedFile of match.memory.changedFiles.slice(0, 3)) {
+				lines.push(`- ${changedFile}`);
+			}
+		}
+		lines.push('');
+	}
+
+	return lines.join('\n').trimEnd();
 }
 
 async function selectStoryForDesignContext(stories: SplitUserStory[]): Promise<SplitUserStory | undefined> {
@@ -1844,6 +1975,7 @@ async function showCommandMenu(): Promise<void> {
 	const items: vscode.QuickPickItem[] = [
 		{ label: '$(symbol-key)  Initialize Project Constraints', description: 'Scan the repo and generate editable and machine-readable project rules' },
 		{ label: '$(device-camera-video)  Record Design Context', description: 'Attach structured design inputs to a split story' },
+		{ label: '$(history)  Recall Related Task Memory', description: 'Preview the most relevant prior task memories for a story' },
 		{ label: '$(zap)  Generate PRD', description: 'Generate prd.json via Copilot' },
 		{ label: '$(split-horizontal)  Split PRD', description: 'Split prd.json into base_prd.json and per-story files' },
 		{ label: '$(git-merge)  Merge PRD', description: 'Merge base_prd.json and pending user story files into prd.json' },
@@ -1864,6 +1996,7 @@ async function showCommandMenu(): Promise<void> {
 	const commandMap: Record<string, string> = {
 		'$(symbol-key)  Initialize Project Constraints': 'ralph-runner.initProjectConstraints',
 		'$(device-camera-video)  Record Design Context': 'ralph-runner.recordDesignContext',
+		'$(history)  Recall Related Task Memory': 'ralph-runner.recallTaskMemory',
 		'$(zap)  Generate PRD': 'ralph-runner.quickStart',
 		'$(split-horizontal)  Split PRD': 'ralph-runner.splitPrd',
 		'$(git-merge)  Merge PRD': 'ralph-runner.mergePrd',

@@ -26,9 +26,11 @@ import {
 import {
 	createSynthesizedTaskMemory,
 	hasTaskMemoryArtifact,
+	recallRelatedTaskMemories,
 	readTaskMemory,
 	readTaskMemoryIndex,
 	rebuildTaskMemoryIndex,
+	summarizeRecalledTaskMemoriesForPrompt,
 	summarizeTaskMemoryForPrompt,
 	upsertTaskMemoryIndexEntry,
 	validateTaskMemory,
@@ -330,5 +332,74 @@ suite('Extension Test Suite', () => {
 		assert.strictEqual(validation.isValid, true);
 		assert.strictEqual(validation.artifact.source, 'synthesized');
 		assert.deepStrictEqual(validation.artifact.changedFiles, ['src/extension.ts']);
+	});
+
+	test('Task memory recall ranks related memories and summarizes bounded prior work', () => {
+		const workspaceRoot = fs.mkdtempSync(path.join(os.tmpdir(), 'ralph-task-memory-recall-'));
+		try {
+			writeTaskMemory(workspaceRoot, 'US-401', {
+				title: 'Design prompt injection',
+				summary: 'Injected design context into prompts.',
+				changedFiles: ['src/extension.ts', 'src/designContext.ts'],
+				changedModules: ['src', 'designContext'],
+				keyDecisions: ['Use structured sections for design guidance'],
+				constraintsConfirmed: ['Keep prompts bounded'],
+				testsRun: ['npm run compile'],
+				searchKeywords: ['design', 'prompt', 'injection'],
+				relatedStories: ['US-402'],
+				createdAt: '2026-03-31T10:00:00.000Z',
+			});
+			upsertTaskMemoryIndexEntry(workspaceRoot, readTaskMemory(workspaceRoot, 'US-401') ?? {}, 'US-401');
+
+			writeTaskMemory(workspaceRoot, 'US-402', {
+				title: 'Memory recall scoring',
+				summary: 'Added ranking and prior work summarization.',
+				changedFiles: ['src/taskMemory.ts', 'src/extension.ts'],
+				changedModules: ['taskMemory', 'src'],
+				keyDecisions: ['Score by overlap and recency'],
+				constraintsConfirmed: ['Prefer bounded prompt context'],
+				testsRun: ['npm run compile'],
+				searchKeywords: ['memory', 'recall', 'prompt'],
+				relatedStories: ['US-401'],
+				createdAt: '2026-03-31T10:05:00.000Z',
+			});
+			upsertTaskMemoryIndexEntry(workspaceRoot, readTaskMemory(workspaceRoot, 'US-402') ?? {}, 'US-402');
+
+			writeTaskMemory(workspaceRoot, 'US-499', {
+				title: 'Unrelated backend task',
+				summary: 'Adjusted backend config.',
+				changedFiles: ['server/config.ts'],
+				changedModules: ['server'],
+				keyDecisions: ['Use env defaults'],
+				constraintsConfirmed: ['None'],
+				testsRun: ['npm test'],
+				searchKeywords: ['backend', 'config'],
+				createdAt: '2026-03-31T09:00:00.000Z',
+			});
+			upsertTaskMemoryIndexEntry(workspaceRoot, readTaskMemory(workspaceRoot, 'US-499') ?? {}, 'US-499');
+
+			const matches = recallRelatedTaskMemories(workspaceRoot, {
+				id: 'US-500',
+				title: 'Recall related prompt memory',
+				description: 'Rank prompt and memory recall work for injection.',
+				acceptanceCriteria: ['Prior work stays bounded'],
+				priority: 1,
+				dependsOn: ['US-402'],
+				moduleHints: ['taskMemory'],
+				fileHints: ['src/extension.ts'],
+			}, { limit: 2 });
+
+			assert.strictEqual(matches.length, 2);
+			assert.strictEqual(matches[0].memory.storyId, 'US-402');
+			assert.ok(matches[0].score > matches[1].score);
+			assert.ok(matches[0].reasons.some(reason => reason.includes('direct story relationship')));
+
+			const promptLines = summarizeRecalledTaskMemoriesForPrompt(matches, 2);
+			assert.ok(promptLines.some(line => line.includes('US-402')));
+			assert.ok(promptLines.some(line => line.includes('Why it matters:')));
+			assert.ok(promptLines.some(line => line.includes('Decision:')));
+		} finally {
+			fs.rmSync(workspaceRoot, { recursive: true, force: true });
+		}
 	});
 });

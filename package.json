@@ -43,6 +43,10 @@
         "title": "RALPH: Record Design Context"
       },
       {
+        "command": "ralph-runner.recallTaskMemory",
+        "title": "RALPH: Recall Related Task Memory"
+      },
+      {
         "command": "ralph-runner.openSettings",
         "title": "RALPH: Open Settings"
       },
@@ -114,6 +118,18 @@
           "type": "boolean",
           "default": true,
           "description": "Automatically include recorded design context when building task prompts once design-context injection is enabled."
+        },
+        "ralph-runner.autoRecallTaskMemory": {
+          "type": "boolean",
+          "default": true,
+          "description": "Automatically recall related task memory entries and inject a bounded Prior Work section before story execution."
+        },
+        "ralph-runner.recalledTaskMemoryLimit": {
+          "type": "number",
+          "default": 3,
+          "minimum": 1,
+          "maximum": 10,
+          "description": "Maximum number of related task memory entries to inject or preview for a story."
         },
         "ralph-runner.requireDesignContextForTaggedStories": {
           "type": "boolean",
