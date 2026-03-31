@@ -1,35 +1,31 @@
 # RALPH Runner
 
-**Autonomous task runner for VS Code** — reads user stories from a PRD, tracks progress persistently, and drives Copilot Chat to execute each story in an automated loop.
+RALPH (Run Autonomous Loops Per Handoff) is a VS Code extension that turns `prd.json` user stories into a context-aware execution loop for GitHub Copilot Chat. It still manages autonomous story execution, but now enriches each prompt with project constraints, per-story design context, recalled task memory, and a stricter completion contract before a story is considered done.
 
-RALPH (Run Autonomous Loops Per Handoff) is a VS Code extension that orchestrates multi-step coding tasks by delegating user stories to GitHub Copilot Chat. It reads story definitions from `prd.json`, maintains persistent progress in `progress.txt`, and uses file-based execution locks in a `.ralph/` directory — looping autonomously until all stories are complete or the configured loop limit is reached.
+Use it when you want Copilot to execute a queue of implementation stories while preserving repo-specific rules, UI intent, and prior decisions across the run.
 
-Use it for migrations, bug fixes, feature implementation, refactoring, test creation, or any multi-step workflow you can describe as user stories.
+## What RALPH Does
 
-## Features
-
-- **Autonomous looping** — Executes user stories in automated loops, prioritized by the `priority` field. Configurable loop limits via VS Code settings.
-- **Copilot-powered execution** — Each user story is sent to Copilot Chat as a detailed prompt including title, description, acceptance criteria, and context. Copilot makes the code changes directly in your workspace.
-- **File-based completion signaling** — Copilot writes `completed` to `.ralph/task-<id>-status` when it finishes a story. RALPH polls this file to detect completion, with configurable polling interval, minimum wait time, and timeout.
-- **Persistent progress tracking** — Completion status is recorded in `progress.txt` (format: `<storyId> | <status> | <timestamp> | <notes>`). Stop, restart VS Code, or resume at any time.
-- **Crash-safe execution locks** — The `.ralph/` directory stores per-task status files (`inprogress` / `completed`) that prevent overlapping tasks and survive process crashes. Stalled tasks are detected and recoverable on restart.
-- **Fully resumable** — On startup, detects stalled in-progress tasks from a previous session and offers to clear and retry. Failed stories are logged and skipped so the pipeline continues.
-- **Generate PRD workflow** — Use the built-in Generate PRD command to create `prd.json`. Either import an existing file or describe your goal and let Copilot generate user stories automatically. Generated PRDs automatically include a git commit story after every user story, using conventional commit message format.
-- **PRD split / merge workflow** — Split `prd.json` into `.prd/base_prd.json` plus one file per user story under `.prd/user_stories/`, then merge pending stories back into `prd.json` after syncing status from `.ralph/story-status.json`.
-- **Visual user story editor** — Open split user stories in a built-in editor panel, browse stories by title and summary, edit details, and save changes back to `.prd/user_stories/US-xxx.json`.
-- **Enhanced status bar integration** — Visual state indicators (🚀 idle / 🔄 running) with one-click access to the command menu.
-- **Automatic .gitignore management** — The `.ralph/` directory is automatically added to `.gitignore` to keep task state out of version control.
+- Runs user stories in priority order from `prd.json`
+- Persists workflow state in `.ralph/` so execution is resumable
+- Splits and merges PRDs into `.prd/` sidecar files for local story management
+- Scans the workspace to generate machine-readable and editable project constraints
+- Stores per-story design context next to split user stories
+- Requires a structured task memory artifact before accepting completion
+- Recalls relevant prior task memories and injects them into later prompts
+- Builds prompts in a fixed order: system rules, project constraints, design context, prior work, current story, completion contract
 
 ## Requirements
 
-- **VS Code** 1.109.0 or later
-- **GitHub Copilot Chat** extension installed and signed in — RALPH delegates all code tasks to Copilot via the chat command API.
-- A JSON file in your workspace root:
-    - **`prd.json`** — Contains the project definition and user stories (see format below).
+- VS Code 1.109.0 or later
+- GitHub Copilot Chat installed and signed in
+- A workspace root containing `prd.json`
 
-### prd.json format
+## Core Files
 
-The PRD file defines your project and an array of user stories. Each story is delegated to Copilot as an independent task.
+### `prd.json`
+
+`prd.json` remains the execution source of truth. It defines the project metadata and the ordered user story list.
 
 ```json
 {
@@ -46,133 +42,200 @@ The PRD file defines your project and an array of user stories. Each story is de
         "Configuration files are created"
       ],
       "priority": 1
-    },
-    {
-      "id": "US-002",
-      "title": "Implement User Authentication",
-      "description": "Add login and registration endpoints with JWT token support",
-      "acceptanceCriteria": [
-        "Login endpoint returns a JWT token",
-        "Registration endpoint creates a new user",
-        "Invalid credentials return 401"
-      ],
-      "priority": 2
     }
   ]
 }
 ```
 
-| Field                | Required | Description                                                        |
-| -------------------- | -------- | ------------------------------------------------------------------ |
-| `project`            | Yes      | Project name                                                       |
-| `branchName`         | Yes      | Suggested Git branch name                                          |
-| `description`        | Yes      | Short description of the overall goal                              |
-| `userStories`        | Yes      | Array of user story objects                                        |
-| `userStories[].id`   | Yes      | Unique string identifier (e.g., `"US-001"`)                       |
-| `userStories[].title`| Yes      | Short title for the story                                          |
-| `userStories[].description` | Yes | Detailed description of what to accomplish                  |
-| `userStories[].acceptanceCriteria` | Yes | Array of strings defining acceptance criteria        |
-| `userStories[].priority` | Yes  | Numeric priority (lower number = higher priority, executed first)  |
+| Field | Required | Description |
+| --- | --- | --- |
+| `project` | Yes | Project name |
+| `branchName` | Yes | Suggested Git branch name |
+| `description` | Yes | Overall project goal |
+| `userStories` | Yes | Array of executable user stories |
+| `userStories[].id` | Yes | Stable story identifier such as `US-001` |
+| `userStories[].title` | Yes | Short story title |
+| `userStories[].description` | Yes | Task description given to Copilot |
+| `userStories[].acceptanceCriteria` | Yes | Flat list of checks for the story |
+| `userStories[].priority` | Yes | Lower number runs first |
 
-### progress.txt format
+### Runtime Artifacts
 
-RALPH automatically creates and maintains `progress.txt` to track which stories have been completed or failed. Each line follows this format:
+RALPH creates and maintains these files during the workflow:
 
-```
-US-001 | done | 2026-02-24 12:00:00 | Completed successfully
-US-002 | failed | 2026-02-24 12:05:00 | Copilot timed out on task US-002
-```
+| Path | Purpose |
+| --- | --- |
+| `.ralph/task-<id>-status` | Execution lock and completion signal for the active story |
+| `.ralph/story-status.json` | Durable per-story workflow status used by split and merge workflows |
+| `.ralph/project-constraints.generated.json` | Machine-generated summary of stack, scripts, architecture, allowed paths, and delivery checks |
+| `.ralph/memory/US-xxx.json` | Structured task memory for one completed story |
+| `.ralph/memory-index.json` | Compact recall index built from all persisted task memories |
+| `.github/ralph/project-constraints.md` | Team-maintained editable constraint document layered over generated constraints |
+| `.prd/base_prd.json` | Project metadata split out from `prd.json` |
+| `.prd/user_stories/US-xxx.json` | Split user story file with local status |
+| `.prd/user_stories/US-xxx.design.json` | Story-specific design context sidecar |
+| `progress.txt` | Append-only execution log of done or failed outcomes |
 
-### .ralph/ directory
+## Context-Aware Workflow
 
-RALPH creates a `.ralph/` directory in your workspace root to store execution state:
+### 1. Generate or split the PRD
 
-- `task-<id>-status` — Contains `inprogress` while a story is being executed, or `completed` once Copilot finishes. This file-based lock prevents overlapping tasks and enables crash recovery.
-- `story-status.json` — Stores the durable per-story workflow status used by the Split PRD / Merge PRD commands. Values can include `未开始`, `inprogress`, `failed`, and `completed`.
+Use `RALPH: Generate PRD` to create the root PRD, then optionally run `RALPH: Split PRD` to create `.prd/base_prd.json` and `.prd/user_stories/US-xxx.json` files for easier local coordination.
 
-This directory is automatically added to `.gitignore`.
+### 2. Initialize project constraints
 
-### .prd/ directory
+Run `RALPH: Initialize Project Constraints` before executing stories that need repo-specific guidance.
 
-When you use the PRD split workflow, RALPH creates a `.prd/` directory in your workspace root:
+The command scans the workspace for:
 
-- `base_prd.json` — Contains the project-level metadata from `prd.json` without the `userStories` array.
-- `user_stories/US-xxx.json` — One file per user story, including a `status` field for local workflow management.
+- `package.json` scripts and dependencies
+- `tsconfig.json`
+- ESLint configuration
+- `README.md`
+- high-level `src/` folder structure
 
-## Usage
+It writes two artifacts:
 
-1. **Setup**: Create `prd.json` in your workspace root (see format above), or use **RALPH: Generate PRD** from the status bar menu to generate it via Copilot.
-2. **Run RALPH**: Open Command Palette (`Ctrl+Shift+P`) → type "RALPH: Start", or click the RALPH status bar icon → "Start".
-3. **Monitor progress**: RALPH logs all activity to the **RALPH Runner** output channel and updates the status bar icon (🚀 idle → 🔄 running).
-4. **Continue execution**: After the configured number of stories, RALPH pauses — review changes, then run "RALPH: Start" again to continue with the next batch.
+- `.ralph/project-constraints.generated.json` for normalized machine-readable prompt injection
+- `.github/ralph/project-constraints.md` for human-maintained overrides and rules
+
+### 3. Record design context when a story is UI-sensitive
+
+Run `RALPH: Record Design Context` for stories that affect layout, components, design tokens, screenshots, or visual acceptance checks.
+
+Each design sidecar can capture:
+
+- Figma URL
+- screenshot paths
+- manual notes
+- layout constraints
+- component reuse targets
+- token rules
+- responsive rules
+- protected UI regions
+- explicit visual acceptance checks
+
+RALPH stores that context in `.prd/user_stories/US-xxx.design.json` and summarizes it before prompt injection.
+
+Attach design context when a story changes any of the following:
+
+- page layout or information hierarchy
+- reusable UI components
+- color, spacing, or typography tokens
+- responsive behavior
+- a designer-approved acceptance target
+
+### 4. Execute or preview memory recall
+
+Run `RALPH: Recall Related Task Memory` to preview which prior stories are likely relevant to the current work. During normal execution, RALPH can also do this automatically and inject a bounded `Relevant Prior Work` section.
+
+Recall scoring uses:
+
+- related or dependent story IDs
+- keyword overlap
+- module hints
+- changed file overlap
+- recency
+
+### 5. Start autonomous execution
+
+When you run `RALPH: Start`, RALPH composes a prompt in this fixed order:
+
+1. System execution rules
+2. Project constraints
+3. Design context
+4. Relevant prior work
+5. Current story
+6. Completion contract
+
+The prompt remains bounded so optional context does not overwhelm the current task.
+
+### 6. Require task memory before completion
+
+RALPH no longer treats the completion signal as sufficient by itself. Before a story is finalized, Copilot must persist a structured task memory artifact to `.ralph/memory/US-xxx.json` with fields such as:
+
+- `summary`
+- `changedFiles`
+- `changedModules`
+- `keyDecisions`
+- `constraintsConfirmed`
+- `testsRun`
+- `risks`
+- `followUps`
+- `searchKeywords`
+
+If Copilot fails to write a valid artifact, RALPH synthesizes a fallback memory entry and updates `.ralph/memory-index.json` so later stories can still recall useful context.
 
 ## Commands
 
-### Available Commands
+| Command | Description |
+| --- | --- |
+| `RALPH: Start` | Begin or resume the autonomous execution loop |
+| `RALPH: Stop` | Cancel the current loop immediately |
+| `RALPH: Show Status` | Show counts, next pending story, and current progress |
+| `RALPH: Reset Story` | Reset a completed or failed story for re-execution |
+| `RALPH: Generate PRD` | Generate a new `prd.json` from an existing file or prompt |
+| `RALPH: Split PRD` | Split `prd.json` into `.prd/base_prd.json` and one file per story |
+| `RALPH: Merge PRD` | Rebuild `prd.json` from split artifacts and non-completed stories |
+| `RALPH: Edit User Stories` | Open the built-in split-story editor |
+| `RALPH: Initialize Project Constraints` | Scan the workspace and generate project constraint artifacts |
+| `RALPH: Record Design Context` | Capture per-story design context into a sidecar artifact |
+| `RALPH: Recall Related Task Memory` | Preview or inject relevant prior task memory |
+| `RALPH: Open Settings` | Open extension settings |
+| `RALPH: Show Menu` | Open the status bar command menu |
 
-| Command (Command Palette) | Status Bar Menu Label          | Description                                                                                                               |
-| ------------------------- | ------------------------------ | ------------------------------------------------------------------------------------------------------------------------- |
-| `RALPH: Start`            | $(play) Start                  | **Begin or resume** the autonomous loop from the next pending story. Processes up to the configured number of stories.    |
-| `RALPH: Stop`             | $(debug-stop) Stop             | **Cancel immediately** — stops the current execution.                                                                     |
-| `RALPH: Show Status`      | $(info) Show Status            | **View progress summary** — displays story counts and next pending story in both output channel and notification.         |
-| `RALPH: Reset Story`      | $(debug-restart) Reset Story   | **Reset story status** — choose any completed or failed story to reset for re-execution.                                  |
-| `RALPH: Generate PRD`     | $(zap) Generate PRD            | **Setup wizard** — import an existing `prd.json` or describe your goal and let Copilot generate one.                      |
-| `RALPH: Split PRD`        | $(split-horizontal) Split PRD  | **Split current PRD** — creates `.prd/base_prd.json` and one `.prd/user_stories/US-xxx.json` file per story.             |
-| `RALPH: Merge PRD`        | $(git-merge) Merge PRD         | **Rebuild current PRD** — syncs local story status from `.ralph`, excludes completed stories, and overwrites `prd.json`. |
-| `RALPH: Edit User Stories`| $(edit) Edit User Stories      | **Visual editor** — opens a panel for browsing, editing, and saving split user story files.                               |
-| `RALPH: Open Settings`    | $(gear) Open Settings          | **Configure behavior** — opens VS Code settings for RALPH Runner.                                                        |
+## Settings
 
-### Access Methods
+| Setting | Default | Description |
+| --- | --- | --- |
+| `ralph-runner.maxAutonomousLoops` | `2` | Maximum stories to execute per run |
+| `ralph-runner.loopDelayMs` | `3000` | Delay between autonomous iterations |
+| `ralph-runner.copilotResponsePollMs` | `5000` | Poll interval for completion detection |
+| `ralph-runner.copilotTimeoutMs` | `3600000` | Per-story timeout |
+| `ralph-runner.copilotMinWaitMs` | `15000` | Minimum wait before checking completion |
+| `ralph-runner.autoInjectProjectConstraints` | `true` | Inject merged project constraints into story prompts |
+| `ralph-runner.requireProjectConstraintsBeforeRun` | `false` | Block execution until project constraints are initialized |
+| `ralph-runner.autoInjectDesignContext` | `true` | Inject per-story design context when available |
+| `ralph-runner.requireDesignContextForTaggedStories` | `false` | Block design-sensitive stories when no design context is attached |
+| `ralph-runner.autoRecallTaskMemory` | `true` | Recall and inject related prior task memory automatically |
+| `ralph-runner.recalledTaskMemoryLimit` | `3` | Maximum memory entries to inject or preview |
 
-- **Command Palette**: `Ctrl+Shift+P` then type "RALPH" to see all commands
-- **Status Bar**: Click the RALPH icon (🚀 when idle, 🔄 when running) for the quick menu
+## Maintaining Project Constraints
 
-### Configurable Settings
+Treat `.ralph/project-constraints.generated.json` as generated output and `.github/ralph/project-constraints.md` as the document your team owns.
 
-Access via `RALPH: Open Settings` or VS Code Settings → Extensions → RALPH Runner:
+Recommended maintenance pattern:
 
-| Setting                  | Default   | Description                                                          |
-| ------------------------ | --------- | -------------------------------------------------------------------- |
-| `maxAutonomousLoops`     | 2         | Maximum stories to execute per run before pausing                    |
-| `loopDelayMs`            | 3000      | Settle time between stories (milliseconds)                           |
-| `copilotResponsePollMs`  | 5000      | How often to poll the task status file (milliseconds)                |
-| `copilotTimeoutMs`       | 3600000   | Maximum time to wait for Copilot per story (default: 1 hour)        |
-| `copilotMinWaitMs`       | 15000     | Minimum wait before first status check, giving Copilot time to start |
+1. Re-run `RALPH: Initialize Project Constraints` after meaningful changes to tooling, scripts, architecture, or folder layout.
+2. Review `.github/ralph/project-constraints.md` and replace generic placeholders with real team rules.
+3. Keep the editable file focused on durable guidance such as path restrictions, reuse expectations, coding standards, and delivery checklist items.
+4. Avoid copying large raw docs into the editable file. Convert them into short, enforceable rules so prompt injection stays concise.
 
-## How it works
+## How Execution Works
 
-1. **Parse** — RALPH reads user stories from `prd.json` and completion records from `progress.txt`.
-2. **Find next story** — Selects the highest-priority story (lowest `priority` number) that hasn't been marked `done` in `progress.txt`.
-3. **Guard** — Ensures no other task is currently in-progress by checking `.ralph/task-*-status` files. Waits or clears stale locks if needed.
-4. **Lock** — Writes `inprogress` to `.ralph/task-<id>-status` to claim the execution slot.
-5. **Execute** — Builds a detailed prompt from the story's title, description, and acceptance criteria, then sends it to Copilot Chat. The prompt instructs Copilot to make code changes and write `completed` to the task status file when done.
-6. **Poll for completion** — RALPH polls `.ralph/task-<id>-status` at the configured interval (`copilotResponsePollMs`). A minimum wait (`copilotMinWaitMs`) is enforced before the first check. If Copilot doesn't complete within the timeout (`copilotTimeoutMs`), the story is marked as failed.
-7. **Record result** — The story outcome (`done` or `failed`) is appended to `progress.txt` with a timestamp and notes, and the durable per-story state is written to `.ralph/story-status.json`.
-8. **Loop** — Repeat from step 2 until the loop limit is reached or all stories are complete.
+1. RALPH reads pending stories from `prd.json`.
+2. It checks `.ralph/story-status.json`, `progress.txt`, and active lock files to determine what can run.
+3. It loads merged project constraints, optional design context, and optional recalled task memory.
+4. It composes a bounded prompt and sends it to Copilot Chat.
+5. It waits for both a valid task memory artifact and the exact `completed` completion signal.
+6. It updates progress and durable story state, then continues until the loop limit is reached.
 
-## Split / Merge PRD Workflow
-
-1. Run `RALPH: Generate PRD` to create `prd.json` if it does not already exist.
-2. Run `RALPH: Split PRD` to create `.prd/base_prd.json` and `.prd/user_stories/US-xxx.json` files.
-3. Edit or review the individual user story files as needed. Their `status` field is used for local coordination.
-4. Let RALPH execute stories. It will keep `.ralph/story-status.json` updated.
-5. Run `RALPH: Merge PRD` to sync each story file's status from `.ralph`, exclude `completed` stories, strip the `status` field, and overwrite the workspace root `prd.json` with only pending stories.
-
-## Packaging Locally
+## Local Development
 
 1. Run `npm install`.
-2. Run `npm run package` to build the extension.
-3. Run `npm run package:vsix` to produce a local `.vsix` package.
-4. In VS Code, open Extensions, choose `Install from VSIX...`, and select the generated package.
+2. Run `npm run compile` to validate types, lint, and bundle output.
+3. Run `npm test` to execute the VS Code extension test suite.
+4. Run `npm run package` to build a production bundle.
+5. Run `npm run package:vsix` to produce a local VSIX package.
 
-## Known Issues
+## Known Constraints
 
-- **Copilot completion detection** relies on Copilot writing `completed` to the `.ralph/task-<id>-status` file. If Copilot does not write this signal (e.g., due to an error or unexpected behavior), the story will time out and be marked as failed.
-- **Copilot prompt delivery** tries multiple VS Code command APIs to open chat. If programmatic delivery fails, the prompt is copied to the clipboard for manual pasting.
-- **Single workspace folder** — RALPH uses the first workspace folder. Multi-root workspaces are not explicitly supported.
+- Completion still depends on Copilot writing the expected `completed` file signal.
+- Prompt delivery falls back to clipboard if direct chat dispatch fails.
+- The extension currently assumes a single workspace folder.
 
 ## Release Notes
 
-### 0.0.3
+### 0.0.4
 
-- Current release with autonomous loop, Copilot Chat integration, file-based completion signaling, persistent progress tracking, crash-safe execution locks, Generate PRD workflow, and status bar integration.
+- Added project constraints, design context recording, structured task memory, related memory recall, and ordered prompt composition.

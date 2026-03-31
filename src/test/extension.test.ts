@@ -9,11 +9,16 @@ import * as vscode from 'vscode';
 import { composeStoryExecutionPrompt } from '../promptContext';
 import {
 	createEditableProjectConstraintsTemplate,
+	initializeProjectConstraintsArtifacts,
+	loadMergedProjectConstraints,
 	mergeProjectConstraints,
 	normalizeGeneratedProjectConstraints,
 	parseEditableProjectConstraints,
+	readEditableProjectConstraints,
+	readGeneratedProjectConstraints,
 	scanWorkspaceForProjectConstraints,
 	serializeEditableProjectConstraints,
+	summarizeProjectConstraintsForPrompt,
 } from '../projectConstraints';
 import {
 	hasDesignContextArtifact,
@@ -124,6 +129,49 @@ suite('Extension Test Suite', () => {
 			assert.ok(result.generatedConstraints.lintCommands.includes('npm run lint'));
 			assert.ok(result.generatedConstraints.allowedPaths.includes('src/test/**'));
 			assert.strictEqual(result.editableConstraints.sections.length >= 10, true);
+		} finally {
+			fs.rmSync(workspaceRoot, { recursive: true, force: true });
+		}
+	});
+
+	test('Project constraint initialization writes readable artifacts for prompt injection', () => {
+		const workspaceRoot = fs.mkdtempSync(path.join(os.tmpdir(), 'ralph-constraints-init-'));
+		try {
+			fs.mkdirSync(path.join(workspaceRoot, 'src', 'features'), { recursive: true });
+			fs.writeFileSync(path.join(workspaceRoot, 'package.json'), JSON.stringify({
+				name: 'context-aware-sample',
+				scripts: {
+					compile: 'tsc --noEmit',
+					lint: 'eslint src',
+					test: 'vscode-test'
+				},
+				devDependencies: {
+					typescript: '^5.0.0'
+				}
+			}, null, 2));
+			fs.writeFileSync(path.join(workspaceRoot, 'tsconfig.json'), JSON.stringify({
+				compilerOptions: {
+					strict: true,
+					rootDir: 'src'
+				}
+			}, null, 2));
+			fs.writeFileSync(path.join(workspaceRoot, 'eslint.config.mjs'), 'export default [];\n');
+			fs.writeFileSync(path.join(workspaceRoot, 'README.md'), '# Sample\n');
+
+			const initialized = initializeProjectConstraintsArtifacts(workspaceRoot);
+			const generated = readGeneratedProjectConstraints(workspaceRoot);
+			const editable = readEditableProjectConstraints(workspaceRoot);
+			const merged = loadMergedProjectConstraints(workspaceRoot);
+			const promptLines = summarizeProjectConstraintsForPrompt(merged);
+
+			assert.ok(fs.existsSync(initialized.generatedPath));
+			assert.ok(fs.existsSync(initialized.editablePath));
+			assert.ok(generated);
+			assert.ok(editable);
+			assert.ok(generated?.buildCommands.includes('npm run compile'));
+			assert.ok(editable?.sections.some(section => section.heading === 'Technology Summary'));
+			assert.ok(promptLines.includes('Technology Summary'));
+			assert.ok(promptLines.some(line => line.includes('Do not edit prd.json during task execution')));
 		} finally {
 			fs.rmSync(workspaceRoot, { recursive: true, force: true });
 		}
@@ -455,6 +503,100 @@ suite('Extension Test Suite', () => {
 			assert.ok(promptLines.some(line => line.includes('US-402')));
 			assert.ok(promptLines.some(line => line.includes('Why it matters:')));
 			assert.ok(promptLines.some(line => line.includes('Decision:')));
+		} finally {
+			fs.rmSync(workspaceRoot, { recursive: true, force: true });
+		}
+	});
+
+	test('Context-aware prompt composes persisted constraints, design context, and recalled prior work together', () => {
+		const workspaceRoot = fs.mkdtempSync(path.join(os.tmpdir(), 'ralph-context-prompt-'));
+		try {
+			fs.mkdirSync(path.join(workspaceRoot, 'src', 'ui'), { recursive: true });
+			fs.writeFileSync(path.join(workspaceRoot, 'package.json'), JSON.stringify({
+				name: 'context-prompt-sample',
+				scripts: {
+					compile: 'tsc --noEmit',
+					lint: 'eslint src',
+					test: 'vscode-test'
+				},
+				devDependencies: {
+					typescript: '^5.0.0'
+				}
+			}, null, 2));
+			fs.writeFileSync(path.join(workspaceRoot, 'tsconfig.json'), JSON.stringify({
+				compilerOptions: {
+					strict: true,
+					rootDir: 'src'
+				}
+			}, null, 2));
+			fs.writeFileSync(path.join(workspaceRoot, 'eslint.config.mjs'), 'export default [];\n');
+			fs.writeFileSync(path.join(workspaceRoot, 'README.md'), '# Sample\n');
+
+			initializeProjectConstraintsArtifacts(workspaceRoot);
+			writeDesignContext(workspaceRoot, 'US-501', {
+				sourceType: 'figma',
+				figmaUrl: 'https://figma.example/file?node-id=5-1',
+				summary: 'Dashboard summary cards should stay visually aligned.',
+				layoutConstraints: ['Keep cards in one row on desktop'],
+				componentReuseTargets: ['SummaryCard'],
+				tokenRules: ['Use semantic color tokens'],
+				responsiveRules: ['Stack cards below tablet breakpoint'],
+				acceptanceChecks: ['Card hierarchy matches approved design'],
+				manualNotes: ['Reuse the shared SummaryCard component'],
+			});
+
+			writeTaskMemory(workspaceRoot, 'US-490', {
+				title: 'Dashboard cards refactor',
+				summary: 'Refactored dashboard card layout and prompt constraints.',
+				changedFiles: ['src/ui/dashboard.tsx', 'src/promptContext.ts'],
+				changedModules: ['ui', 'promptContext'],
+				keyDecisions: ['Reuse SummaryCard instead of introducing a new widget'],
+				constraintsConfirmed: ['Keep prompts bounded'],
+				testsRun: ['npm run compile'],
+				searchKeywords: ['dashboard', 'cards', 'prompt'],
+				relatedStories: ['US-501'],
+				createdAt: '2026-03-31T11:00:00.000Z',
+			});
+			upsertTaskMemoryIndexEntry(workspaceRoot, readTaskMemory(workspaceRoot, 'US-490') ?? {}, 'US-490');
+
+			const projectConstraintsLines = summarizeProjectConstraintsForPrompt(loadMergedProjectConstraints(workspaceRoot));
+			const designContextLines = summarizeDesignContextForPrompt(readDesignContext(workspaceRoot, 'US-501'));
+			const matches = recallRelatedTaskMemories(workspaceRoot, {
+				id: 'US-501',
+				title: 'Refresh dashboard cards',
+				description: 'Refresh dashboard summary cards while preserving prompt quality constraints.',
+				acceptanceCriteria: ['Dashboard cards stay aligned'],
+				priority: 1,
+				dependsOn: ['US-490'],
+				moduleHints: ['ui'],
+				fileHints: ['src/promptContext.ts'],
+			}, { limit: 2 });
+			const priorWorkLines = summarizeRecalledTaskMemoriesForPrompt(matches, 2);
+			const prompt = composeStoryExecutionPrompt({
+				story: {
+					id: 'US-501',
+					title: 'Refresh dashboard cards',
+					description: 'Refresh dashboard summary cards while preserving prompt quality constraints.',
+					acceptanceCriteria: ['Dashboard cards stay aligned', 'Reuse SummaryCard'],
+					priority: 1,
+				},
+				workspaceRoot,
+				projectConstraintsLines,
+				designContextLines,
+				priorWorkLines,
+				taskMemoryPath: path.join(workspaceRoot, '.ralph', 'memory', 'US-501.json'),
+				completionSignalPath: path.join(workspaceRoot, '.ralph', 'task-US-501-status'),
+			});
+
+			assert.ok(prompt.includes('Project Constraints:'));
+			assert.ok(prompt.includes('Design Context:'));
+			assert.ok(prompt.includes('Relevant Prior Work:'));
+			assert.ok(prompt.includes('Technology Summary'));
+			assert.ok(prompt.includes('Build Commands'));
+			assert.ok(prompt.includes('Component Reuse Requirements:'));
+			assert.ok(prompt.includes('US-490 — Dashboard cards refactor'));
+			assert.ok(prompt.indexOf('Project Constraints:') < prompt.indexOf('Design Context:'));
+			assert.ok(prompt.indexOf('Design Context:') < prompt.indexOf('Relevant Prior Work:'));
 		} finally {
 			fs.rmSync(workspaceRoot, { recursive: true, force: true });
 		}
