@@ -1,6 +1,34 @@
 import * as vscode from 'vscode';
 import * as fs from 'fs';
 import * as path from 'path';
+import { composeStoryExecutionPrompt } from './promptContext';
+import {
+	BasePrdFile,
+	PrdFile,
+	SplitUserStory,
+	STORY_STATUSES,
+	StoryExecutionStatus,
+	UserStory,
+	normalizeStoryExecutionStatus,
+} from './types';
+import {
+	BASE_PRD_FILENAME,
+	PRD_DIR,
+	PRD_FILENAME,
+	PROGRESS_FILENAME,
+	RALPH_DIR,
+	STORY_STATUS_FILENAME,
+	USER_STORIES_DIR,
+	ensurePrdDirectories as ensureWorkspacePrdDirectories,
+	getBasePrdPath as resolveBasePrdPath,
+	getPrdDirectoryPath as resolvePrdDirectoryPath,
+	getPrdPath as resolvePrdPath,
+	getRalphDir as resolveRalphDir,
+	getStoryStatusRegistryPath as resolveStoryStatusRegistryPath,
+	getTaskStatusPath as resolveTaskStatusPath,
+	getUserStoriesDirectoryPath as resolveUserStoriesDirectoryPath,
+	getUserStoryFilePath as resolveUserStoryFilePath,
+} from './workspacePaths';
 
 // ────────────────────────────────────────────────────────────────────────────
 // RALPH Runner — Autonomous Task Runner for VS Code
@@ -27,63 +55,25 @@ function getConfig() {
 	};
 }
 
-// ── Types ───────────────────────────────────────────────────────────────────
-
-interface PrdFile {
-	project: string;
-	branchName: string;
-	description: string;
-	userStories: UserStory[];
-	[key: string]: unknown;
-}
-
-interface UserStory {
-	id: string;           // e.g. "US-001"
-	title: string;
-	description: string;
-	acceptanceCriteria: string[];
-	priority: number;
-	status?: string;
-	[key: string]: unknown;
-}
-
-type StoryExecutionStatus = '未开始' | 'inprogress' | 'completed' | 'failed';
-
-const STORY_STATUSES: StoryExecutionStatus[] = ['未开始', 'inprogress', 'completed', 'failed'];
-
-type BasePrdFile = Omit<PrdFile, 'userStories'>;
-
-interface SplitUserStory extends UserStory {
-	status: StoryExecutionStatus;
-}
-
 // ── Filesystem Task State Manager ────────────────────────────────────────────
 // Manages .ralph/task-<id>-status files to provide a durable, process-safe
 // execution lock.  File content is either "inprogress" or "completed".
-
-const RALPH_DIR = '.ralph';
-const PRD_DIR = '.prd';
-const USER_STORIES_DIR = 'user_stories';
-const PRD_FILENAME = 'prd.json';
-const BASE_PRD_FILENAME = 'base_prd.json';
-const PROGRESS_FILENAME = 'progress.txt';
-const STORY_STATUS_FILENAME = 'story-status.json';
 
 class RalphStateManager {
 
 	/** Absolute path to the .ralph directory for the workspace. */
 	static getRalphDir(workspaceRoot: string): string {
-		return path.join(workspaceRoot, RALPH_DIR);
+		return resolveRalphDir(workspaceRoot);
 	}
 
 	/** Absolute path to the status file for a given task id. */
 	static getTaskStatusPath(workspaceRoot: string, taskId: string): string {
-		return path.join(RalphStateManager.getRalphDir(workspaceRoot), `task-${taskId}-status`);
+		return resolveTaskStatusPath(workspaceRoot, taskId);
 	}
 
 	/** Absolute path to the story status registry stored under .ralph/. */
 	static getStoryStatusRegistryPath(workspaceRoot: string): string {
-		return path.join(RalphStateManager.getRalphDir(workspaceRoot), STORY_STATUS_FILENAME);
+		return resolveStoryStatusRegistryPath(workspaceRoot);
 	}
 
 	/**
@@ -305,37 +295,27 @@ class RalphStateManager {
 // ── PRD File Operations ─────────────────────────────────────────────────────
 
 function getPrdPath(workspaceRoot: string): string {
-	return path.join(workspaceRoot, PRD_FILENAME);
+	return resolvePrdPath(workspaceRoot);
 }
 
 function getPrdDirectoryPath(workspaceRoot: string): string {
-	return path.join(workspaceRoot, PRD_DIR);
+	return resolvePrdDirectoryPath(workspaceRoot);
 }
 
 function getUserStoriesDirectoryPath(workspaceRoot: string): string {
-	return path.join(getPrdDirectoryPath(workspaceRoot), USER_STORIES_DIR);
+	return resolveUserStoriesDirectoryPath(workspaceRoot);
 }
 
 function getBasePrdPath(workspaceRoot: string): string {
-	return path.join(getPrdDirectoryPath(workspaceRoot), BASE_PRD_FILENAME);
+	return resolveBasePrdPath(workspaceRoot);
 }
 
 function getUserStoryFilePath(workspaceRoot: string, storyId: string): string {
-	return path.join(getUserStoriesDirectoryPath(workspaceRoot), `${storyId}.json`);
+	return resolveUserStoryFilePath(workspaceRoot, storyId);
 }
 
 function ensurePrdDirectories(workspaceRoot: string): { prdDir: string; userStoriesDir: string } {
-	const prdDir = getPrdDirectoryPath(workspaceRoot);
-	const userStoriesDir = getUserStoriesDirectoryPath(workspaceRoot);
-
-	if (!fs.existsSync(prdDir)) {
-		fs.mkdirSync(prdDir, { recursive: true });
-	}
-	if (!fs.existsSync(userStoriesDir)) {
-		fs.mkdirSync(userStoriesDir, { recursive: true });
-	}
-
-	return { prdDir, userStoriesDir };
+	return ensureWorkspacePrdDirectories(workspaceRoot);
 }
 
 function writeJsonFile(filePath: string, content: unknown): void {
@@ -367,16 +347,6 @@ function readJsonFile<T>(filePath: string): T | null {
 	} catch {
 		return null;
 	}
-}
-
-function normalizeStoryExecutionStatus(value: unknown): StoryExecutionStatus | undefined {
-	if (value === 'completed' || value === 'inprogress' || value === 'failed' || value === '未开始') {
-		return value;
-	}
-	if (value === 'not-started') {
-		return '未开始';
-	}
-	return undefined;
 }
 
 function stripStoryStatus(story: UserStory): UserStory {
@@ -727,37 +697,17 @@ async function executeStory(story: UserStory, workspaceRoot: string): Promise<vo
 // ── Copilot Integration ─────────────────────────────────────────────────────
 
 function buildCopilotPromptForStory(story: UserStory, workspaceRoot: string): string {
-	const lines = [
-		`You are executing User Story ${story.id} of the current PRD.`,
-		`Title: ${story.title}`,
-		`Description: ${story.description}`,
-		`Priority: ${story.priority}`,
-		`Workspace root: ${workspaceRoot}`,
-		'',
-		'Acceptance Criteria:',
-		...story.acceptanceCriteria.map((ac, i) => `  ${i + 1}. ${ac}`),
-		'',
-		'Execute the following task:',
-		'',
-		story.description,
-		'',
-		'Greedily execute as many sub-tasks as possible in a single pass.',
-		'If something partially fails, keep all the parts that passed and do not revert them.',
-		'Do not ask questions — execute directly.',
-		'Make the actual code changes to the files in the workspace.',
-		'After completing all changes, confirm what was done.',
-		'',
-		'⚠️ IMPORTANT: Do NOT modify prd.json. Never edit, overwrite, or update prd.json for any reason.',
-		'Progress is tracked separately — your only responsibility is to execute the task and write the completion signal below.',
-		'',
-		'━━━ TASK COMPLETION SIGNAL (REQUIRED) ━━━',
-		`When you have fully completed ALL work for this task, write the exact text \`completed\``,
-		`(nothing else, no newline) to the file: ${path.join(workspaceRoot, RALPH_DIR, `task-${story.id}-status`).replace(/\\/g, '/')}`,
-		'This is how RALPH knows the task is done and can move to the next step.',
-		'Do NOT skip this step — without it RALPH will time out waiting.',
-	];
-
-	return lines.join('\n');
+	return composeStoryExecutionPrompt({
+		story,
+		workspaceRoot,
+		completionSignalPath: resolveTaskStatusPath(workspaceRoot, story.id).replace(/\\/g, '/'),
+		additionalExecutionRules: [
+			'Greedily execute as many sub-tasks as possible in a single pass.',
+			'If something partially fails, keep all the parts that passed and do not revert them.',
+			'Do not ask questions — execute directly.',
+			'Make the actual code changes to the files in the workspace.',
+		],
+	});
 }
 
 async function sendToCopilot(prompt: string, taskId: string, workspaceRoot: string): Promise<void> {
