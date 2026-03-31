@@ -1187,7 +1187,7 @@ async function resetStory(): Promise<void> {
 	const trackedStories = prd.userStories.filter(s => trackedIds.has(s.id));
 
 	if (trackedStories.length === 0) {
-		vscode.window.showInformationMessage('No completed or failed stories to reset.');
+		vscode.window.showInformationMessage('没有可重置的已完成或失败故事。');
 		return;
 	}
 
@@ -1201,7 +1201,7 @@ async function resetStory(): Promise<void> {
 	});
 
 	const selection = await vscode.window.showQuickPick(items, {
-		placeHolder: 'Select a user story to reset'
+		placeHolder: '选择要重置的用户故事'
 	});
 
 	if (selection) {
@@ -1209,7 +1209,7 @@ async function resetStory(): Promise<void> {
 		// Also clear the .ralph status file if present
 		RalphStateManager.clearStalledTask(workspaceRoot, selection.storyId);
 		RalphStateManager.clearStoryExecutionStatus(workspaceRoot, selection.storyId);
-		vscode.window.showInformationMessage(`Story ${selection.storyId} reset.`);
+		vscode.window.showInformationMessage(`故事 ${selection.storyId} 已重置。`);
 		log(`Story ${selection.storyId} reset by user.`);
 	}
 }
@@ -1217,7 +1217,7 @@ async function resetStory(): Promise<void> {
 async function initializeProjectConstraints(): Promise<void> {
 	const workspaceRoot = getWorkspaceRoot();
 	if (!workspaceRoot) {
-		vscode.window.showErrorMessage('No workspace folder open.');
+		vscode.window.showErrorMessage('当前未打开工作区文件夹。');
 		return;
 	}
 
@@ -1234,35 +1234,35 @@ async function initializeProjectConstraints(): Promise<void> {
 		log(`Delivery checklist items: ${result.generatedConstraints.deliveryChecklist.length}`);
 
 		const action = await vscode.window.showInformationMessage(
-			'RALPH: Project constraints initialized.',
-			'Open Editable Rules',
-			'Open Generated Summary'
+			'RALPH：项目约束已初始化。',
+			'打开可编辑规则',
+			'打开生成摘要'
 		);
 
-		if (action === 'Open Editable Rules') {
+		if (action === '打开可编辑规则') {
 			const document = await vscode.workspace.openTextDocument(result.editablePath);
 			await vscode.window.showTextDocument(document, { preview: false });
-		} else if (action === 'Open Generated Summary') {
+		} else if (action === '打开生成摘要') {
 			const document = await vscode.workspace.openTextDocument(result.generatedPath);
 			await vscode.window.showTextDocument(document, { preview: false });
 		}
 	} catch (error: unknown) {
 		const message = error instanceof Error ? error.message : String(error);
 		log(`ERROR: Failed to initialize project constraints: ${message}`);
-		vscode.window.showErrorMessage(`RALPH: Failed to initialize project constraints: ${message}`);
+		vscode.window.showErrorMessage(`RALPH：初始化项目约束失败：${message}`);
 	}
 }
 
 async function recordDesignContext(): Promise<void> {
 	const workspaceRoot = getWorkspaceRoot();
 	if (!workspaceRoot) {
-		vscode.window.showErrorMessage('No workspace folder open.');
+		vscode.window.showErrorMessage('当前未打开工作区文件夹。');
 		return;
 	}
 
 	const stories = getExistingSplitUserStories(workspaceRoot);
 	if (stories.length === 0) {
-		vscode.window.showWarningMessage('Split user stories not found. Please run Split PRD first.');
+		vscode.window.showWarningMessage('未找到已拆分的用户故事，请先执行“拆分 PRD”。');
 		return;
 	}
 
@@ -1291,12 +1291,12 @@ async function recordDesignContext(): Promise<void> {
 
 	const action = await vscode.window.showInformationMessage(
 		validation.isValid
-			? `RALPH: Design context saved for ${selectedStory.id}.`
-			: `RALPH: Design context saved for ${selectedStory.id} with warnings.`,
-		'Open Design Context'
+			? `RALPH：已为 ${selectedStory.id} 保存设计上下文。`
+			: `RALPH：已为 ${selectedStory.id} 保存设计上下文，但存在警告。`,
+		'打开设计上下文'
 	);
 
-	if (action === 'Open Design Context') {
+	if (action === '打开设计上下文') {
 		const document = await vscode.workspace.openTextDocument(filePath);
 		await vscode.window.showTextDocument(document, { preview: false });
 	}
@@ -1341,17 +1341,17 @@ async function selectStoryForTaskMemoryRecall(workspaceRoot: string): Promise<Us
 
 	const choice = await vscode.window.showQuickPick([
 		...(nextPendingStory ? [{
-			label: 'Next Pending Story',
+			label: '下一个待执行故事',
 			description: `${nextPendingStory.id} — ${nextPendingStory.title}`,
 			value: 'next' as const,
 		}] : []),
 		...(splitStories.length > 0 ? [{
-			label: 'Choose Story',
-			description: 'Select any split user story to preview related task memories',
+			label: '选择故事',
+			description: '选择任意已拆分的用户故事以预览相关任务记忆',
 			value: 'choose' as const,
 		}] : []),
 	], {
-		placeHolder: 'Choose which story to use for related task memory recall',
+		placeHolder: '选择用于回忆相关任务记忆的故事',
 	});
 
 	if (!choice) {
@@ -1364,15 +1364,15 @@ async function selectStoryForTaskMemoryRecall(workspaceRoot: string): Promise<Us
 
 	const selected = await vscode.window.showQuickPick(
 		splitStories.map(story => ({
-			label: `${story.id} — ${story.title || 'Untitled story'}`,
-			description: `[${normalizeStoryExecutionStatus(story.status) || '未开始'}] Priority ${story.priority}`,
-			detail: (story.description || '').trim() || 'No description.',
+			label: `${story.id} — ${story.title || '未命名故事'}`,
+			description: `[${normalizeStoryExecutionStatus(story.status) || '未开始'}] 优先级 ${story.priority}`,
+			detail: (story.description || '').trim() || '无描述。',
 			story,
 		})),
 		{
 			matchOnDescription: true,
 			matchOnDetail: true,
-			placeHolder: 'Select a split story to preview related task memories',
+			placeHolder: '选择一个已拆分的故事以预览相关任务记忆',
 		}
 	);
 
@@ -1380,22 +1380,22 @@ async function selectStoryForTaskMemoryRecall(workspaceRoot: string): Promise<Us
 }
 
 function renderRecalledTaskMemoryPreview(story: UserStory, matches: ReturnType<typeof recallRelatedTaskMemories>): string {
-	const lines = [`# Related Task Memory Preview`, '', `Story: ${story.id} — ${story.title}`, ''];
+	const lines = [`# 相关任务记忆预览`, '', `故事：${story.id} — ${story.title}`, ''];
 	for (const match of matches) {
 		lines.push(`## ${match.memory.storyId} — ${match.memory.title}`);
-		lines.push(`Score: ${match.score}`);
-		lines.push(`Why: ${match.reasons.join('; ')}`);
+		lines.push(`分数：${match.score}`);
+		lines.push(`原因：${match.reasons.join('; ')}`);
 		if (match.memory.summary) {
-			lines.push(`Summary: ${match.memory.summary}`);
+			lines.push(`摘要：${match.memory.summary}`);
 		}
 		if (match.memory.keyDecisions.length > 0) {
-			lines.push('Key Decisions:');
+			lines.push('关键决策：');
 			for (const decision of match.memory.keyDecisions.slice(0, 3)) {
 				lines.push(`- ${decision}`);
 			}
 		}
 		if (match.memory.changedFiles.length > 0) {
-			lines.push('Changed Files:');
+			lines.push('变更文件：');
 			for (const changedFile of match.memory.changedFiles.slice(0, 3)) {
 				lines.push(`- ${changedFile}`);
 			}
@@ -1409,15 +1409,15 @@ function renderRecalledTaskMemoryPreview(story: UserStory, matches: ReturnType<t
 async function selectStoryForDesignContext(stories: SplitUserStory[]): Promise<SplitUserStory | undefined> {
 	const selected = await vscode.window.showQuickPick(
 		stories.map(story => ({
-			label: `${story.id} — ${story.title || 'Untitled story'}`,
-			description: `[${normalizeStoryExecutionStatus(story.status) || '未开始'}] Priority ${story.priority}`,
-			detail: (story.description || '').trim() || 'No description.',
+			label: `${story.id} — ${story.title || '未命名故事'}`,
+			description: `[${normalizeStoryExecutionStatus(story.status) || '未开始'}] 优先级 ${story.priority}`,
+			detail: (story.description || '').trim() || '无描述。',
 			story,
 		})),
 		{
 			matchOnDescription: true,
 			matchOnDetail: true,
-			placeHolder: 'Select a split story to attach design context',
+			placeHolder: '选择要附加设计上下文的已拆分故事',
 		}
 	);
 
@@ -1427,22 +1427,22 @@ async function selectStoryForDesignContext(stories: SplitUserStory[]): Promise<S
 async function promptForDesignSourceType(): Promise<'figma' | 'screenshots' | 'notes' | undefined> {
 	const picked = await vscode.window.showQuickPick([
 		{
-			label: '$(figma) Figma Link',
-			description: 'Record a Figma URL plus any supporting notes',
+			label: '$(figma) Figma 链接',
+			description: '记录 Figma 链接以及补充说明',
 			value: 'figma' as const,
 		},
 		{
-			label: '$(device-camera) Screenshots',
-			description: 'Record local screenshot paths plus any supporting notes',
+			label: '$(device-camera) 截图',
+			description: '记录本地截图路径以及补充说明',
 			value: 'screenshots' as const,
 		},
 		{
-			label: '$(note) Manual Notes',
-			description: 'Record design guidance as structured notes only',
+			label: '$(note) 手动备注',
+			description: '仅以结构化备注的方式记录设计要求',
 			value: 'notes' as const,
 		},
 	], {
-		placeHolder: 'Choose the primary design context source',
+		placeHolder: '选择主要的设计上下文来源',
 	});
 
 	return picked?.value;
@@ -1810,27 +1810,27 @@ async function showNativeStoryActions(workspaceRoot: string, story: SplitUserSto
 	while (true) {
 		const action = await vscode.window.showQuickPick([
 			{
-				label: '$(edit) Open JSON In Editor',
-				description: `${story.id} — edit with the native VS Code text editor`,
+				label: '$(edit) 在编辑器中打开 JSON',
+				description: `${story.id} — 使用 VS Code 原生文本编辑器编辑`,
 				value: 'open',
 			},
 			{
-				label: '$(refresh) Reopen From Disk',
-				description: 'Reload this story from disk and open it in the editor',
+				label: '$(refresh) 从磁盘重新打开',
+				description: '从磁盘重新加载该故事并在编辑器中打开',
 				value: 'reload',
 			},
 			{
-				label: '$(trash) Delete Story',
-				description: 'Remove the split story file',
+				label: '$(trash) 删除故事',
+				description: '删除该已拆分的故事文件',
 				value: 'delete',
 			},
 			{
-				label: '$(arrow-left) Back To Story List',
-				description: 'Choose another story',
+				label: '$(arrow-left) 返回故事列表',
+				description: '选择其他故事',
 				value: 'back',
 			},
 		], {
-			placeHolder: `${story.id} — choose an action`,
+			placeHolder: `${story.id} — 选择一个操作`,
 			ignoreFocusOut: false,
 		});
 
@@ -1846,7 +1846,7 @@ async function showNativeStoryActions(workspaceRoot: string, story: SplitUserSto
 		if (action.value === 'reload') {
 			const refreshedStory = readJsonFile<SplitUserStory>(getUserStoryFilePath(workspaceRoot, story.id));
 			if (!refreshedStory) {
-				vscode.window.showErrorMessage(`Could not reload ${story.id} from disk.`);
+				vscode.window.showErrorMessage(`无法从磁盘重新加载 ${story.id}。`);
 				return 'back';
 			}
 			story = {
@@ -1872,19 +1872,19 @@ async function showNativeStoryActions(workspaceRoot: string, story: SplitUserSto
 async function openUserStoryEditor(): Promise<void> {
 	const workspaceRoot = getWorkspaceRoot();
 	if (!workspaceRoot) {
-		vscode.window.showErrorMessage('No workspace folder open.');
+		vscode.window.showErrorMessage('当前未打开工作区文件夹。');
 		return;
 	}
 
 	const userStoriesDir = getUserStoriesDirectoryPath(workspaceRoot);
 	if (!fs.existsSync(userStoriesDir)) {
-		vscode.window.showWarningMessage('Split user stories not found. Please run Split PRD first.');
+		vscode.window.showWarningMessage('未找到已拆分的用户故事，请先执行“拆分 PRD”。');
 		return;
 	}
 
 	const stories = getExistingSplitUserStories(workspaceRoot);
 	if (stories.length === 0) {
-		vscode.window.showWarningMessage('No readable split user stories found. Please check .prd/user_stories/*.json or run Split PRD again.');
+		vscode.window.showWarningMessage('未找到可读取的已拆分用户故事，请检查 .prd/user_stories/*.json 或重新执行“拆分 PRD”。');
 		return;
 	}
 
@@ -1892,26 +1892,26 @@ async function openUserStoryEditor(): Promise<void> {
 		const refreshedStories = getExistingSplitUserStories(workspaceRoot);
 		const picked = await vscode.window.showQuickPick([
 			{
-				label: '$(add) Create New Story',
-				description: 'Create a new split user story JSON file and open it in the editor',
+				label: '$(add) 新建故事',
+				description: '创建新的已拆分用户故事 JSON 文件并在编辑器中打开',
 				value: '__create__',
 			},
 			{
-				label: '$(refresh) Refresh Story List',
-				description: 'Reload user stories from .prd/user_stories',
+				label: '$(refresh) 刷新故事列表',
+				description: '从 .prd/user_stories 重新加载用户故事',
 				value: '__refresh__',
 			},
 			...refreshedStories.map(story => ({
-				label: `${story.id} — ${story.title || 'Untitled story'}`,
-				description: `[${normalizeStoryExecutionStatus(story.status) || '未开始'}] Priority ${story.priority}`,
-				detail: (story.description || '').trim() || 'No description.',
+				label: `${story.id} — ${story.title || '未命名故事'}`,
+				description: `[${normalizeStoryExecutionStatus(story.status) || '未开始'}] 优先级 ${story.priority}`,
+				detail: (story.description || '').trim() || '无描述。',
 				value: story.id,
 			})),
 		], {
 			matchOnDescription: true,
 			matchOnDetail: true,
 			ignoreFocusOut: false,
-			placeHolder: 'Select a user story to edit natively in VS Code',
+			placeHolder: '选择要在 VS Code 中原生编辑的用户故事',
 		});
 
 		if (!picked) {
@@ -1929,7 +1929,7 @@ async function openUserStoryEditor(): Promise<void> {
 
 		const selectedStory = refreshedStories.find(story => story.id === picked.value);
 		if (!selectedStory) {
-			vscode.window.showWarningMessage(`Could not find user story ${picked.value}.`);
+			vscode.window.showWarningMessage(`找不到用户故事 ${picked.value}。`);
 			continue;
 		}
 
@@ -1962,50 +1962,50 @@ function updateStatusBar(state: 'idle' | 'running'): void {
 	if (!statusBarItem) { return; }
 	if (state === 'running') {
 		statusBarItem.text = '$(sync~spin) Ralph Runner';
-		statusBarItem.tooltip = 'RALPH Runner — task in progress (click for menu)';
+		statusBarItem.tooltip = 'RALPH Runner：任务执行中，点击打开菜单';
 		statusBarItem.backgroundColor = new vscode.ThemeColor('statusBarItem.warningBackground');
 	} else {
 		statusBarItem.text = '$(rocket) Ralph Runner';
-		statusBarItem.tooltip = 'RALPH Runner — click to show commands';
+		statusBarItem.tooltip = 'RALPH Runner：点击显示命令菜单';
 		statusBarItem.backgroundColor = undefined;
 	}
 }
 
 async function showCommandMenu(): Promise<void> {
 	const items: vscode.QuickPickItem[] = [
-		{ label: '$(symbol-key)  Initialize Project Constraints', description: 'Scan the repo and generate editable and machine-readable project rules' },
-		{ label: '$(device-camera-video)  Record Design Context', description: 'Attach structured design inputs to a split story' },
-		{ label: '$(history)  Recall Related Task Memory', description: 'Preview the most relevant prior task memories for a story' },
-		{ label: '$(zap)  Generate PRD', description: 'Generate prd.json via Copilot' },
-		{ label: '$(split-horizontal)  Split PRD', description: 'Split prd.json into base_prd.json and per-story files' },
-		{ label: '$(git-merge)  Merge PRD', description: 'Merge base_prd.json and pending user story files into prd.json' },
-		{ label: '$(edit)  Edit User Stories', description: 'Open a visual editor for split user story files' },
-		{ label: '$(play)  Start', description: 'Begin or resume the autonomous task loop' },
-		{ label: '$(debug-stop)  Stop', description: 'Cancel the current run' },
-		{ label: '$(info)  Show Status', description: 'Display user story progress summary' },
-		{ label: '$(debug-restart)  Reset Story', description: 'Reset a completed user story' },
-		{ label: '$(gear)  Open Settings', description: 'Configure RALPH Runner options' },
+		{ label: '$(symbol-key)  初始化项目约束', description: '扫描仓库并生成可编辑和机器可读的项目规则' },
+		{ label: '$(device-camera-video)  记录设计上下文', description: '为已拆分的故事附加结构化设计输入' },
+		{ label: '$(history)  回忆相关任务记忆', description: '预览某个故事最相关的历史任务记忆' },
+		{ label: '$(zap)  生成 PRD', description: '通过 Copilot 生成 prd.json' },
+		{ label: '$(split-horizontal)  拆分 PRD', description: '将 prd.json 拆分为 base_prd.json 和每个故事的独立文件' },
+		{ label: '$(git-merge)  合并 PRD', description: '将 base_prd.json 和待处理故事文件合并回 prd.json' },
+		{ label: '$(edit)  编辑用户故事', description: '打开已拆分用户故事的可视化编辑入口' },
+		{ label: '$(play)  开始执行', description: '开始或继续自动任务循环' },
+		{ label: '$(debug-stop)  停止执行', description: '取消当前运行' },
+		{ label: '$(info)  查看状态', description: '显示用户故事进度摘要' },
+		{ label: '$(debug-restart)  重置故事', description: '重置某个已完成的用户故事' },
+		{ label: '$(gear)  打开设置', description: '配置 RALPH Runner 选项' },
 	];
 
 	const selected = await vscode.window.showQuickPick(items, {
-		placeHolder: 'RALPH Runner — select a command',
+		placeHolder: 'RALPH Runner：选择一个命令',
 	});
 
 	if (!selected) { return; }
 
 	const commandMap: Record<string, string> = {
-		'$(symbol-key)  Initialize Project Constraints': 'ralph-runner.initProjectConstraints',
-		'$(device-camera-video)  Record Design Context': 'ralph-runner.recordDesignContext',
-		'$(history)  Recall Related Task Memory': 'ralph-runner.recallTaskMemory',
-		'$(zap)  Generate PRD': 'ralph-runner.quickStart',
-		'$(split-horizontal)  Split PRD': 'ralph-runner.splitPrd',
-		'$(git-merge)  Merge PRD': 'ralph-runner.mergePrd',
-		'$(edit)  Edit User Stories': 'ralph-runner.openUserStoryEditor',
-		'$(play)  Start': 'ralph-runner.start',
-		'$(debug-stop)  Stop': 'ralph-runner.stop',
-		'$(info)  Show Status': 'ralph-runner.status',
-		'$(debug-restart)  Reset Story': 'ralph-runner.resetStep',
-		'$(gear)  Open Settings': 'ralph-runner.openSettings',
+		'$(symbol-key)  初始化项目约束': 'ralph-runner.initProjectConstraints',
+		'$(device-camera-video)  记录设计上下文': 'ralph-runner.recordDesignContext',
+		'$(history)  回忆相关任务记忆': 'ralph-runner.recallTaskMemory',
+		'$(zap)  生成 PRD': 'ralph-runner.quickStart',
+		'$(split-horizontal)  拆分 PRD': 'ralph-runner.splitPrd',
+		'$(git-merge)  合并 PRD': 'ralph-runner.mergePrd',
+		'$(edit)  编辑用户故事': 'ralph-runner.openUserStoryEditor',
+		'$(play)  开始执行': 'ralph-runner.start',
+		'$(debug-stop)  停止执行': 'ralph-runner.stop',
+		'$(info)  查看状态': 'ralph-runner.status',
+		'$(debug-restart)  重置故事': 'ralph-runner.resetStep',
+		'$(gear)  打开设置': 'ralph-runner.openSettings',
 	};
 
 	const cmd = commandMap[selected.label];
@@ -2040,12 +2040,12 @@ async function quickStart(): Promise<void> {
 	if (prdExists) {
 		log('prd.json already exists.');
 		const action = await vscode.window.showInformationMessage(
-			'RALPH: prd.json already exists in the workspace root.',
-			'Start', 'Open PRD'
+			'RALPH：工作区根目录中已存在 prd.json。',
+			'开始执行', '打开 PRD'
 		);
-		if (action === 'Start') {
+		if (action === '开始执行') {
 			vscode.commands.executeCommand('ralph-runner.start');
-		} else if (action === 'Open PRD') {
+		} else if (action === '打开 PRD') {
 			const doc = await vscode.workspace.openTextDocument(prdPath);
 			vscode.window.showTextDocument(doc);
 		}
@@ -2058,17 +2058,17 @@ async function quickStart(): Promise<void> {
 	const choice = await vscode.window.showQuickPick(
 		[
 			{
-				label: '$(file-directory) I have this file — let me provide the path',
-				description: 'Browse for an existing prd.json file',
+				label: '$(file-directory) 我已有这个文件，手动提供路径',
+				description: '选择一个已有的 prd.json 文件',
 				value: 'provide'
 			},
 			{
-				label: '$(sparkle) I don\'t have it — generate via Copilot',
-				description: 'Describe your goal and let Copilot create prd.json',
+				label: '$(sparkle) 我还没有，让 Copilot 帮我生成',
+				description: '描述你的目标，让 Copilot 生成 prd.json',
 				value: 'generate'
 			}
 		],
-		{ placeHolder: 'prd.json not found in workspace root. How would you like to proceed?' }
+		{ placeHolder: '工作区根目录中未找到 prd.json，你希望如何继续？' }
 	);
 
 	if (!choice) { return; }
@@ -2086,22 +2086,22 @@ async function quickStart(): Promise<void> {
  */
 async function quickStartProvideFile(prdPath: string): Promise<void> {
 	const uris = await vscode.window.showOpenDialog({
-		title: 'Select your prd.json file',
+		title: '选择你的 prd.json 文件',
 		canSelectMany: false,
 		canSelectFolders: false,
 		filters: { 'JSON': ['json'], 'All Files': ['*'] },
-		openLabel: 'Select prd.json'
+		openLabel: '选择 prd.json'
 	});
 
 	if (!uris || uris.length === 0) {
-		vscode.window.showWarningMessage('RALPH: Cancelled — no prd.json selected.');
+		vscode.window.showWarningMessage('RALPH：已取消，未选择 prd.json。');
 		return;
 	}
 
 	const srcPath = uris[0].fsPath;
 	fs.copyFileSync(srcPath, prdPath);
 	log(`Copied prd.json from ${srcPath}`);
-	vscode.window.showInformationMessage('RALPH: prd.json is ready! You can now run "RALPH: Start".');
+	vscode.window.showInformationMessage('RALPH：prd.json 已准备完成，现在可以执行“RALPH: 开始执行”。');
 	log('Generate PRD complete — file placed in workspace root.');
 }
 
@@ -2111,14 +2111,14 @@ async function quickStartProvideFile(prdPath: string): Promise<void> {
  */
 async function quickStartGenerate(workspaceRoot: string): Promise<void> {
 	const userGoal = await vscode.window.showInputBox({
-		title: 'RALPH Generate PRD — Describe your goal',
-		prompt: 'What are you trying to accomplish? (e.g. "Fix all TypeScript errors", "Add unit tests for all services", "Migrate from jQuery to React")',
-		placeHolder: 'Describe what you want to accomplish…',
+		title: 'RALPH 生成 PRD：描述你的目标',
+		prompt: '你想完成什么？例如“修复所有 TypeScript 错误”“给所有服务补充单元测试”“从 jQuery 迁移到 React”',
+		placeHolder: '请描述你想完成的目标…',
 		ignoreFocusOut: true
 	});
 
 	if (!userGoal || userGoal.trim().length === 0) {
-		vscode.window.showWarningMessage('RALPH: Cancelled — no goal provided.');
+		vscode.window.showWarningMessage('RALPH：已取消，未提供目标描述。');
 		return;
 	}
 
@@ -2141,12 +2141,12 @@ async function quickStartGenerate(workspaceRoot: string): Promise<void> {
 			log('WARNING: Could not programmatically send to Copilot. Copying to clipboard.');
 			await vscode.env.clipboard.writeText(prompt);
 			await vscode.commands.executeCommand('workbench.action.chat.open');
-			vscode.window.showInformationMessage('RALPH: Prompt copied to clipboard — paste it into Copilot Chat.');
+			vscode.window.showInformationMessage('RALPH：提示词已复制到剪贴板，请粘贴到 Copilot Chat。');
 		}
 	}
 
 	vscode.window.showInformationMessage(
-		'RALPH: Copilot is generating your prd.json. Once it appears in the workspace root, run "RALPH: Start".'
+		'RALPH：Copilot 正在生成 prd.json。生成后出现在工作区根目录时，执行“RALPH: 开始执行”。'
 	);
 	log('Generate PRD prompt sent to Copilot. Waiting for file generation…');
 }

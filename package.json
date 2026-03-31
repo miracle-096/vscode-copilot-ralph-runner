@@ -2,7 +2,7 @@
   "name": "ralph-runner",
   "displayName": "Ralph Runner",
   "description": "Autonomous task runner — reads prd.json user stories, tracks progress inline, and drives Copilot Chat to execute each story in an automated loop",
-  "version": "0.0.4",
+  "version": "0.0.5",
   "publisher": "recent-graduates",
   "repository": {
     "type": "git",
@@ -20,55 +20,55 @@
     "commands": [
       {
         "command": "ralph-runner.start",
-        "title": "RALPH: Start"
+        "title": "RALPH: 开始执行"
       },
       {
         "command": "ralph-runner.stop",
-        "title": "RALPH: Stop"
+        "title": "RALPH: 停止执行"
       },
       {
         "command": "ralph-runner.status",
-        "title": "RALPH: Show Status"
+        "title": "RALPH: 查看状态"
       },
       {
         "command": "ralph-runner.resetStep",
-        "title": "RALPH: Reset Story"
+        "title": "RALPH: 重置故事"
       },
       {
         "command": "ralph-runner.initProjectConstraints",
-        "title": "RALPH: Initialize Project Constraints"
+        "title": "RALPH: 初始化项目约束"
       },
       {
         "command": "ralph-runner.recordDesignContext",
-        "title": "RALPH: Record Design Context"
+        "title": "RALPH: 记录设计上下文"
       },
       {
         "command": "ralph-runner.recallTaskMemory",
-        "title": "RALPH: Recall Related Task Memory"
+        "title": "RALPH: 回忆相关任务记忆"
       },
       {
         "command": "ralph-runner.openSettings",
-        "title": "RALPH: Open Settings"
+        "title": "RALPH: 打开设置"
       },
       {
         "command": "ralph-runner.showMenu",
-        "title": "RALPH: Show Menu"
+        "title": "RALPH: 显示菜单"
       },
       {
         "command": "ralph-runner.quickStart",
-        "title": "RALPH: Generate PRD"
+        "title": "RALPH: 生成 PRD"
       },
       {
         "command": "ralph-runner.splitPrd",
-        "title": "RALPH: Split PRD"
+        "title": "RALPH: 拆分 PRD"
       },
       {
         "command": "ralph-runner.mergePrd",
-        "title": "RALPH: Merge PRD"
+        "title": "RALPH: 合并 PRD"
       },
       {
         "command": "ralph-runner.openUserStoryEditor",
-        "title": "RALPH: Edit User Stories"
+        "title": "RALPH: 编辑用户故事"
       }
     ],
     "configuration": {
@@ -78,63 +78,63 @@
           "type": "number",
           "default": 2,
           "minimum": 1,
-          "description": "Maximum number of steps to execute per run before pausing."
+          "description": "每次运行在暂停前最多连续执行的故事数量。"
         },
         "ralph-runner.loopDelayMs": {
           "type": "number",
           "default": 3000,
           "minimum": 0,
-          "description": "Settle time in milliseconds between iterations."
+          "description": "每轮执行之间的等待时间，单位为毫秒。"
         },
         "ralph-runner.copilotResponsePollMs": {
           "type": "number",
           "default": 5000,
           "minimum": 1000,
-          "description": "How often (ms) to poll for Copilot idle state."
+          "description": "轮询 Copilot 是否空闲的间隔时间，单位为毫秒。"
         },
         "ralph-runner.copilotTimeoutMs": {
           "type": "number",
           "default": 3600000,
           "minimum": 30000,
-          "description": "Maximum time (ms) to wait for Copilot per step (default 1 hour)."
+          "description": "每个故事等待 Copilot 完成的最长时间，单位为毫秒，默认 1 小时。"
         },
         "ralph-runner.copilotMinWaitMs": {
           "type": "number",
           "default": 15000,
           "minimum": 0,
-          "description": "Minimum time (ms) to wait for Copilot to start working before checking the step is complete."
+          "description": "开始检查故事是否完成前，至少等待 Copilot 开始工作的时间，单位为毫秒。"
         },
         "ralph-runner.autoInjectProjectConstraints": {
           "type": "boolean",
           "default": true,
-          "description": "Automatically include initialized project constraints when building task prompts once prompt injection is enabled."
+          "description": "启用后，在构建任务提示词时自动注入已初始化的项目约束。"
         },
         "ralph-runner.requireProjectConstraintsBeforeRun": {
           "type": "boolean",
           "default": false,
-          "description": "Require project constraints to be initialized before RALPH can start executing stories."
+          "description": "启用后，必须先初始化项目约束，RALPH 才能开始执行故事。"
         },
         "ralph-runner.autoInjectDesignContext": {
           "type": "boolean",
           "default": true,
-          "description": "Automatically include recorded design context when building task prompts once design-context injection is enabled."
+          "description": "启用后，在构建任务提示词时自动注入已记录的设计上下文。"
         },
         "ralph-runner.autoRecallTaskMemory": {
           "type": "boolean",
           "default": true,
-          "description": "Automatically recall related task memory entries and inject a bounded Prior Work section before story execution."
+          "description": "启用后，在执行故事前自动回忆相关任务记忆，并注入有限长度的既往工作上下文。"
         },
         "ralph-runner.recalledTaskMemoryLimit": {
           "type": "number",
           "default": 3,
           "minimum": 1,
           "maximum": 10,
-          "description": "Maximum number of related task memory entries to inject or preview for a story."
+          "description": "每个故事最多注入或预览的相关任务记忆条目数量。"
         },
         "ralph-runner.requireDesignContextForTaggedStories": {
           "type": "boolean",
           "default": false,
-          "description": "Require design context for stories that the workflow treats as design-sensitive before execution can proceed."
+          "description": "启用后，被识别为设计敏感的故事必须先补充设计上下文才可执行。"
         }
       }
     }
