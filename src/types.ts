@@ -45,10 +45,12 @@ export interface GeneratedProjectConstraints {
 export interface EditableProjectConstraints {
 	title: string;
 	lastUpdated?: string;
-	sections: Array<{
-		heading: string;
-		items: string[];
-	}>;
+	sections: EditableProjectConstraintSection[];
+}
+
+export interface EditableProjectConstraintSection {
+	heading: string;
+	items: string[];
 }
 
 export interface DesignContextArtifact {
