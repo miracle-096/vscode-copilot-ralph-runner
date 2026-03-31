@@ -2,6 +2,7 @@ import * as vscode from 'vscode';
 import * as fs from 'fs';
 import * as path from 'path';
 import { composeStoryExecutionPrompt } from './promptContext';
+import { hasProjectConstraintsArtifacts, initializeProjectConstraintsArtifacts } from './projectConstraints';
 import {
 	BasePrdFile,
 	PrdFile,
@@ -52,6 +53,8 @@ function getConfig() {
 		COPILOT_RESPONSE_POLL_MS: cfg.get<number>('copilotResponsePollMs', 5000),
 		COPILOT_TIMEOUT_MS: cfg.get<number>('copilotTimeoutMs', 600000),
 		COPILOT_MIN_WAIT_MS: cfg.get<number>('copilotMinWaitMs', 15000),
+		AUTO_INJECT_PROJECT_CONSTRAINTS: cfg.get<boolean>('autoInjectProjectConstraints', true),
+		REQUIRE_PROJECT_CONSTRAINTS_BEFORE_RUN: cfg.get<boolean>('requireProjectConstraintsBeforeRun', false),
 	};
 }
 
@@ -517,6 +520,7 @@ export function activate(context: vscode.ExtensionContext) {
 		vscode.commands.registerCommand('ralph-runner.stop', () => stopRalph()),
 		vscode.commands.registerCommand('ralph-runner.status', () => showStatus()),
 		vscode.commands.registerCommand('ralph-runner.resetStep', () => resetStory()),
+		vscode.commands.registerCommand('ralph-runner.initProjectConstraints', () => initializeProjectConstraints()),
 		vscode.commands.registerCommand('ralph-runner.openSettings', () => {
 			vscode.commands.executeCommand('workbench.action.openSettings', 'ralph-runner');
 		}),
@@ -576,6 +580,13 @@ async function startRalph(): Promise<void> {
 	}
 
 	const config = getConfig();
+	if (config.REQUIRE_PROJECT_CONSTRAINTS_BEFORE_RUN && !hasProjectConstraintsArtifacts(workspaceRoot)) {
+		vscode.window.showWarningMessage(
+			'RALPH: Project constraints are required before execution. Run "RALPH: Initialize Project Constraints" first.'
+		);
+		log('Startup aborted — project constraints are required but have not been initialized yet.');
+		return;
+	}
 
 	isRunning = true;
 	cancelToken = new vscode.CancellationTokenSource();
@@ -899,6 +910,45 @@ async function resetStory(): Promise<void> {
 		RalphStateManager.clearStoryExecutionStatus(workspaceRoot, selection.storyId);
 		vscode.window.showInformationMessage(`Story ${selection.storyId} reset.`);
 		log(`Story ${selection.storyId} reset by user.`);
+	}
+}
+
+async function initializeProjectConstraints(): Promise<void> {
+	const workspaceRoot = getWorkspaceRoot();
+	if (!workspaceRoot) {
+		vscode.window.showErrorMessage('No workspace folder open.');
+		return;
+	}
+
+	outputChannel.show(true);
+	log('═══════════════════════════════════════════════════');
+	log('RALPH Initialize Project Constraints');
+	log('═══════════════════════════════════════════════════');
+
+	try {
+		const result = initializeProjectConstraintsArtifacts(workspaceRoot);
+		log(`Project constraints generated: ${result.generatedPath}`);
+		log(`Project constraints editable rules: ${result.editablePath}`);
+		log(`Technology summary items: ${result.generatedConstraints.technologySummary.length}`);
+		log(`Delivery checklist items: ${result.generatedConstraints.deliveryChecklist.length}`);
+
+		const action = await vscode.window.showInformationMessage(
+			'RALPH: Project constraints initialized.',
+			'Open Editable Rules',
+			'Open Generated Summary'
+		);
+
+		if (action === 'Open Editable Rules') {
+			const document = await vscode.workspace.openTextDocument(result.editablePath);
+			await vscode.window.showTextDocument(document, { preview: false });
+		} else if (action === 'Open Generated Summary') {
+			const document = await vscode.workspace.openTextDocument(result.generatedPath);
+			await vscode.window.showTextDocument(document, { preview: false });
+		}
+	} catch (error: unknown) {
+		const message = error instanceof Error ? error.message : String(error);
+		log(`ERROR: Failed to initialize project constraints: ${message}`);
+		vscode.window.showErrorMessage(`RALPH: Failed to initialize project constraints: ${message}`);
 	}
 }
 
@@ -1296,6 +1346,7 @@ function updateStatusBar(state: 'idle' | 'running'): void {
 
 async function showCommandMenu(): Promise<void> {
 	const items: vscode.QuickPickItem[] = [
+		{ label: '$(symbol-key)  Initialize Project Constraints', description: 'Scan the repo and generate editable and machine-readable project rules' },
 		{ label: '$(zap)  Generate PRD', description: 'Generate prd.json via Copilot' },
 		{ label: '$(split-horizontal)  Split PRD', description: 'Split prd.json into base_prd.json and per-story files' },
 		{ label: '$(git-merge)  Merge PRD', description: 'Merge base_prd.json and pending user story files into prd.json' },
@@ -1314,6 +1365,7 @@ async function showCommandMenu(): Promise<void> {
 	if (!selected) { return; }
 
 	const commandMap: Record<string, string> = {
+		'$(symbol-key)  Initialize Project Constraints': 'ralph-runner.initProjectConstraints',
 		'$(zap)  Generate PRD': 'ralph-runner.quickStart',
 		'$(split-horizontal)  Split PRD': 'ralph-runner.splitPrd',
 		'$(git-merge)  Merge PRD': 'ralph-runner.mergePrd',

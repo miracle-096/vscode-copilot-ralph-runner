@@ -1,4 +1,5 @@
 import * as fs from 'fs';
+import * as path from 'path';
 import {
 	EditableProjectConstraintSection,
 	EditableProjectConstraints,
@@ -9,6 +10,23 @@ import {
 	getEditableProjectConstraintsPath,
 	getGeneratedProjectConstraintsPath,
 } from './workspacePaths';
+
+interface PackageJsonLike {
+	name?: string;
+	scripts?: Record<string, string>;
+	devDependencies?: Record<string, string>;
+	dependencies?: Record<string, string>;
+	packageManager?: string;
+}
+
+interface TsConfigLike {
+	compilerOptions?: {
+		strict?: boolean;
+		rootDir?: string;
+		target?: string;
+		module?: string;
+	};
+}
 
 type GeneratedProjectConstraintListKey =
 	| 'technologySummary'
@@ -83,6 +101,71 @@ export function ensureProjectConstraintsScaffold(workspaceRoot: string): {
 	}
 
 	return { editablePath, generatedPath };
+}
+
+export function hasProjectConstraintsArtifacts(workspaceRoot: string): boolean {
+	return fs.existsSync(getEditableProjectConstraintsPath(workspaceRoot))
+		&& fs.existsSync(getGeneratedProjectConstraintsPath(workspaceRoot));
+}
+
+export function initializeProjectConstraintsArtifacts(workspaceRoot: string): {
+	editablePath: string;
+	generatedPath: string;
+	generatedConstraints: GeneratedProjectConstraints;
+	editableConstraints: EditableProjectConstraints;
+} {
+	const scanResult = scanWorkspaceForProjectConstraints(workspaceRoot);
+	const generatedPath = writeGeneratedProjectConstraints(workspaceRoot, scanResult.generatedConstraints);
+	const editablePath = writeEditableProjectConstraints(workspaceRoot, scanResult.editableConstraints);
+
+	return {
+		editablePath,
+		generatedPath,
+		generatedConstraints: scanResult.generatedConstraints,
+		editableConstraints: scanResult.editableConstraints,
+	};
+}
+
+export function scanWorkspaceForProjectConstraints(workspaceRoot: string): {
+	generatedConstraints: GeneratedProjectConstraints;
+	editableConstraints: EditableProjectConstraints;
+} {
+	const generatedConstraints = createEmptyGeneratedProjectConstraints();
+	generatedConstraints.generatedAt = new Date().toISOString();
+
+	const packageJson = readJsonFile<PackageJsonLike>(path.join(workspaceRoot, 'package.json'));
+	const tsconfig = readJsonFile<TsConfigLike>(path.join(workspaceRoot, 'tsconfig.json'));
+	const readmeExists = fs.existsSync(path.join(workspaceRoot, 'README.md'));
+	const eslintConfigPath = findFirstExistingPath(workspaceRoot, [
+		'eslint.config.mjs',
+		'eslint.config.js',
+		'.eslintrc',
+		'.eslintrc.json',
+		'.eslintrc.js',
+	]);
+	const srcDirectories = listChildDirectories(path.join(workspaceRoot, 'src'));
+
+	generatedConstraints.technologySummary = collectTechnologySummary(packageJson, tsconfig, eslintConfigPath);
+	generatedConstraints.buildCommands = collectScriptCommands(packageJson, ['compile', 'package', 'vscode:prepublish']);
+	generatedConstraints.testCommands = collectScriptCommands(packageJson, ['test', 'pretest', 'compile-tests']);
+	generatedConstraints.lintCommands = collectScriptCommands(packageJson, ['lint', 'check-types']);
+	generatedConstraints.styleRules = collectStyleRules(tsconfig, eslintConfigPath);
+	generatedConstraints.architectureRules = collectArchitectureRules(tsconfig, srcDirectories);
+	generatedConstraints.allowedPaths = collectAllowedPaths(srcDirectories);
+	generatedConstraints.forbiddenPaths = ['Do not edit prd.json during task execution', '.ralph/ contains runtime state and should not be edited unless a task explicitly requires it'];
+	generatedConstraints.reuseHints = collectReuseHints(srcDirectories, readmeExists);
+	generatedConstraints.deliveryChecklist = collectDeliveryChecklist(generatedConstraints);
+	generatedConstraints.metadata = {
+		packageJsonName: packageJson?.name,
+		hasReadme: readmeExists,
+		eslintConfigPath: eslintConfigPath ? path.basename(eslintConfigPath) : undefined,
+		sourceDirectories: srcDirectories,
+	};
+
+	return {
+		generatedConstraints,
+		editableConstraints: createEditableProjectConstraintsFromGenerated(generatedConstraints),
+	};
 }
 
 export function writeGeneratedProjectConstraints(workspaceRoot: string, constraints: Partial<GeneratedProjectConstraints>): string {
@@ -327,4 +410,142 @@ function toStringArray(value: unknown): string[] {
 		.filter(item => item.length > 0 && item.toUpperCase() !== 'TODO');
 
 	return Array.from(new Set(normalizedItems));
+}
+
+export function createEditableProjectConstraintsFromGenerated(constraints: Partial<GeneratedProjectConstraints>): EditableProjectConstraints {
+	const normalizedGenerated = normalizeGeneratedProjectConstraints(constraints);
+	return normalizeEditableProjectConstraints({
+		title: 'RALPH Project Constraints',
+		lastUpdated: normalizedGenerated.generatedAt,
+		sections: GENERATED_CONSTRAINT_SECTION_ORDER.map(section => ({
+			heading: section.heading,
+			items: normalizedGenerated[section.key],
+		})),
+	});
+}
+
+function collectTechnologySummary(
+	packageJson: PackageJsonLike | null,
+	tsconfig: TsConfigLike | null,
+	eslintConfigPath: string | null,
+): string[] {
+	const items: string[] = [];
+	if (packageJson?.packageManager) {
+		items.push(`Package manager: ${packageJson.packageManager}`);
+	} else if (packageJson) {
+		items.push('Package manager: npm');
+	}
+	if (packageJson?.devDependencies?.typescript || packageJson?.dependencies?.typescript) {
+		items.push('Language: TypeScript');
+	}
+	if (tsconfig?.compilerOptions?.target) {
+		items.push(`TypeScript target: ${tsconfig.compilerOptions.target}`);
+	}
+	if (tsconfig?.compilerOptions?.module) {
+		items.push(`TypeScript module: ${tsconfig.compilerOptions.module}`);
+	}
+	if (eslintConfigPath) {
+		items.push(`Linting is configured via ${path.basename(eslintConfigPath)}`);
+	}
+	items.push('This repository is a VS Code extension with src/extension.ts as the entry point');
+	return Array.from(new Set(items));
+}
+
+function collectStyleRules(tsconfig: TsConfigLike | null, eslintConfigPath: string | null): string[] {
+	const items: string[] = [];
+	if (tsconfig?.compilerOptions?.strict) {
+		items.push('Keep TypeScript strict-mode compatible changes');
+	}
+	if (tsconfig?.compilerOptions?.rootDir) {
+		items.push(`Keep source files under ${tsconfig.compilerOptions.rootDir}`);
+	}
+	if (eslintConfigPath) {
+		items.push(`Preserve the linting conventions enforced by ${path.basename(eslintConfigPath)}`);
+	}
+	items.push('Prefer small, focused modules over expanding src/extension.ts further');
+	return Array.from(new Set(items));
+}
+
+function collectArchitectureRules(tsconfig: TsConfigLike | null, srcDirectories: string[]): string[] {
+	const items: string[] = [
+		'Keep reusable workflow logic in dedicated modules and leave command orchestration in src/extension.ts',
+		'Persist runtime-generated artifacts under .ralph and team-maintained rules under .github/ralph',
+	];
+	if (tsconfig?.compilerOptions?.rootDir) {
+		items.push(`Treat ${tsconfig.compilerOptions.rootDir} as the source root`);
+	}
+	if (srcDirectories.length > 0) {
+		items.push(`Current source subdirectories: ${srcDirectories.join(', ')}`);
+	}
+	return Array.from(new Set(items));
+}
+
+function collectAllowedPaths(srcDirectories: string[]): string[] {
+	const items = ['src/**', '.github/ralph/**', '.ralph/**'];
+	for (const dir of srcDirectories) {
+		items.push(`src/${dir}/**`);
+	}
+	return Array.from(new Set(items));
+}
+
+function collectReuseHints(srcDirectories: string[], readmeExists: boolean): string[] {
+	const items = [
+		'Reuse shared types and workspace path helpers before adding new ad-hoc constants',
+		'Prefer extending the focused context modules under src/ rather than re-embedding logic in src/extension.ts',
+	];
+	if (readmeExists) {
+		items.push('Check README.md for user-facing workflow expectations before changing behavior');
+	}
+	if (srcDirectories.includes('test')) {
+		items.push('Add or extend focused tests in src/test when introducing behavior changes');
+	}
+	return Array.from(new Set(items));
+}
+
+function collectDeliveryChecklist(constraints: GeneratedProjectConstraints): string[] {
+	const items = [...constraints.lintCommands, ...constraints.buildCommands];
+	if (items.length === 0) {
+		items.push('Run the relevant typecheck, lint, and build steps before considering work complete');
+	}
+	return Array.from(new Set(items));
+}
+
+function collectScriptCommands(packageJson: PackageJsonLike | null, names: string[]): string[] {
+	const scripts = packageJson?.scripts ?? {};
+	return names
+		.filter(name => typeof scripts[name] === 'string')
+		.map(name => `npm run ${name}`);
+}
+
+function listChildDirectories(dirPath: string): string[] {
+	if (!fs.existsSync(dirPath)) {
+		return [];
+	}
+	try {
+		return fs.readdirSync(dirPath, { withFileTypes: true })
+			.filter(entry => entry.isDirectory())
+			.map(entry => entry.name)
+			.sort();
+	} catch {
+		return [];
+	}
+}
+
+function findFirstExistingPath(workspaceRoot: string, relativePaths: string[]): string | null {
+	for (const relativePath of relativePaths) {
+		const fullPath = path.join(workspaceRoot, relativePath);
+		if (fs.existsSync(fullPath)) {
+			return fullPath;
+		}
+	}
+	return null;
+}
+
+function readJsonFile<T>(filePath: string): T | null {
+	try {
+		const content = fs.readFileSync(filePath, 'utf-8');
+		return JSON.parse(content) as T;
+	} catch {
+		return null;
+	}
 }

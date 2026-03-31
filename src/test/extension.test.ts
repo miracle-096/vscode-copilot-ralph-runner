@@ -1,4 +1,7 @@
 import * as assert from 'assert';
+import * as fs from 'fs';
+import * as os from 'os';
+import * as path from 'path';
 
 // You can import and use all API from the 'vscode' module
 // as well as import your extension to test it
@@ -8,6 +11,7 @@ import {
 	mergeProjectConstraints,
 	normalizeGeneratedProjectConstraints,
 	parseEditableProjectConstraints,
+	scanWorkspaceForProjectConstraints,
 	serializeEditableProjectConstraints,
 } from '../projectConstraints';
 // import * as myExtension from '../../extension';
@@ -63,5 +67,43 @@ suite('Extension Test Suite', () => {
 		assert.deepStrictEqual(merged.technologySummary, ['Manual stack']);
 		assert.deepStrictEqual(merged.styleRules, ['Generated style rule']);
 		assert.deepStrictEqual(merged.deliveryChecklist, ['Run compile', 'Run lint']);
+	});
+
+	test('Workspace scan produces generated and editable project constraints', () => {
+		const workspaceRoot = fs.mkdtempSync(path.join(os.tmpdir(), 'ralph-constraints-'));
+		try {
+			fs.mkdirSync(path.join(workspaceRoot, 'src', 'test'), { recursive: true });
+			fs.writeFileSync(path.join(workspaceRoot, 'package.json'), JSON.stringify({
+				name: 'sample-extension',
+				scripts: {
+					compile: 'tsc --noEmit',
+					lint: 'eslint src',
+					test: 'vscode-test'
+				},
+				devDependencies: {
+					typescript: '^5.0.0'
+				}
+			}, null, 2));
+			fs.writeFileSync(path.join(workspaceRoot, 'tsconfig.json'), JSON.stringify({
+				compilerOptions: {
+					strict: true,
+					rootDir: 'src',
+					target: 'ES2022',
+					module: 'Node16'
+				}
+			}, null, 2));
+			fs.writeFileSync(path.join(workspaceRoot, 'eslint.config.mjs'), 'export default [];\n');
+			fs.writeFileSync(path.join(workspaceRoot, 'README.md'), '# Sample\n');
+
+			const result = scanWorkspaceForProjectConstraints(workspaceRoot);
+
+			assert.ok(result.generatedConstraints.technologySummary.some(item => item.includes('TypeScript')));
+			assert.ok(result.generatedConstraints.buildCommands.includes('npm run compile'));
+			assert.ok(result.generatedConstraints.lintCommands.includes('npm run lint'));
+			assert.ok(result.generatedConstraints.allowedPaths.includes('src/test/**'));
+			assert.strictEqual(result.editableConstraints.sections.length >= 10, true);
+		} finally {
+			fs.rmSync(workspaceRoot, { recursive: true, force: true });
+		}
 	});
 });

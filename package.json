@@ -35,6 +35,10 @@
         "title": "RALPH: Reset Story"
       },
       {
+        "command": "ralph-runner.initProjectConstraints",
+        "title": "RALPH: Initialize Project Constraints"
+      },
+      {
         "command": "ralph-runner.openSettings",
         "title": "RALPH: Open Settings"
       },
@@ -91,6 +95,16 @@
           "default": 15000,
           "minimum": 0,
           "description": "Minimum time (ms) to wait for Copilot to start working before checking the step is complete."
+        },
+        "ralph-runner.autoInjectProjectConstraints": {
+          "type": "boolean",
+          "default": true,
+          "description": "Automatically include initialized project constraints when building task prompts once prompt injection is enabled."
+        },
+        "ralph-runner.requireProjectConstraintsBeforeRun": {
+          "type": "boolean",
+          "default": false,
+          "description": "Require project constraints to be initialized before RALPH can start executing stories."
         }
       }
     }
