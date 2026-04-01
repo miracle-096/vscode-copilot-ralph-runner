@@ -28,12 +28,21 @@ interface TsConfigLike {
 	};
 }
 
+export interface ProjectConstraintScanOptions {
+	gitCommitLanguage?: string;
+}
+
+const SUPPORTED_GIT_COMMIT_LANGUAGES = ['Chinese', 'English'] as const;
+
+type SupportedGitCommitLanguage = typeof SUPPORTED_GIT_COMMIT_LANGUAGES[number];
+
 type GeneratedProjectConstraintListKey =
 	| 'technologySummary'
 	| 'buildCommands'
 	| 'testCommands'
 	| 'lintCommands'
 	| 'styleRules'
+	| 'gitRules'
 	| 'architectureRules'
 	| 'allowedPaths'
 	| 'forbiddenPaths'
@@ -49,6 +58,7 @@ const GENERATED_CONSTRAINT_SECTION_ORDER: Array<{
 	{ key: 'testCommands', heading: 'Test Commands' },
 	{ key: 'lintCommands', heading: 'Lint Commands' },
 	{ key: 'styleRules', heading: 'Style Rules' },
+	{ key: 'gitRules', heading: 'Git Rules' },
 	{ key: 'architectureRules', heading: 'Architecture Rules' },
 	{ key: 'allowedPaths', heading: 'Allowed Paths' },
 	{ key: 'forbiddenPaths', heading: 'Forbidden Paths' },
@@ -65,6 +75,7 @@ export function createEmptyGeneratedProjectConstraints(): GeneratedProjectConstr
 		testCommands: [],
 		lintCommands: [],
 		styleRules: [],
+		gitRules: [],
 		architectureRules: [],
 		allowedPaths: [],
 		forbiddenPaths: [],
@@ -108,13 +119,16 @@ export function hasProjectConstraintsArtifacts(workspaceRoot: string): boolean {
 		&& fs.existsSync(getGeneratedProjectConstraintsPath(workspaceRoot));
 }
 
-export function initializeProjectConstraintsArtifacts(workspaceRoot: string): {
+export function initializeProjectConstraintsArtifacts(
+	workspaceRoot: string,
+	options?: ProjectConstraintScanOptions,
+): {
 	editablePath: string;
 	generatedPath: string;
 	generatedConstraints: GeneratedProjectConstraints;
 	editableConstraints: EditableProjectConstraints;
 } {
-	const scanResult = scanWorkspaceForProjectConstraints(workspaceRoot);
+	const scanResult = scanWorkspaceForProjectConstraints(workspaceRoot, options);
 	const generatedPath = writeGeneratedProjectConstraints(workspaceRoot, scanResult.generatedConstraints);
 	const editablePath = writeEditableProjectConstraints(workspaceRoot, scanResult.editableConstraints);
 
@@ -126,7 +140,10 @@ export function initializeProjectConstraintsArtifacts(workspaceRoot: string): {
 	};
 }
 
-export function scanWorkspaceForProjectConstraints(workspaceRoot: string): {
+export function scanWorkspaceForProjectConstraints(
+	workspaceRoot: string,
+	options?: ProjectConstraintScanOptions,
+): {
 	generatedConstraints: GeneratedProjectConstraints;
 	editableConstraints: EditableProjectConstraints;
 } {
@@ -150,6 +167,7 @@ export function scanWorkspaceForProjectConstraints(workspaceRoot: string): {
 	generatedConstraints.testCommands = collectScriptCommands(packageJson, ['test', 'pretest', 'compile-tests']);
 	generatedConstraints.lintCommands = collectScriptCommands(packageJson, ['lint', 'check-types']);
 	generatedConstraints.styleRules = collectStyleRules(tsconfig, eslintConfigPath);
+	generatedConstraints.gitRules = collectGitRules(options?.gitCommitLanguage);
 	generatedConstraints.architectureRules = collectArchitectureRules(tsconfig, srcDirectories);
 	generatedConstraints.allowedPaths = collectAllowedPaths(srcDirectories);
 	generatedConstraints.forbiddenPaths = ['Do not edit prd.json during task execution', '.ralph/ contains runtime state and should not be edited unless a task explicitly requires it'];
@@ -327,6 +345,7 @@ export function normalizeGeneratedProjectConstraints(value: Partial<GeneratedPro
 		testCommands: toStringArray(value.testCommands),
 		lintCommands: toStringArray(value.lintCommands),
 		styleRules: toStringArray(value.styleRules),
+		gitRules: toStringArray(value.gitRules),
 		architectureRules: toStringArray(value.architectureRules),
 		allowedPaths: toStringArray(value.allowedPaths),
 		forbiddenPaths: toStringArray(value.forbiddenPaths),
@@ -377,6 +396,7 @@ export function summarizeProjectConstraintsForPrompt(constraints: GeneratedProje
 		...prefixLines('Test Commands', constraints.testCommands),
 		...prefixLines('Lint Commands', constraints.lintCommands),
 		...prefixLines('Style Rules', constraints.styleRules),
+		...prefixLines('Git Rules', constraints.gitRules),
 		...prefixLines('Architecture Rules', constraints.architectureRules),
 		...prefixLines('Allowed Paths', constraints.allowedPaths),
 		...prefixLines('Forbidden Paths', constraints.forbiddenPaths),
@@ -464,6 +484,19 @@ function collectStyleRules(tsconfig: TsConfigLike | null, eslintConfigPath: stri
 	}
 	items.push('Prefer small, focused modules over expanding src/extension.ts further');
 	return Array.from(new Set(items));
+}
+
+function collectGitRules(gitCommitLanguage?: string): string[] {
+	const normalizedLanguage = normalizeGitCommitLanguage(gitCommitLanguage);
+	return [`When completing a user story and preparing a git commit, write the commit title and description in ${normalizedLanguage}`];
+}
+
+function normalizeGitCommitLanguage(value: string | undefined): SupportedGitCommitLanguage {
+	const trimmed = value?.trim();
+	if (trimmed === 'English') {
+		return 'English';
+	}
+	return 'Chinese';
 }
 
 function collectArchitectureRules(tsconfig: TsConfigLike | null, srcDirectories: string[]): string[] {

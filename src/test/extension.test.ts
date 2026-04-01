@@ -127,8 +127,9 @@ suite('Extension Test Suite', () => {
 			assert.ok(result.generatedConstraints.technologySummary.some(item => item.includes('TypeScript')));
 			assert.ok(result.generatedConstraints.buildCommands.includes('npm run compile'));
 			assert.ok(result.generatedConstraints.lintCommands.includes('npm run lint'));
+			assert.ok(result.generatedConstraints.gitRules.includes('When completing a user story and preparing a git commit, write the commit title and description in Chinese'));
 			assert.ok(result.generatedConstraints.allowedPaths.includes('src/test/**'));
-			assert.strictEqual(result.editableConstraints.sections.length >= 10, true);
+			assert.strictEqual(result.editableConstraints.sections.length >= 11, true);
 		} finally {
 			fs.rmSync(workspaceRoot, { recursive: true, force: true });
 		}
@@ -170,8 +171,47 @@ suite('Extension Test Suite', () => {
 			assert.ok(editable);
 			assert.ok(generated?.buildCommands.includes('npm run compile'));
 			assert.ok(editable?.sections.some(section => section.heading === 'Technology Summary'));
+			assert.ok(editable?.sections.some(section => section.heading === 'Git Rules' && section.items.includes('When completing a user story and preparing a git commit, write the commit title and description in Chinese')));
 			assert.ok(promptLines.includes('Technology Summary'));
+			assert.ok(promptLines.includes('Git Rules'));
 			assert.ok(promptLines.some(line => line.includes('Do not edit prd.json during task execution')));
+		} finally {
+			fs.rmSync(workspaceRoot, { recursive: true, force: true });
+		}
+	});
+
+	test('Workspace scan can generate git rules from configured commit language', () => {
+		const workspaceRoot = fs.mkdtempSync(path.join(os.tmpdir(), 'ralph-constraints-git-language-'));
+		try {
+			fs.mkdirSync(path.join(workspaceRoot, 'src'), { recursive: true });
+			fs.writeFileSync(path.join(workspaceRoot, 'package.json'), JSON.stringify({
+				name: 'configurable-constraints',
+				scripts: {
+					compile: 'tsc --noEmit'
+				},
+				devDependencies: {
+					typescript: '^5.0.0'
+				}
+			}, null, 2));
+
+			const result = scanWorkspaceForProjectConstraints(workspaceRoot, {
+				gitCommitLanguage: 'English',
+			});
+
+			assert.deepStrictEqual(result.generatedConstraints.gitRules, [
+				'When completing a user story and preparing a git commit, write the commit title and description in English'
+			]);
+			assert.ok(result.editableConstraints.sections.some(section =>
+				section.heading === 'Git Rules'
+				&& section.items.includes('When completing a user story and preparing a git commit, write the commit title and description in English')));
+
+			const fallbackResult = scanWorkspaceForProjectConstraints(workspaceRoot, {
+				gitCommitLanguage: 'Japanese',
+			});
+
+			assert.deepStrictEqual(fallbackResult.generatedConstraints.gitRules, [
+				'When completing a user story and preparing a git commit, write the commit title and description in Chinese'
+			]);
 		} finally {
 			fs.rmSync(workspaceRoot, { recursive: true, force: true });
 		}

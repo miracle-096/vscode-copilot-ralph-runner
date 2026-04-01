@@ -34,6 +34,7 @@ export interface GeneratedProjectConstraints {
 	testCommands: string[];
 	lintCommands: string[];
 	styleRules: string[];
+	gitRules: string[];
 	architectureRules: string[];
 	allowedPaths: string[];
 	forbiddenPaths: string[];

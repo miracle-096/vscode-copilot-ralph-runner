@@ -135,6 +135,16 @@
           "type": "boolean",
           "default": false,
           "description": "启用后，被识别为设计敏感的故事必须先补充设计上下文才可执行。"
+        },
+        "ralph-runner.gitCommitLanguage": {
+          "type": "string",
+          "default": "Chinese",
+          "enum": ["Chinese", "English"],
+          "enumDescriptions": [
+            "使用中文生成用户故事相关的 Git 提交标题和描述。",
+            "使用英文生成用户故事相关的 Git 提交标题和描述。"
+          ],
+          "description": "初始化项目约束时用于生成 Git 提交语言规则。修改后需重新初始化项目约束。"
         }
       }
     }

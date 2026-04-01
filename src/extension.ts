@@ -78,6 +78,7 @@ function getConfig() {
 		RECALLED_TASK_MEMORY_LIMIT: cfg.get<number>('recalledTaskMemoryLimit', 3),
 		REQUIRE_PROJECT_CONSTRAINTS_BEFORE_RUN: cfg.get<boolean>('requireProjectConstraintsBeforeRun', false),
 		REQUIRE_DESIGN_CONTEXT_FOR_TAGGED_STORIES: cfg.get<boolean>('requireDesignContextForTaggedStories', false),
+		GIT_COMMIT_LANGUAGE: cfg.get<string>('gitCommitLanguage', 'Chinese'),
 	};
 }
 
@@ -1227,7 +1228,10 @@ async function initializeProjectConstraints(): Promise<void> {
 	log('═══════════════════════════════════════════════════');
 
 	try {
-		const result = initializeProjectConstraintsArtifacts(workspaceRoot);
+		const config = getConfig();
+		const result = initializeProjectConstraintsArtifacts(workspaceRoot, {
+			gitCommitLanguage: config.GIT_COMMIT_LANGUAGE,
+		});
 		log(`Project constraints generated: ${result.generatedPath}`);
 		log(`Project constraints editable rules: ${result.editablePath}`);
 		log(`Technology summary items: ${result.generatedConstraints.technologySummary.length}`);
