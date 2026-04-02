@@ -10,6 +10,7 @@ import {
 	getEditableProjectConstraintsPath,
 	getGeneratedProjectConstraintsPath,
 } from './workspacePaths';
+import { getRalphLanguagePack } from './localization';
 
 interface PackageJsonLike {
 	name?: string;
@@ -29,12 +30,37 @@ interface TsConfigLike {
 }
 
 export interface ProjectConstraintScanOptions {
-	gitCommitLanguage?: string;
+	language?: string;
 }
 
-const SUPPORTED_GIT_COMMIT_LANGUAGES = ['Chinese', 'English'] as const;
+export interface ProjectConstraintReferenceSource {
+	label: string;
+	content: string;
+	note?: string;
+}
 
-type SupportedGitCommitLanguage = typeof SUPPORTED_GIT_COMMIT_LANGUAGES[number];
+export interface ProjectConstraintInitializationPromptInput {
+	workspaceRoot: string;
+	language?: string;
+	generatedPath: string;
+	editablePath: string;
+	completionSignalPath: string;
+	scanResult: {
+		generatedConstraints: GeneratedProjectConstraints;
+		editableConstraints: EditableProjectConstraints;
+	};
+	referenceSources?: ProjectConstraintReferenceSource[];
+	additionalInstructions?: string;
+}
+
+export interface ProjectConstraintChatAdvicePromptInput {
+	workspaceRoot: string;
+	language?: string;
+	userRequest: string;
+	constraints: GeneratedProjectConstraints | null;
+	generatedPath: string;
+	editablePath: string;
+}
 
 type GeneratedProjectConstraintListKey =
 	| 'technologySummary'
@@ -85,8 +111,9 @@ export function createEmptyGeneratedProjectConstraints(): GeneratedProjectConstr
 }
 
 export function createEditableProjectConstraintsTemplate(): EditableProjectConstraints {
+	const languagePack = getRalphLanguagePack(undefined);
 	return {
-		title: 'RALPH Project Constraints',
+		title: languagePack.projectConstraintsTitle,
 		lastUpdated: new Date().toISOString(),
 		sections: GENERATED_CONSTRAINT_SECTION_ORDER.map(section => ({
 			heading: section.heading,
@@ -149,6 +176,7 @@ export function scanWorkspaceForProjectConstraints(
 } {
 	const generatedConstraints = createEmptyGeneratedProjectConstraints();
 	generatedConstraints.generatedAt = new Date().toISOString();
+	const languagePack = getRalphLanguagePack(options?.language);
 
 	const packageJson = readJsonFile<PackageJsonLike>(path.join(workspaceRoot, 'package.json'));
 	const tsconfig = readJsonFile<TsConfigLike>(path.join(workspaceRoot, 'tsconfig.json'));
@@ -160,6 +188,7 @@ export function scanWorkspaceForProjectConstraints(
 		'.eslintrc.json',
 		'.eslintrc.js',
 	]);
+	const topLevelDirectories = listChildDirectories(workspaceRoot);
 	const srcDirectories = listChildDirectories(path.join(workspaceRoot, 'src'));
 
 	generatedConstraints.technologySummary = collectTechnologySummary(packageJson, tsconfig, eslintConfigPath);
@@ -167,23 +196,147 @@ export function scanWorkspaceForProjectConstraints(
 	generatedConstraints.testCommands = collectScriptCommands(packageJson, ['test', 'pretest', 'compile-tests']);
 	generatedConstraints.lintCommands = collectScriptCommands(packageJson, ['lint', 'check-types']);
 	generatedConstraints.styleRules = collectStyleRules(tsconfig, eslintConfigPath);
-	generatedConstraints.gitRules = collectGitRules(options?.gitCommitLanguage);
+	generatedConstraints.gitRules = collectGitRules(options?.language);
 	generatedConstraints.architectureRules = collectArchitectureRules(tsconfig, srcDirectories);
-	generatedConstraints.allowedPaths = collectAllowedPaths(srcDirectories);
-	generatedConstraints.forbiddenPaths = ['Do not edit prd.json during task execution', '.ralph/ contains runtime state and should not be edited unless a task explicitly requires it'];
-	generatedConstraints.reuseHints = collectReuseHints(srcDirectories, readmeExists);
+	generatedConstraints.allowedPaths = collectAllowedPaths(topLevelDirectories, srcDirectories);
+	generatedConstraints.forbiddenPaths = collectForbiddenPaths(topLevelDirectories);
+	generatedConstraints.reuseHints = collectReuseHints(topLevelDirectories, srcDirectories, readmeExists);
 	generatedConstraints.deliveryChecklist = collectDeliveryChecklist(generatedConstraints);
 	generatedConstraints.metadata = {
 		packageJsonName: packageJson?.name,
 		hasReadme: readmeExists,
 		eslintConfigPath: eslintConfigPath ? path.basename(eslintConfigPath) : undefined,
 		sourceDirectories: srcDirectories,
+		topLevelDirectories,
+		ralphLanguage: languagePack.language,
 	};
 
 	return {
 		generatedConstraints,
 		editableConstraints: createEditableProjectConstraintsFromGenerated(generatedConstraints),
 	};
+}
+
+export function buildProjectConstraintsInitializationPrompt(input: ProjectConstraintInitializationPromptInput): string {
+	const languagePack = getRalphLanguagePack(input.language);
+	const generatedJson = JSON.stringify(normalizeGeneratedProjectConstraints(input.scanResult.generatedConstraints), null, 2);
+	const editableMarkdown = serializeEditableProjectConstraints(normalizeEditableProjectConstraints(input.scanResult.editableConstraints));
+	const referenceSources = input.referenceSources ?? [];
+	const languageInstruction = languagePack.language === 'Chinese'
+		? 'Use Chinese for human-facing project-constraint prose, especially the editable markdown rules and any language-sensitive generated rules.'
+		: 'Use English for human-facing project-constraint prose, especially the editable markdown rules and any language-sensitive generated rules.';
+
+	const lines = [
+		'Read the current workspace and consolidate project constraints using the scanned baseline plus any user-provided project rules.',
+		`Workspace root: ${input.workspaceRoot}`,
+		`Write the machine-readable generated constraints JSON directly to: ${input.generatedPath}`,
+		`Write the editable team-maintained markdown constraints directly to: ${input.editablePath}`,
+		`After both files are fully written, write the exact text completed (no newline) to: ${input.completionSignalPath}`,
+		'Do not create alternative constraint files or temporary summaries.',
+		languageInstruction,
+		'',
+		'Scanned baseline generated constraints JSON:',
+		'```json',
+		generatedJson,
+		'```',
+		'',
+		'Scanned baseline editable constraints markdown:',
+		'```markdown',
+		editableMarkdown.trim(),
+		'```',
+	];
+
+	if (referenceSources.length > 0) {
+		lines.push('', 'User-provided project rules and reference material:');
+		for (const source of referenceSources) {
+			lines.push(`### ${source.label}`);
+			if (source.note && source.note.trim().length > 0) {
+				lines.push(`Note: ${source.note.trim()}`);
+			}
+			lines.push(source.content.trim().length > 0 ? source.content.trim() : '(empty)');
+			lines.push('');
+		}
+	}
+
+	if (input.additionalInstructions && input.additionalInstructions.trim().length > 0) {
+		lines.push('Additional user instructions:');
+		lines.push(input.additionalInstructions.trim());
+		lines.push('');
+	}
+
+	lines.push(
+		'Instructions:',
+		'- Merge the scanned baseline with the user-provided rules instead of discarding either side.',
+		'- Preserve the generated JSON schema exactly.',
+		'- Preserve the editable markdown structure with the project constraints title, optional last-updated line, and section headings.',
+		'- Keep rules concrete, implementation-oriented, and repo-specific when evidence exists.',
+		'- If a user-provided rule conflicts with a weak scan inference, prefer the explicit user-provided rule.',
+		'- Do not include placeholder TODO bullets when you already have enough information to write a real rule.',
+		'- Keep the final files aligned with the selected plugin language.',
+	);
+
+	return lines.join('\n');
+}
+
+export function buildProjectConstraintChatAdvicePrompt(input: ProjectConstraintChatAdvicePromptInput): string {
+	const languagePack = getRalphLanguagePack(input.language);
+	const constraintLines = summarizeProjectConstraintsForPrompt(input.constraints);
+	const languageInstruction = languagePack.language === 'Chinese'
+		? '用中文输出，先吸收并落实规范建议，再给出一份可直接提供给大模型使用的最终描述。'
+		: 'Reply in English. Absorb the constraint-driven revisions first, then produce a final prompt the user can send directly to a large language model.';
+
+	const lines = [
+		'You are RALPH Spec Finalizer for the current workspace.',
+		`Workspace root: ${input.workspaceRoot}`,
+		`Merged project constraints are sourced from ${input.generatedPath} and ${input.editablePath}.`,
+		languageInstruction,
+		'Review the user request against the merged RALPH project constraints and internally improve it before answering.',
+		'If the request is vague, rewrite it into a sharper implementation brief that better matches the constraints.',
+		'If the request conflicts with the constraints, resolve the conflict in the final version and explain the adjustment briefly.',
+		'If the request already fits the constraints, still tighten it into a clearer execution-ready description.',
+		'Prefer concrete path, tooling, testing, artifact, and delivery guidance over generic best practices.',
+		'Do not stop at giving advice only. Produce a final, self-contained request that the user can copy into another LLM conversation.',
+		'The final request must explicitly follow the merged project constraints instead of merely referencing them abstractly.',
+		'',
+		'User request to revise:',
+		input.userRequest.trim(),
+		'',
+		'Merged project constraints:',
+		...(constraintLines.length > 0 ? constraintLines : ['- No project constraints are currently available.']),
+		'',
+		'Response format:',
+		'1. Final request for the LLM',
+		'   - Provide a complete, polished request inside a fenced code block.',
+		'   - The request should be self-contained, implementation-ready, and aligned with the project constraints.',
+		'   - Fold the useful suggestions into the final request instead of leaving them as separate todo items.',
+		'2. Constraint-driven adjustments',
+		'   - Briefly explain which important changes were made because of the project constraints.',
+		'3. Risks or missing information',
+		'   - Mention only the remaining gaps that still block a high-quality implementation request.',
+	];
+
+	return lines.join('\n');
+}
+
+export function extractRunnableProjectConstraintRequest(responseText: string): string | null {
+	const trimmed = responseText.trim();
+	if (trimmed.length === 0) {
+		return null;
+	}
+
+	const finalSectionMatch = trimmed.match(/(?:^|\n)1\.\s*Final request for the LLM[\s\S]*?```(?:[\w-]+)?\r?\n([\s\S]*?)```/i);
+	const finalSectionRequest = finalSectionMatch?.[1]?.trim();
+	if (finalSectionRequest) {
+		return finalSectionRequest;
+	}
+
+	const firstCodeBlockMatch = trimmed.match(/```(?:[\w-]+)?\r?\n([\s\S]*?)```/);
+	const firstCodeBlockRequest = firstCodeBlockMatch?.[1]?.trim();
+	if (firstCodeBlockRequest) {
+		return firstCodeBlockRequest;
+	}
+
+	return null;
 }
 
 export function writeGeneratedProjectConstraints(workspaceRoot: string, constraints: Partial<GeneratedProjectConstraints>): string {
@@ -435,7 +588,7 @@ function toStringArray(value: unknown): string[] {
 export function createEditableProjectConstraintsFromGenerated(constraints: Partial<GeneratedProjectConstraints>): EditableProjectConstraints {
 	const normalizedGenerated = normalizeGeneratedProjectConstraints(constraints);
 	return normalizeEditableProjectConstraints({
-		title: 'RALPH Project Constraints',
+		title: normalizedGenerated.metadata?.ralphLanguage === 'Chinese' ? 'RALPH 项目约束' : 'RALPH Project Constraints',
 		lastUpdated: normalizedGenerated.generatedAt,
 		sections: GENERATED_CONSTRAINT_SECTION_ORDER.map(section => ({
 			heading: section.heading,
@@ -450,6 +603,9 @@ function collectTechnologySummary(
 	eslintConfigPath: string | null,
 ): string[] {
 	const items: string[] = [];
+	if (packageJson?.name) {
+		items.push(`Package name: ${packageJson.name}`);
+	}
 	if (packageJson?.packageManager) {
 		items.push(`Package manager: ${packageJson.packageManager}`);
 	} else if (packageJson) {
@@ -467,7 +623,6 @@ function collectTechnologySummary(
 	if (eslintConfigPath) {
 		items.push(`Linting is configured via ${path.basename(eslintConfigPath)}`);
 	}
-	items.push('This repository is a VS Code extension with src/extension.ts as the entry point');
 	return Array.from(new Set(items));
 }
 
@@ -482,30 +637,21 @@ function collectStyleRules(tsconfig: TsConfigLike | null, eslintConfigPath: stri
 	if (eslintConfigPath) {
 		items.push(`Preserve the linting conventions enforced by ${path.basename(eslintConfigPath)}`);
 	}
-	items.push('Prefer small, focused modules over expanding src/extension.ts further');
+	items.push('Prefer small, focused modules over expanding already-large files unnecessarily');
 	return Array.from(new Set(items));
 }
 
-function collectGitRules(gitCommitLanguage?: string): string[] {
-	const normalizedLanguage = normalizeGitCommitLanguage(gitCommitLanguage);
-	return [`When completing a user story and preparing a git commit, write the commit title and description in ${normalizedLanguage}`];
-}
-
-function normalizeGitCommitLanguage(value: string | undefined): SupportedGitCommitLanguage {
-	const trimmed = value?.trim();
-	if (trimmed === 'English') {
-		return 'English';
-	}
-	return 'Chinese';
+function collectGitRules(language?: string): string[] {
+	return [getRalphLanguagePack(language).gitCommitRule];
 }
 
 function collectArchitectureRules(tsconfig: TsConfigLike | null, srcDirectories: string[]): string[] {
 	const items: string[] = [
-		'Keep reusable workflow logic in dedicated modules and leave command orchestration in src/extension.ts',
-		'Persist runtime-generated artifacts under .ralph and team-maintained rules under .github/ralph',
+		'Keep reusable logic in dedicated modules instead of duplicating it across the codebase',
+		'Prefer keeping entrypoints thin and moving reusable implementation details into focused modules',
 	];
 	if (tsconfig?.compilerOptions?.rootDir) {
-		items.push(`Treat ${tsconfig.compilerOptions.rootDir} as the source root`);
+		items.push(`Treat ${tsconfig.compilerOptions.rootDir} as a primary source root`);
 	}
 	if (srcDirectories.length > 0) {
 		items.push(`Current source subdirectories: ${srcDirectories.join(', ')}`);
@@ -513,24 +659,57 @@ function collectArchitectureRules(tsconfig: TsConfigLike | null, srcDirectories:
 	return Array.from(new Set(items));
 }
 
-function collectAllowedPaths(srcDirectories: string[]): string[] {
-	const items = ['src/**', '.github/ralph/**', '.ralph/**'];
-	for (const dir of srcDirectories) {
-		items.push(`src/${dir}/**`);
+function collectAllowedPaths(topLevelDirectories: string[], srcDirectories: string[]): string[] {
+	const preferredRoots = ['src', 'app', 'lib', 'packages', 'test', 'tests', 'spec', 'specs', 'docs', 'scripts', 'config', 'public', 'assets'];
+	const excludedRoots = new Set(['node_modules', 'dist', 'build', 'out', 'coverage', '.git', '.next', '.nuxt']);
+	const items: string[] = [];
+
+	for (const dir of preferredRoots) {
+		if (topLevelDirectories.includes(dir)) {
+			items.push(`${dir}/**`);
+		}
+	}
+
+	if (topLevelDirectories.includes('src')) {
+		for (const dir of srcDirectories) {
+			items.push(`src/${dir}/**`);
+		}
+	}
+
+	if (items.length === 0) {
+		for (const dir of topLevelDirectories) {
+			if (!excludedRoots.has(dir) && !dir.startsWith('.')) {
+				items.push(`${dir}/**`);
+			}
+		}
+	}
+
+	return Array.from(new Set(items));
+}
+
+function collectForbiddenPaths(topLevelDirectories: string[]): string[] {
+	const items: string[] = [];
+	if (topLevelDirectories.includes('node_modules')) {
+		items.push('Do not edit dependency code under node_modules/ directly');
+	}
+	for (const generatedDir of ['dist', 'build', 'out', 'coverage', '.next', '.nuxt']) {
+		if (topLevelDirectories.includes(generatedDir)) {
+			items.push(`Treat ${generatedDir}/ as generated or tool-managed output unless a task explicitly requires editing it`);
+		}
 	}
 	return Array.from(new Set(items));
 }
 
-function collectReuseHints(srcDirectories: string[], readmeExists: boolean): string[] {
+function collectReuseHints(topLevelDirectories: string[], srcDirectories: string[], readmeExists: boolean): string[] {
 	const items = [
-		'Reuse shared types and workspace path helpers before adding new ad-hoc constants',
-		'Prefer extending the focused context modules under src/ rather than re-embedding logic in src/extension.ts',
+		'Reuse existing utilities, shared types, and configuration patterns before adding new abstractions',
+		'Prefer extending modules that already own a concern instead of duplicating logic in parallel files',
 	];
 	if (readmeExists) {
 		items.push('Check README.md for user-facing workflow expectations before changing behavior');
 	}
-	if (srcDirectories.includes('test')) {
-		items.push('Add or extend focused tests in src/test when introducing behavior changes');
+	if (srcDirectories.includes('test') || ['test', 'tests', 'spec', 'specs', '__tests__'].some(dir => topLevelDirectories.includes(dir))) {
+		items.push('Add or extend focused automated tests when introducing behavior changes');
 	}
 	return Array.from(new Set(items));
 }

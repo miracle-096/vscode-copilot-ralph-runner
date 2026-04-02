@@ -9,6 +9,8 @@ lerna-debug.log*
 
 node_modules
 dist
+out
+.vscode-test
 dist-ssr
 *.local
 
@@ -27,3 +29,6 @@ dist-ssr
 *.sln
 *.sw?
 *.vsix
+prd.json
+progress.txt
+.github/ralph/project-constraints.md

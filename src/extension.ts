@@ -2,7 +2,27 @@ import { execSync } from 'child_process';
 import * as vscode from 'vscode';
 import * as fs from 'fs';
 import * as path from 'path';
-import { readDesignContext, summarizeDesignContextForPrompt, validateDesignContext, writeDesignContext } from './designContext';
+import {
+	buildStoryDesignContextBatchMatchPrompt,
+	buildStoryDesignContextSuggestionPrompt,
+	buildVisualDesignContextDraftPrompt,
+	createReviewStoryDesignContextDraft,
+	createStoryDesignContextOverride,
+	hasAnyDesignContextForStory,
+	hasStoryLevelDesignContext,
+	listAvailableSharedDesignContextTargets,
+	mergeSharedDesignContextTargets,
+	normalizeStoryDesignContextBatchMatchResult,
+	readDesignContext,
+	readDesignContextForScope,
+	resolveDesignContextForStory,
+	resolveSharedDesignContextForStory,
+	synthesizeExecutionDesignContextPromptLines,
+	summarizeDesignContextForPrompt,
+	validateDesignContext,
+	writeDesignContext,
+	writeDesignContextForScope,
+} from './designContext';
 import { composeStoryExecutionPrompt } from './promptContext';
 import {
 	createSynthesizedTaskMemory,
@@ -14,16 +34,21 @@ import {
 	validateTaskMemory,
 	writeTaskMemory,
 } from './taskMemory';
+import { parseTaskSignalStatus } from './taskStatus';
 import {
+	buildProjectConstraintChatAdvicePrompt,
+	buildProjectConstraintsInitializationPrompt,
+	ensureProjectConstraintsScaffold,
+	extractRunnableProjectConstraintRequest,
 	hasProjectConstraintsArtifacts,
-	initializeProjectConstraintsArtifacts,
 	loadMergedProjectConstraints,
+	ProjectConstraintReferenceSource,
+	scanWorkspaceForProjectConstraints,
 	summarizeProjectConstraintsForPrompt,
 } from './projectConstraints';
 import {
-	BasePrdFile,
+	DesignContextScope,
 	PrdFile,
-	SplitUserStory,
 	STORY_STATUSES,
 	StoryExecutionStatus,
 	TaskMemoryArtifact,
@@ -31,24 +56,26 @@ import {
 	normalizeStoryExecutionStatus,
 } from './types';
 import {
-	BASE_PRD_FILENAME,
-	PRD_DIR,
 	PRD_FILENAME,
 	PROGRESS_FILENAME,
 	RALPH_DIR,
 	STORY_STATUS_FILENAME,
-	USER_STORIES_DIR,
-	ensurePrdDirectories as ensureWorkspacePrdDirectories,
-	getBasePrdPath as resolveBasePrdPath,
+	ensureDesignContextSuggestionDirectory,
+	getDesignContextSuggestionPath as resolveDesignContextSuggestionPath,
+	getDesignContextPath as resolveDesignContextPath,
+	getModuleDesignContextPath as resolveModuleDesignContextPath,
 	getPrdDirectoryPath as resolvePrdDirectoryPath,
 	getPrdPath as resolvePrdPath,
+	getEditableProjectConstraintsPath as resolveEditableProjectConstraintsPath,
+	getGeneratedProjectConstraintsPath as resolveGeneratedProjectConstraintsPath,
+	getProjectDesignContextPath as resolveProjectDesignContextPath,
 	getRalphDir as resolveRalphDir,
+	getScreenDesignContextPath as resolveScreenDesignContextPath,
 	getStoryStatusRegistryPath as resolveStoryStatusRegistryPath,
 	getTaskMemoryPath as resolveTaskMemoryPath,
 	getTaskStatusPath as resolveTaskStatusPath,
-	getUserStoriesDirectoryPath as resolveUserStoriesDirectoryPath,
-	getUserStoryFilePath as resolveUserStoryFilePath,
 } from './workspacePaths';
+import { getLocalizedStoryStatus, getRalphLanguagePack, normalizeRalphLanguage } from './localization';
 
 // ────────────────────────────────────────────────────────────────────────────
 // RALPH Runner — Autonomous Task Runner for VS Code
@@ -75,11 +102,16 @@ function getConfig() {
 		AUTO_INJECT_PROJECT_CONSTRAINTS: cfg.get<boolean>('autoInjectProjectConstraints', true),
 		AUTO_INJECT_DESIGN_CONTEXT: cfg.get<boolean>('autoInjectDesignContext', true),
 		AUTO_RECALL_TASK_MEMORY: cfg.get<boolean>('autoRecallTaskMemory', true),
+		AUTO_COMMIT_GIT: cfg.get<boolean>('autoCommitGit', true),
 		RECALLED_TASK_MEMORY_LIMIT: cfg.get<number>('recalledTaskMemoryLimit', 3),
 		REQUIRE_PROJECT_CONSTRAINTS_BEFORE_RUN: cfg.get<boolean>('requireProjectConstraintsBeforeRun', false),
 		REQUIRE_DESIGN_CONTEXT_FOR_TAGGED_STORIES: cfg.get<boolean>('requireDesignContextForTaggedStories', false),
-		GIT_COMMIT_LANGUAGE: cfg.get<string>('gitCommitLanguage', 'Chinese'),
+		LANGUAGE: normalizeRalphLanguage(cfg.get<string>('language', 'Chinese')),
 	};
+}
+
+function getLanguagePack() {
+	return getRalphLanguagePack(getConfig().LANGUAGE);
 }
 
 // ── Filesystem Task State Manager ────────────────────────────────────────────
@@ -148,7 +180,11 @@ class RalphStateManager {
 		const filePath = RalphStateManager.getTaskStatusPath(workspaceRoot, taskId);
 		try {
 			const content = fs.readFileSync(filePath, 'utf-8').trim();
-			if (content === 'inprogress' || content === 'completed') { return content; }
+			const parsedStatus = parseTaskSignalStatus(content);
+			if (parsedStatus !== 'none' && content !== parsedStatus) {
+				fs.writeFileSync(filePath, parsedStatus, { encoding: 'utf-8', flag: 'w' });
+			}
+			if (parsedStatus === 'inprogress' || parsedStatus === 'completed') { return parsedStatus; }
 		} catch { /* file missing or unreadable */ }
 		return 'none';
 	}
@@ -232,7 +268,6 @@ class RalphStateManager {
 		const statusMap = RalphStateManager.readStoryStatusMap(workspaceRoot);
 		statusMap[taskId] = status;
 		RalphStateManager.writeStoryStatusMap(workspaceRoot, statusMap);
-		syncSplitStoryStatus(workspaceRoot, taskId, status);
 	}
 
 	/**
@@ -272,7 +307,6 @@ class RalphStateManager {
 
 		delete statusMap[taskId];
 		const filePath = RalphStateManager.getStoryStatusRegistryPath(workspaceRoot);
-		syncSplitStoryStatus(workspaceRoot, taskId, '未开始');
 		if (Object.keys(statusMap).length === 0) {
 			try {
 				if (fs.existsSync(filePath)) { fs.unlinkSync(filePath); }
@@ -329,42 +363,8 @@ function getPrdDirectoryPath(workspaceRoot: string): string {
 	return resolvePrdDirectoryPath(workspaceRoot);
 }
 
-function getUserStoriesDirectoryPath(workspaceRoot: string): string {
-	return resolveUserStoriesDirectoryPath(workspaceRoot);
-}
-
-function getBasePrdPath(workspaceRoot: string): string {
-	return resolveBasePrdPath(workspaceRoot);
-}
-
-function getUserStoryFilePath(workspaceRoot: string, storyId: string): string {
-	return resolveUserStoryFilePath(workspaceRoot, storyId);
-}
-
-function ensurePrdDirectories(workspaceRoot: string): { prdDir: string; userStoriesDir: string } {
-	return ensureWorkspacePrdDirectories(workspaceRoot);
-}
-
 function writeJsonFile(filePath: string, content: unknown): void {
 	fs.writeFileSync(filePath, `${JSON.stringify(content, null, 2)}\n`, 'utf-8');
-}
-
-function syncSplitStoryStatus(workspaceRoot: string, storyId: string, status: StoryExecutionStatus): void {
-	const storyPath = getUserStoryFilePath(workspaceRoot, storyId);
-	if (!fs.existsSync(storyPath)) {
-		return;
-	}
-
-	const story = readJsonFile<Record<string, unknown>>(storyPath);
-	if (!story) {
-		log(`WARNING: Could not sync status for invalid split user story file ${storyId}.json.`);
-		return;
-	}
-
-	writeJsonFile(storyPath, {
-		...story,
-		status,
-	});
 }
 
 function readJsonFile<T>(filePath: string): T | null {
@@ -374,30 +374,6 @@ function readJsonFile<T>(filePath: string): T | null {
 	} catch {
 		return null;
 	}
-}
-
-function stripStoryStatus(story: UserStory): UserStory {
-	const { status: _status, ...storyWithoutStatus } = story;
-	return storyWithoutStatus;
-}
-
-function stripUserStoriesFromPrd(prd: PrdFile): BasePrdFile {
-	const { userStories: _userStories, ...basePrd } = prd;
-	return basePrd;
-}
-
-function resolveStoryStatusForSplit(workspaceRoot: string, story: UserStory): StoryExecutionStatus {
-	const inlineStatus = normalizeStoryExecutionStatus(story.status);
-	if (inlineStatus === 'completed') {
-		return 'completed';
-	}
-
-	const trackedStatus = RalphStateManager.getStoryExecutionStatus(workspaceRoot, story.id);
-	if (trackedStatus === 'completed') {
-		return 'completed';
-	}
-
-	return '未开始';
 }
 
 function compareStoriesByPriority(left: UserStory, right: UserStory): number {
@@ -417,6 +393,33 @@ function parsePrd(workspaceRoot: string): PrdFile | null {
 		log(`ERROR: Failed to read/parse prd.json: ${msg}`);
 		return null;
 	}
+}
+
+function getStoriesFromPrd(workspaceRoot: string): UserStory[] {
+	const prd = parsePrd(workspaceRoot);
+	if (!prd) {
+		return [];
+	}
+
+	return [...prd.userStories].sort(compareStoriesByPriority);
+}
+
+function getNextUserStoryIdFromPrd(stories: UserStory[]): string {
+	let maxNumericId = 0;
+
+	for (const story of stories) {
+		const match = story.id.match(/^US-(\d+)/i);
+		if (!match) {
+			continue;
+		}
+
+		const numericId = Number(match[1]);
+		if (Number.isFinite(numericId)) {
+			maxNumericId = Math.max(maxNumericId, numericId);
+		}
+	}
+
+	return `US-${String(maxNumericId + 1).padStart(3, '0')}`;
 }
 
 // ── Progress File Operations ─────────────────────────────────────────────────
@@ -530,14 +533,23 @@ let statusBarItem: vscode.StatusBarItem;
 
 export function activate(context: vscode.ExtensionContext) {
 	outputChannel = vscode.window.createOutputChannel('RALPH Runner');
+	const languagePack = getLanguagePack();
+	registerRalphChatParticipant(context);
 
 	// ── Status bar icon ────────────────────────────────────────────────────
 	statusBarItem = vscode.window.createStatusBarItem(vscode.StatusBarAlignment.Left, 100);
-	statusBarItem.text = '$(rocket) Ralph Runner';
-	statusBarItem.tooltip = 'RALPH Runner — click to show commands';
+	statusBarItem.text = languagePack.statusBar.idleText;
+	statusBarItem.tooltip = languagePack.statusBar.idleTooltip;
 	statusBarItem.command = 'ralph-runner.showMenu';
 	statusBarItem.show();
 	context.subscriptions.push(statusBarItem);
+	context.subscriptions.push(vscode.workspace.onDidChangeConfiguration(event => {
+		if (!event.affectsConfiguration('ralph-runner.language')) {
+			return;
+		}
+		updateStatusBar(isRunning ? 'running' : 'idle');
+		vscode.window.showInformationMessage(getLanguagePack().initProjectConstraints.languageChanged);
+	}));
 
 	context.subscriptions.push(
 		vscode.commands.registerCommand('ralph-runner.start', () => startRalph()),
@@ -546,15 +558,14 @@ export function activate(context: vscode.ExtensionContext) {
 		vscode.commands.registerCommand('ralph-runner.resetStep', () => resetStory()),
 		vscode.commands.registerCommand('ralph-runner.initProjectConstraints', () => initializeProjectConstraints()),
 		vscode.commands.registerCommand('ralph-runner.recordDesignContext', () => recordDesignContext()),
-		vscode.commands.registerCommand('ralph-runner.recallTaskMemory', () => recallRelatedTaskMemory()),
+		vscode.commands.registerCommand('ralph-runner.generateDesignContextDraft', () => generateVisualDesignContextDraft()),
+		vscode.commands.registerCommand('ralph-runner.suggestStoryDesignContext', () => suggestStoryDesignContext()),
 		vscode.commands.registerCommand('ralph-runner.openSettings', () => {
 			vscode.commands.executeCommand('workbench.action.openSettings', 'ralph-runner');
 		}),
 		vscode.commands.registerCommand('ralph-runner.showMenu', () => showCommandMenu()),
 		vscode.commands.registerCommand('ralph-runner.quickStart', () => quickStart()),
-		vscode.commands.registerCommand('ralph-runner.splitPrd', () => splitPrd()),
-		vscode.commands.registerCommand('ralph-runner.mergePrd', () => mergePrd()),
-		vscode.commands.registerCommand('ralph-runner.openUserStoryEditor', () => openUserStoryEditor())
+		vscode.commands.registerCommand('ralph-runner.appendUserStories', () => appendUserStories())
 	);
 
 	log('RALPH Runner extension activated.');
@@ -569,20 +580,21 @@ export function deactivate() {
 // ── Core Loop ───────────────────────────────────────────────────────────────
 
 async function startRalph(): Promise<void> {
+	const languagePack = getLanguagePack();
 	if (isRunning) {
-		vscode.window.showWarningMessage('RALPH is already running.');
+		vscode.window.showWarningMessage(languagePack.runtime.alreadyRunning);
 		return;
 	}
 
 	const workspaceRoot = getWorkspaceRoot();
 	if (!workspaceRoot) {
-		vscode.window.showErrorMessage('No workspace folder open.');
+		vscode.window.showErrorMessage(languagePack.common.noWorkspaceFolder);
 		return;
 	}
 
 	const prdPath = getPrdPath(workspaceRoot);
 	if (!fs.existsSync(prdPath)) {
-		vscode.window.showErrorMessage('prd.json not found in workspace root.');
+		vscode.window.showErrorMessage(languagePack.runtime.prdNotFoundRoot);
 		return;
 	}
 
@@ -593,10 +605,10 @@ async function startRalph(): Promise<void> {
 	const stalledTaskId = RalphStateManager.getInProgressTaskId(workspaceRoot);
 	if (stalledTaskId !== null) {
 		const action = await vscode.window.showWarningMessage(
-			`RALPH: Task ${stalledTaskId} was left "inprogress" from a previous interrupted run.`,
-			'Clear & Retry', 'Cancel'
+			languagePack.runtime.stalledTaskWarning(stalledTaskId),
+			languagePack.runtime.clearAndRetry, languagePack.runtime.cancel
 		);
-		if (action !== 'Clear & Retry') {
+		if (action !== languagePack.runtime.clearAndRetry) {
 			log(`Startup aborted — stalled task ${stalledTaskId} left untouched.`);
 			return;
 		}
@@ -607,9 +619,7 @@ async function startRalph(): Promise<void> {
 
 	const config = getConfig();
 	if (config.REQUIRE_PROJECT_CONSTRAINTS_BEFORE_RUN && !hasProjectConstraintsArtifacts(workspaceRoot)) {
-		vscode.window.showWarningMessage(
-			'RALPH: Project constraints are required before execution. Run "RALPH: Initialize Project Constraints" first.'
-		);
+		vscode.window.showWarningMessage(languagePack.runtime.projectConstraintsRequiredBeforeRun);
 		log('Startup aborted — project constraints are required but have not been initialized yet.');
 		return;
 	}
@@ -650,7 +660,7 @@ async function startRalph(): Promise<void> {
 
 		if (!nextStory) {
 			log('🎉 All user stories completed!');
-			vscode.window.showInformationMessage('RALPH: All user stories completed!');
+			vscode.window.showInformationMessage(languagePack.runtime.allStoriesCompleted);
 			break;
 		}
 
@@ -690,6 +700,12 @@ async function startRalph(): Promise<void> {
 			log(`✅ Story ${nextStory.id} completed with task memory (${taskMemoryResult.source}).`);
 		} catch (err: unknown) {
 			const errMsg = err instanceof Error ? err.message : String(err);
+			if (errMsg === 'Cancelled by user') {
+				log(`⏹ Story ${nextStory.id} cancelled by user.`);
+				RalphStateManager.clearStalledTask(workspaceRoot, nextStory.id);
+				RalphStateManager.clearStoryExecutionStatus(workspaceRoot, nextStory.id);
+				break;
+			}
 			log(`❌ Story ${nextStory.id} failed: ${errMsg}`);
 
 			// Always release the inprogress lock so the loop can advance
@@ -708,9 +724,7 @@ async function startRalph(): Promise<void> {
 
 	if (loopsExecuted >= config.MAX_AUTONOMOUS_LOOPS && isRunning) {
 		log(`Reached MAX_AUTONOMOUS_LOOPS (${config.MAX_AUTONOMOUS_LOOPS}). Pausing. Run 'RALPH: Start' to continue.`);
-		vscode.window.showInformationMessage(
-			`RALPH paused after ${config.MAX_AUTONOMOUS_LOOPS} steps. Run 'RALPH: Start' to resume.`
-		);
+		vscode.window.showInformationMessage(languagePack.runtime.pausedAfterLoops(config.MAX_AUTONOMOUS_LOOPS));
 	}
 
 	isRunning = false;
@@ -719,15 +733,117 @@ async function startRalph(): Promise<void> {
 }
 
 function stopRalph(): void {
+	const languagePack = getLanguagePack();
 	if (!isRunning) {
-		vscode.window.showInformationMessage('RALPH is not running.');
+		vscode.window.showInformationMessage(languagePack.runtime.notRunning);
 		return;
 	}
 	cancelToken?.cancel();
 	isRunning = false;
 	log('RALPH Runner stopped by user.');
-	vscode.window.showInformationMessage('RALPH stopped.');
+	vscode.window.showInformationMessage(languagePack.runtime.stopped);
 	updateStatusBar('idle');
+}
+
+function registerRalphChatParticipant(context: vscode.ExtensionContext): void {
+	const participant = vscode.chat.createChatParticipant('recent-graduates.ralph-runner', handleRalphChatRequest);
+	participant.iconPath = vscode.Uri.joinPath(context.extensionUri, 'images', 'ralph_runner.ico');
+	context.subscriptions.push(participant);
+}
+
+const handleRalphChatRequest: vscode.ChatRequestHandler = async (
+	request,
+	_chatContext,
+	stream,
+	token,
+) => {
+	const languagePack = getLanguagePack();
+	const workspaceRoot = getWorkspaceRoot();
+
+	if (!workspaceRoot) {
+		stream.markdown(languagePack.chatSpec.missingWorkspace);
+		return;
+	}
+
+	if (!hasProjectConstraintsArtifacts(workspaceRoot)) {
+		stream.markdown(languagePack.chatSpec.missingConstraints);
+		return;
+	}
+
+	const userRequest = request.prompt.trim();
+	if (request.command === 'ralph-spec' && userRequest.length === 0) {
+		stream.markdown(languagePack.chatSpec.emptyPrompt);
+		return;
+	}
+
+	const mergedConstraints = loadMergedProjectConstraints(workspaceRoot);
+	const prompt = buildProjectConstraintChatAdvicePrompt({
+		workspaceRoot,
+		language: getConfig().LANGUAGE,
+		userRequest: userRequest.length > 0 ? userRequest : languagePack.chatSpec.emptyPrompt,
+		constraints: mergedConstraints,
+		generatedPath: resolveGeneratedProjectConstraintsPath(workspaceRoot),
+		editablePath: resolveEditableProjectConstraintsPath(workspaceRoot),
+	});
+
+	stream.progress(languagePack.chatSpec.thinking);
+
+	try {
+		const response = await request.model.sendRequest([
+			vscode.LanguageModelChatMessage.User(prompt),
+		], {}, token);
+
+		const responseFragments: string[] = [];
+		for await (const fragment of response.text) {
+			responseFragments.push(fragment);
+			stream.markdown(fragment);
+		}
+
+		const runnablePrompt = extractRunnableProjectConstraintRequest(responseFragments.join(''));
+		if (!runnablePrompt) {
+			stream.markdown(`\n\n${languagePack.chatSpec.autoSendSkipped}`);
+			return;
+		}
+
+		const tempFileResult = writeRalphSpecFinalRequestTempFile(workspaceRoot, runnablePrompt);
+		if (tempFileResult.ok) {
+			stream.markdown(`\n\n${languagePack.chatSpec.tempFileSaved(tempFileResult.filePath)}`);
+		} else {
+			stream.markdown(`\n\n${languagePack.chatSpec.tempFileSaveFailed(tempFileResult.message)}`);
+		}
+
+		const autoSent = await openCopilotChatWithPrompt(
+			runnablePrompt,
+			languagePack.chatSpec.copiedPrompt,
+			{ startNewChat: true }
+		);
+		stream.markdown(`\n\n${autoSent ? languagePack.chatSpec.autoSent : languagePack.chatSpec.openedWithClipboardFallback}`);
+	} catch (error: unknown) {
+		const message = error instanceof Error ? error.message : String(error);
+		stream.markdown(languagePack.chatSpec.error(message));
+	}
+};
+
+function writeRalphSpecFinalRequestTempFile(
+	workspaceRoot: string,
+	content: string,
+): { ok: true; filePath: string; } | { ok: false; message: string; } {
+	try {
+		RalphStateManager.ensureDir(workspaceRoot);
+		const filePath = path.join(resolveRalphDir(workspaceRoot), 'ralph-spec-final-request.md');
+		fs.writeFileSync(filePath, `${content.trim()}\n`, 'utf-8');
+		return {
+			ok: true,
+			filePath: filePath.replace(/\\/g, '/'),
+		};
+	} catch (error: unknown) {
+		const message = error instanceof Error ? error.message : String(error);
+		log(`WARNING: Failed to persist /ralph-spec final request: ${message}`);
+		return {
+			ok: false,
+			message,
+		};
+	}
 }
 
 // ── Story Execution ─────────────────────────────────────────────────────────
@@ -747,6 +863,13 @@ function buildCopilotPromptForStory(story: UserStory, workspaceRoot: string): st
 	const projectConstraintsLines = getProjectConstraintsPromptLines(workspaceRoot, story.id);
 	const designContextLines = getDesignContextPromptLines(workspaceRoot, story);
 	const priorWorkLines = getPriorWorkPromptLines(workspaceRoot, story);
+	const additionalExecutionRules = [
+		'Greedily execute as many sub-tasks as possible in a single pass.',
+		'If something partially fails, keep all the parts that passed and do not revert them.',
+		'Do not ask questions — execute directly.',
+		'Make the actual code changes to the files in the workspace.',
+		...getGitExecutionRules(workspaceRoot),
+	];
 
 	return composeStoryExecutionPrompt({
 		story,
@@ -756,13 +879,38 @@ function buildCopilotPromptForStory(story: UserStory, workspaceRoot: string): st
 		priorWorkLines,
 		taskMemoryPath: resolveTaskMemoryPath(workspaceRoot, story.id).replace(/\\/g, '/'),
 		completionSignalPath: resolveTaskStatusPath(workspaceRoot, story.id).replace(/\\/g, '/'),
-		additionalExecutionRules: [
-			'Greedily execute as many sub-tasks as possible in a single pass.',
-			'If something partially fails, keep all the parts that passed and do not revert them.',
-			'Do not ask questions — execute directly.',
-			'Make the actual code changes to the files in the workspace.',
-		],
+		additionalExecutionRules,
 	});
+}
+
+function isGitRepository(workspaceRoot: string): boolean {
+	try {
+		const output = execSync('git rev-parse --is-inside-work-tree', {
+			cwd: workspaceRoot,
+			encoding: 'utf-8',
+			stdio: ['ignore', 'pipe', 'ignore'],
+		}).trim();
+		return output === 'true';
+	} catch {
+		return false;
+	}
+}
+
+function shouldAutoCommitGit(workspaceRoot: string): boolean {
+	const config = getConfig();
+	return config.AUTO_COMMIT_GIT && isGitRepository(workspaceRoot);
+}
+
+function getGitExecutionRules(workspaceRoot: string): string[] {
+	if (!shouldAutoCommitGit(workspaceRoot)) {
+		return [];
+	}
+
+	return [
+		'This workspace is inside a Git repository and automatic Git commit is enabled.',
+		'If you make meaningful changes for this story, stage the relevant files and create one conventional commit for this story before writing the completion signal.',
+		'Reuse the project constraint Git rules for commit language and format. Do not create or wait for a separate Git commit story.',
+	];
 }
 
 function getProjectConstraintsPromptLines(workspaceRoot: string, storyId: string): string[] {
@@ -801,7 +949,17 @@ function getDesignContextPromptLines(workspaceRoot: string, story: UserStory): s
 		return [];
 	}
 
-	const designContext = readDesignContext(workspaceRoot, story.id);
+	const hasStoryContext = hasStoryLevelDesignContext(workspaceRoot, story.id);
+	if (!hasStoryContext && isDesignSensitiveStory(story)) {
+		const sharedContext = resolveSharedDesignContextForStory(workspaceRoot, story);
+		const promptLines = synthesizeExecutionDesignContextPromptLines(story, sharedContext);
+		if (promptLines.length > 0) {
+			log(`  Synthesized ${promptLines.length} execution-time design context prompt lines for story ${story.id}.`);
+			return promptLines;
+		}
+	}
+
+	const designContext = resolveDesignContextForStory(workspaceRoot, story);
 	if (!designContext) {
 		log(`  No design context found for story ${story.id}; continuing without injected design guidance.`);
 		return [];
@@ -852,11 +1010,15 @@ function getMissingRequiredDesignContextReason(workspaceRoot: string, story: Use
 		return null;
 	}
 
-	if (readDesignContext(workspaceRoot, story.id)) {
+	if (hasAnyDesignContextForStory(workspaceRoot, story)) {
 		return null;
 	}
 
-	return `RALPH: Design context is required before executing ${story.id}. Run "RALPH: Record Design Context" first.`;
+	if (synthesizeExecutionDesignContextPromptLines(story, null).length > 0) {
+		return null;
+	}
+
+	return getLanguagePack().runtime.designContextRequiredBeforeStory(story.id);
 }
 
 function isDesignSensitiveStory(story: UserStory): boolean {
@@ -895,27 +1057,57 @@ const DESIGN_SENSITIVE_TAGS = new Set(['design', 'ui', 'ux', 'frontend', 'visual
 
 const DESIGN_SENSITIVE_KEYWORDS = ['design', 'figma', 'layout', 'responsive', 'ui', 'ux', 'visual', 'token', 'spacing'];
 
-async function sendToCopilot(prompt: string, taskId: string, workspaceRoot: string): Promise<void> {
-	log('  Sending prompt to Copilot Chat...');
+async function openCopilotChatWithPrompt(prompt: string, copiedPromptMessage?: string, options?: { startNewChat?: boolean }): Promise<boolean> {
+	async function tryExecuteVsCodeCommand(commandId: string, ...args: unknown[]): Promise<boolean> {
+		try {
+			await vscode.commands.executeCommand(commandId, ...args);
+			return true;
+		} catch {
+			return false;
+		}
+	}
+
+	async function startFreshCopilotChatSession(): Promise<void> {
+		await tryExecuteVsCodeCommand('workbench.panel.chat.view.copilot.focus');
+		for (const commandId of ['workbench.action.chat.newChat', 'workbench.action.chat.new']) {
+			if (await tryExecuteVsCodeCommand(commandId)) {
+				await sleep(150);
+				return;
+			}
+		}
+	}
+
+	if (options?.startNewChat) {
+		await startFreshCopilotChatSession();
+	}
 
 	try {
 		await vscode.commands.executeCommand('workbench.action.chat.open', {
 			query: prompt,
 			isPartialQuery: false
 		});
+		return true;
 	} catch {
-		// Fallback: try older command API
 		try {
 			await vscode.commands.executeCommand('workbench.panel.chat.view.copilot.focus');
 			await sleep(1000);
 			await vscode.commands.executeCommand('workbench.action.chat.open', prompt);
+			return true;
 		} catch {
-			log('  WARNING: Could not programmatically send to Copilot. Copying to clipboard.');
+			log('WARNING: Could not programmatically send to Copilot. Copying to clipboard.');
 			await vscode.env.clipboard.writeText(prompt);
 			await vscode.commands.executeCommand('workbench.action.chat.open');
-			log('  Prompt copied to clipboard. Paste into Copilot Chat.');
+			if (copiedPromptMessage) {
+				vscode.window.showInformationMessage(copiedPromptMessage);
+			}
+			return false;
 		}
 	}
+}
+
+async function sendToCopilot(prompt: string, taskId: string, workspaceRoot: string): Promise<void> {
+	log('  Sending prompt to Copilot Chat...');
+	await openCopilotChatWithPrompt(prompt);
 
 	// Poll the .ralph status file until Copilot writes "completed" to it
 	await waitForCopilotCompletion(taskId, workspaceRoot);
@@ -939,6 +1131,9 @@ async function waitForCopilotCompletion(taskId: string, workspaceRoot: string): 
 		}
 
 		await sleep(config.COPILOT_RESPONSE_POLL_MS);
+		if (cancelToken?.token.isCancellationRequested || !isRunning) {
+			throw new Error('Cancelled by user');
+		}
 		const elapsed = Date.now() - startTime;
 
 		// Enforce a minimum wait before the first status check
@@ -1111,6 +1306,9 @@ async function ensureNoActiveTask(workspaceRoot: string): Promise<void> {
 		}
 
 		await sleep(config.COPILOT_RESPONSE_POLL_MS);
+		if (cancelToken?.token.isCancellationRequested || !isRunning) {
+			throw new Error('Cancelled by user');
+		}
 
 		if (!RalphStateManager.isAnyInProgress(workspaceRoot)) {
 			const waited = Math.round((Date.now() - waitStart) / 1000);
@@ -1133,12 +1331,13 @@ async function ensureNoActiveTask(workspaceRoot: string): Promise<void> {
 // ── Status & Reset Commands ─────────────────────────────────────────────────
 
 async function showStatus(): Promise<void> {
+	const languagePack = getLanguagePack();
 	const workspaceRoot = getWorkspaceRoot();
 	if (!workspaceRoot) { return; }
 
 	const prd = parsePrd(workspaceRoot);
 	if (!prd) {
-		vscode.window.showErrorMessage('prd.json not found or invalid.');
+		vscode.window.showErrorMessage(languagePack.runtime.prdNotFoundRoot);
 		return;
 	}
 
@@ -1154,32 +1353,30 @@ async function showStatus(): Promise<void> {
 	const nextPending = findNextPendingStory(prd, workspaceRoot);
 
 	const lines = [
-		`RALPH Status — ${prd.project}`,
+		languagePack.status.title(prd.project),
 		``,
-		`✅ Completed: ${completed}/${total}`,
-		`❌ Failed: ${failed}`,
-		`⏳ Pending: ${pending}`,
-		`🔄 In Progress: ${inProgress || 'None'}`,
-		`📍 Next: ${nextPending ? `${nextPending.id} — ${nextPending.title}` : 'All done!'}`,
+		`✅ ${languagePack.status.completed(completed, total)}`,
+		`❌ ${languagePack.status.failed(failed)}`,
+		`⏳ ${languagePack.status.pending(pending)}`,
+		`🔄 ${languagePack.status.inProgress(inProgress)}`,
+		`📍 ${languagePack.status.next(nextPending ? `${nextPending.id} — ${nextPending.title}` : languagePack.status.allDone)}`,
 		``,
-		`Running: ${isRunning ? 'Yes' : 'No'}`
+		languagePack.status.running(isRunning)
 	];
 
 	outputChannel.show(true);
 	log(lines.join('\n'));
-	vscode.window.showInformationMessage(
-		`RALPH: ${completed}/${total} stories done. ` +
-		`Next: ${nextPending ? nextPending.id : 'Complete!'}`
-	);
+	vscode.window.showInformationMessage(languagePack.status.summary(completed, total, nextPending ? nextPending.id : null));
 }
 
 async function resetStory(): Promise<void> {
+	const languagePack = getLanguagePack();
 	const workspaceRoot = getWorkspaceRoot();
 	if (!workspaceRoot) { return; }
 
 	const prd = parsePrd(workspaceRoot);
 	if (!prd) {
-		vscode.window.showErrorMessage('prd.json not found or invalid.');
+		vscode.window.showErrorMessage(languagePack.runtime.prdNotFoundRoot);
 		return;
 	}
 
@@ -1188,7 +1385,7 @@ async function resetStory(): Promise<void> {
 	const trackedStories = prd.userStories.filter(s => trackedIds.has(s.id));
 
 	if (trackedStories.length === 0) {
-		vscode.window.showInformationMessage('没有可重置的已完成或失败故事。');
+		vscode.window.showInformationMessage(languagePack.reset.noTrackedStories);
 		return;
 	}
 
@@ -1202,7 +1399,7 @@ async function resetStory(): Promise<void> {
 	});
 
 	const selection = await vscode.window.showQuickPick(items, {
-		placeHolder: '选择要重置的用户故事'
+		placeHolder: languagePack.reset.placeholder
 	});
 
 	if (selection) {
@@ -1210,15 +1407,16 @@ async function resetStory(): Promise<void> {
 		// Also clear the .ralph status file if present
 		RalphStateManager.clearStalledTask(workspaceRoot, selection.storyId);
 		RalphStateManager.clearStoryExecutionStatus(workspaceRoot, selection.storyId);
-		vscode.window.showInformationMessage(`故事 ${selection.storyId} 已重置。`);
+		vscode.window.showInformationMessage(languagePack.reset.storyReset(selection.storyId));
 		log(`Story ${selection.storyId} reset by user.`);
 	}
 }
 
 async function initializeProjectConstraints(): Promise<void> {
+	const languagePack = getLanguagePack();
 	const workspaceRoot = getWorkspaceRoot();
 	if (!workspaceRoot) {
-		vscode.window.showErrorMessage('当前未打开工作区文件夹。');
+		vscode.window.showErrorMessage(languagePack.common.noWorkspaceFolder);
 		return;
 	}
 
@@ -1229,44 +1427,262 @@ async function initializeProjectConstraints(): Promise<void> {
 
 	try {
 		const config = getConfig();
-		const result = initializeProjectConstraintsArtifacts(workspaceRoot, {
-			gitCommitLanguage: config.GIT_COMMIT_LANGUAGE,
+		const scanResult = scanWorkspaceForProjectConstraints(workspaceRoot, {
+			language: config.LANGUAGE,
 		});
-		log(`Project constraints generated: ${result.generatedPath}`);
-		log(`Project constraints editable rules: ${result.editablePath}`);
-		log(`Technology summary items: ${result.generatedConstraints.technologySummary.length}`);
-		log(`Delivery checklist items: ${result.generatedConstraints.deliveryChecklist.length}`);
+		const referenceSources = await collectProjectConstraintReferenceSources(workspaceRoot);
+		if (referenceSources === undefined) {
+			return;
+		}
+		const scaffold = ensureProjectConstraintsScaffold(workspaceRoot);
+		const taskId = 'project-constraints-init';
+		RalphStateManager.clearStalledTask(workspaceRoot, taskId);
+		const prompt = buildProjectConstraintsInitializationPrompt({
+			workspaceRoot,
+			language: config.LANGUAGE,
+			generatedPath: resolveGeneratedProjectConstraintsPath(workspaceRoot),
+			editablePath: resolveEditableProjectConstraintsPath(workspaceRoot),
+			completionSignalPath: resolveTaskStatusPath(workspaceRoot, taskId),
+			scanResult,
+			referenceSources: referenceSources.sources,
+			additionalInstructions: referenceSources.additionalInstructions,
+		});
+		log(`Project constraints scaffold ready: ${scaffold.generatedPath}`);
+		log(`Project constraints editable scaffold: ${scaffold.editablePath}`);
+		log(`Technology summary items: ${scanResult.generatedConstraints.technologySummary.length}`);
+		log(`Delivery checklist items: ${scanResult.generatedConstraints.deliveryChecklist.length}`);
+		await openCopilotChatWithPrompt(prompt, languagePack.initProjectConstraints.copiedPrompt);
+		vscode.window.showInformationMessage(languagePack.initProjectConstraints.started);
+
+		try {
+			await waitForCopilotCompletion(taskId, workspaceRoot);
+		} catch (error: unknown) {
+			const message = error instanceof Error ? error.message : String(error);
+			log(`ERROR: Failed to initialize project constraints: ${message}`);
+			vscode.window.showErrorMessage(languagePack.initProjectConstraints.failed(message));
+			return;
+		}
+
+		const generatedPath = resolveGeneratedProjectConstraintsPath(workspaceRoot);
+		const editablePath = resolveEditableProjectConstraintsPath(workspaceRoot);
+		log(`Project constraints generated: ${generatedPath}`);
+		log(`Project constraints editable rules: ${editablePath}`);
 
 		const action = await vscode.window.showInformationMessage(
-			'RALPH：项目约束已初始化。',
-			'打开可编辑规则',
-			'打开生成摘要'
+			languagePack.initProjectConstraints.success,
+			languagePack.initProjectConstraints.openEditableRules,
+			languagePack.initProjectConstraints.openGeneratedSummary
 		);
 
-		if (action === '打开可编辑规则') {
-			const document = await vscode.workspace.openTextDocument(result.editablePath);
+		if (action === languagePack.initProjectConstraints.openEditableRules) {
+			const document = await vscode.workspace.openTextDocument(editablePath);
 			await vscode.window.showTextDocument(document, { preview: false });
-		} else if (action === '打开生成摘要') {
-			const document = await vscode.workspace.openTextDocument(result.generatedPath);
+		} else if (action === languagePack.initProjectConstraints.openGeneratedSummary) {
+			const document = await vscode.workspace.openTextDocument(generatedPath);
 			await vscode.window.showTextDocument(document, { preview: false });
 		}
 	} catch (error: unknown) {
 		const message = error instanceof Error ? error.message : String(error);
 		log(`ERROR: Failed to initialize project constraints: ${message}`);
-		vscode.window.showErrorMessage(`RALPH：初始化项目约束失败：${message}`);
+		vscode.window.showErrorMessage(languagePack.initProjectConstraints.failed(message));
+	}
+}
+
+async function collectProjectConstraintReferenceSources(
+	workspaceRoot: string,
+): Promise<{ sources: ProjectConstraintReferenceSource[]; additionalInstructions?: string; } | undefined> {
+	const languagePack = getLanguagePack();
+	const sources: ProjectConstraintReferenceSource[] = [];
+	const additionalInstructions: string[] = [];
+
+	while (true) {
+		const progress = languagePack.initProjectConstraints.referenceCollectionProgress(
+			sources.length,
+			additionalInstructions.length,
+		);
+		const referenceAction = await vscode.window.showQuickPick([
+			{
+				label: languagePack.initProjectConstraints.referenceSourceOptions.files.label,
+				description: languagePack.initProjectConstraints.referenceSourceOptions.files.description,
+				value: 'files' as const,
+			},
+			{
+				label: languagePack.initProjectConstraints.referenceSourceOptions.notes.label,
+				description: languagePack.initProjectConstraints.referenceSourceOptions.notes.description,
+				value: 'notes' as const,
+			},
+			{
+				label: languagePack.initProjectConstraints.referenceSourceOptions.finish.label,
+				description: languagePack.initProjectConstraints.referenceSourceOptions.finish.description,
+				value: 'finish' as const,
+			},
+		], {
+			placeHolder: `${languagePack.initProjectConstraints.referenceSourcePlaceholder} ${progress}`,
+			ignoreFocusOut: true,
+		});
+		if (!referenceAction) {
+			return undefined;
+		}
+
+		if (referenceAction.value === 'finish') {
+			break;
+		}
+
+		if (referenceAction.value === 'files') {
+			const uris = await vscode.window.showOpenDialog({
+				title: languagePack.initProjectConstraints.referenceFilesDialogTitle,
+				canSelectMany: true,
+				canSelectFiles: true,
+				canSelectFolders: false,
+				openLabel: languagePack.initProjectConstraints.referenceFilesOpenLabel,
+			});
+			if (uris === undefined) {
+				return undefined;
+			}
+			for (const uri of uris) {
+				const absolutePath = uri.fsPath;
+				const relativePath = vscode.workspace.asRelativePath(uri, false);
+				const note = await vscode.window.showInputBox({
+					title: languagePack.initProjectConstraints.referenceFileNoteTitle(relativePath),
+					prompt: languagePack.initProjectConstraints.referenceFileNotePrompt,
+					placeHolder: languagePack.initProjectConstraints.referenceFileNotePlaceholder,
+					ignoreFocusOut: true,
+				});
+				upsertProjectConstraintReferenceSource(sources, {
+					label: relativePath,
+					content: readProjectConstraintReferenceFile(absolutePath),
+					note: note?.trim() || undefined,
+				});
+			}
+			continue;
+		}
+
+		const note = await vscode.window.showInputBox({
+			title: languagePack.initProjectConstraints.additionalNotesTitle,
+			prompt: languagePack.initProjectConstraints.additionalNotesPrompt,
+			ignoreFocusOut: true,
+		});
+		if (note === undefined) {
+			return undefined;
+		}
+		const trimmed = note.trim();
+		if (trimmed.length > 0) {
+			additionalInstructions.push(trimmed);
+		}
+	}
+
+	void workspaceRoot;
+	return {
+		sources,
+		additionalInstructions: additionalInstructions.length > 0
+			? additionalInstructions.join('\n\n')
+			: undefined,
+	};
+}
+
+function upsertProjectConstraintReferenceSource(
+	sources: ProjectConstraintReferenceSource[],
+	source: ProjectConstraintReferenceSource,
+): void {
+	const existingIndex = sources.findIndex(entry => entry.label === source.label);
+	if (existingIndex >= 0) {
+		sources[existingIndex] = source;
+		return;
+	}
+	sources.push(source);
+}
+
+function readProjectConstraintReferenceFile(filePath: string): string {
+	try {
+		const content = fs.readFileSync(filePath, 'utf-8');
+		const normalized = content.trim();
+		if (normalized.length <= 4000) {
+			return normalized;
+		}
+		return `${normalized.slice(0, 4000)}\n\n[Content truncated by Ralph]`;
+	} catch (error: unknown) {
+		const message = error instanceof Error ? error.message : String(error);
+		return `[RALPH could not read this file: ${message}]`;
 	}
 }
 
 async function recordDesignContext(): Promise<void> {
+	const languagePack = getLanguagePack();
 	const workspaceRoot = getWorkspaceRoot();
 	if (!workspaceRoot) {
-		vscode.window.showErrorMessage('当前未打开工作区文件夹。');
+		vscode.window.showErrorMessage(languagePack.common.noWorkspaceFolder);
 		return;
 	}
 
-	const stories = getExistingSplitUserStories(workspaceRoot);
+	const stories = getStoriesFromPrd(workspaceRoot);
 	if (stories.length === 0) {
-		vscode.window.showWarningMessage('未找到已拆分的用户故事，请先执行“拆分 PRD”。');
+		vscode.window.showWarningMessage(languagePack.designContext.noStories);
+		return;
+	}
+
+	const existingDrafts = listExistingDesignDrafts(workspaceRoot);
+	const reusableDrafts = existingDrafts.filter(draft => draft.scope !== 'story');
+	const pendingStories = getPendingStoriesForDesignMatching(workspaceRoot, stories);
+	const action = await promptForDesignContextManagementAction(existingDrafts.length > 0);
+	if (!action) {
+		return;
+	}
+
+	if (action === 'create') {
+		await createDesignDraftFromMenu(workspaceRoot);
+		return;
+	}
+
+	if (action === 'delete') {
+		await deleteExistingDesignDraft(existingDrafts);
+		return;
+	}
+
+	await matchDesignDraftsToStories(workspaceRoot, reusableDrafts, pendingStories);
+}
+
+interface VisualDesignContextDraftTarget {
+	scope: DesignContextScope;
+	scopeId: string;
+	label: string;
+	filePath: string;
+}
+
+interface VisualDesignContextDraftInput {
+	figmaUrl?: string;
+	screenshotPaths: string[];
+	referenceDocs: string[];
+	additionalInstructions?: string;
+}
+
+interface DesignDraftRevisionInput extends VisualDesignContextDraftInput {
+	seedArtifact: import('./types').DesignContextArtifact;
+}
+
+interface StoryDesignContextSuggestionInput {
+	additionalInstructions?: string;
+}
+
+interface ExistingDesignDraft {
+	scope: DesignContextScope;
+	scopeId: string;
+	filePath: string;
+	artifact: import('./types').DesignContextArtifact;
+}
+
+type DesignContextManagementAction = 'create' | 'delete' | 'match';
+
+async function generateVisualDesignContextDraft(): Promise<void> {
+	const languagePack = getLanguagePack();
+	const workspaceRoot = getWorkspaceRoot();
+	if (!workspaceRoot) {
+		vscode.window.showErrorMessage(languagePack.common.noWorkspaceFolder);
+		return;
+	}
+
+	const stories = getStoriesFromPrd(workspaceRoot);
+	if (stories.length === 0) {
+		vscode.window.showWarningMessage(languagePack.designContext.noStories);
 		return;
 	}
 
@@ -1275,41 +1691,199 @@ async function recordDesignContext(): Promise<void> {
 		return;
 	}
 
-	const sourceType = await promptForDesignSourceType();
-	if (!sourceType) {
+	const target = await selectVisualDesignContextDraftTarget(workspaceRoot, selectedStory);
+	if (!target) {
 		return;
 	}
 
-	const designContext = await collectDesignContextInput(workspaceRoot, selectedStory.id, sourceType);
-	if (!designContext) {
+	await runVisualDesignContextDraft(workspaceRoot, selectedStory, target);
+}
+
+async function runVisualDesignContextDraft(
+	workspaceRoot: string,
+	selectedStory: UserStory | undefined,
+	target: VisualDesignContextDraftTarget,
+	options?: {
+		visualInputOverride?: VisualDesignContextDraftInput;
+		existingContextLinesOverride?: string[];
+	},
+): Promise<void> {
+	const languagePack = getLanguagePack();
+	const visualInput = options?.visualInputOverride
+		?? await collectVisualDesignContextDraftInput(workspaceRoot, selectedStory, target);
+	if (!visualInput) {
 		return;
 	}
 
-	const validation = validateDesignContext(designContext, selectedStory.id);
-	const filePath = writeDesignContext(workspaceRoot, selectedStory.id, validation.artifact);
-	log(`Design context saved for ${selectedStory.id}: ${filePath}`);
+	const existingContextLines = options?.existingContextLinesOverride
+		?? (selectedStory
+			? summarizeDesignContextForPrompt(resolveDesignContextForStory(workspaceRoot, selectedStory))
+			: summarizeDesignContextForPrompt(readDesignContextForScope(workspaceRoot, target.scope, target.scopeId)));
+
+	if (!visualInput.figmaUrl && visualInput.screenshotPaths.length === 0 && existingContextLines.length === 0) {
+		vscode.window.showWarningMessage(languagePack.designContext.draft.noVisualSources);
+		return;
+	}
+
+	const taskId = createVisualDesignContextDraftTaskId(selectedStory?.id ?? target.scopeId, target.scope, target.scopeId);
+	RalphStateManager.clearStalledTask(workspaceRoot, taskId);
+
+	const prompt = buildVisualDesignContextDraftPrompt({
+		workspaceRoot,
+		targetScope: target.scope,
+		targetScopeId: target.scopeId,
+		targetFilePath: target.filePath,
+		completionSignalPath: resolveTaskStatusPath(workspaceRoot, taskId),
+		story: selectedStory,
+		figmaUrl: visualInput.figmaUrl,
+		screenshotPaths: visualInput.screenshotPaths,
+		referenceDocs: visualInput.referenceDocs,
+		additionalInstructions: visualInput.additionalInstructions,
+		existingContextLines,
+	});
+
+	log(`Generating visual design context draft for ${selectedStory?.id ?? target.scopeId} -> ${target.label}`);
+	vscode.window.showInformationMessage(languagePack.designContext.draft.started(target.label));
+	await openCopilotChatWithPrompt(prompt, languagePack.designContext.draft.copiedPrompt);
+
+	try {
+		await waitForCopilotCompletion(taskId, workspaceRoot);
+	} catch (error: unknown) {
+		const message = error instanceof Error ? error.message : String(error);
+		log(`ERROR: Visual design context draft generation failed for ${target.label}: ${message}`);
+		vscode.window.showErrorMessage(languagePack.designContext.draft.failed(message));
+		return;
+	}
+
+	const generatedDraft = readDesignContextForScope(workspaceRoot, target.scope, target.scopeId);
+	if (!generatedDraft) {
+		log(`ERROR: Copilot completed the visual draft task but no artifact was found at ${target.filePath}`);
+		vscode.window.showErrorMessage(languagePack.designContext.draft.missingArtifact(target.label));
+		return;
+	}
+
+	const validation = validateDesignContext({
+		...generatedDraft,
+		scope: target.scope,
+		scopeId: target.scopeId,
+		figmaUrl: generatedDraft.figmaUrl ?? visualInput.figmaUrl,
+		screenshotPaths: generatedDraft.screenshotPaths.length > 0 ? generatedDraft.screenshotPaths : visualInput.screenshotPaths,
+		referenceDocs: generatedDraft.referenceDocs.length > 0 ? generatedDraft.referenceDocs : visualInput.referenceDocs,
+	}, selectedStory?.id ?? target.scopeId);
+	const filePath = writeDesignContextForScope(workspaceRoot, target.scope, target.scopeId, validation.artifact);
+	log(`Visual design context draft saved for ${target.label}: ${filePath}`);
 
 	if (!validation.isValid) {
-		log(`Design context validation warnings for ${selectedStory.id}: ${validation.errors.join(' | ')}`);
+		log(`Visual design context draft validation warnings for ${target.label}: ${validation.errors.join(' | ')}`);
 	}
 
 	const action = await vscode.window.showInformationMessage(
-		validation.isValid
-			? `RALPH：已为 ${selectedStory.id} 保存设计上下文。`
-			: `RALPH：已为 ${selectedStory.id} 保存设计上下文，但存在警告。`,
-		'打开设计上下文'
+		languagePack.designContext.draft.saved(target.label, !validation.isValid),
+		languagePack.designContext.open
 	);
 
-	if (action === '打开设计上下文') {
+	if (action === languagePack.designContext.open) {
+		const document = await vscode.workspace.openTextDocument(filePath);
+		await vscode.window.showTextDocument(document, { preview: false });
+	}
+}
+
+async function suggestStoryDesignContext(): Promise<void> {
+	const languagePack = getLanguagePack();
+	const workspaceRoot = getWorkspaceRoot();
+	if (!workspaceRoot) {
+		vscode.window.showErrorMessage(languagePack.common.noWorkspaceFolder);
+		return;
+	}
+
+	const stories = getStoriesFromPrd(workspaceRoot);
+	if (stories.length === 0) {
+		vscode.window.showWarningMessage(languagePack.designContext.noStories);
+		return;
+	}
+
+	const selectedStory = await selectStoryForDesignContext(stories);
+	if (!selectedStory) {
+		return;
+	}
+
+	const sharedContext = resolveSharedDesignContextForStory(workspaceRoot, selectedStory);
+	if (!sharedContext) {
+		vscode.window.showWarningMessage(languagePack.designContext.suggestion.noSharedContext(selectedStory.id));
+		return;
+	}
+
+	const suggestionInput = await collectStoryDesignContextSuggestionInput();
+	if (!suggestionInput) {
+		return;
+	}
+
+	ensureDesignContextSuggestionDirectory(workspaceRoot);
+	const suggestionPath = resolveDesignContextSuggestionPath(workspaceRoot, selectedStory.id);
+	const taskId = `design-context-suggest-${selectedStory.id.toLowerCase()}`;
+	RalphStateManager.clearStalledTask(workspaceRoot, taskId);
+
+	const prompt = buildStoryDesignContextSuggestionPrompt({
+		workspaceRoot,
+		targetFilePath: suggestionPath,
+		completionSignalPath: resolveTaskStatusPath(workspaceRoot, taskId),
+		story: selectedStory,
+		sharedContextLines: summarizeDesignContextForPrompt(sharedContext),
+		existingStoryContextLines: summarizeDesignContextForPrompt(readDesignContext(workspaceRoot, selectedStory.id)),
+		additionalInstructions: suggestionInput.additionalInstructions,
+	});
+
+	log(`Generating story design context suggestion for ${selectedStory.id}`);
+	vscode.window.showInformationMessage(languagePack.designContext.suggestion.started(selectedStory.id));
+	await openCopilotChatWithPrompt(prompt, languagePack.designContext.suggestion.copiedPrompt);
+
+	try {
+		await waitForCopilotCompletion(taskId, workspaceRoot);
+	} catch (error: unknown) {
+		const message = error instanceof Error ? error.message : String(error);
+		log(`ERROR: Story design context suggestion failed for ${selectedStory.id}: ${message}`);
+		vscode.window.showErrorMessage(languagePack.designContext.suggestion.failed(message));
+		return;
+	}
+
+	const rawSuggestion = readJsonFile<Partial<import('./types').DesignContextArtifact>>(suggestionPath);
+	if (!rawSuggestion) {
+		log(`ERROR: Copilot completed suggestion task but no suggestion artifact was found for ${selectedStory.id}`);
+		vscode.window.showErrorMessage(languagePack.designContext.suggestion.missingArtifact(selectedStory.id));
+		return;
+	}
+
+	const normalizedSuggestion = validateDesignContext({
+		...rawSuggestion,
+		storyId: selectedStory.id,
+		scope: 'story',
+		scopeId: selectedStory.id,
+	}, selectedStory.id).artifact;
+	const storyOverride = createStoryDesignContextOverride(selectedStory.id, normalizedSuggestion, sharedContext);
+	const validation = validateDesignContext(storyOverride, selectedStory.id);
+	const filePath = writeDesignContext(workspaceRoot, selectedStory.id, validation.artifact);
+	log(`Story design context suggestion saved for ${selectedStory.id}: ${filePath}`);
+
+	if (!validation.isValid) {
+		log(`Story design context suggestion validation warnings for ${selectedStory.id}: ${validation.errors.join(' | ')}`);
+	}
+
+	const action = await vscode.window.showInformationMessage(
+		languagePack.designContext.suggestion.saved(selectedStory.id, !validation.isValid),
+		languagePack.designContext.open
+	);
+
+	if (action === languagePack.designContext.open) {
 		const document = await vscode.workspace.openTextDocument(filePath);
 		await vscode.window.showTextDocument(document, { preview: false });
 	}
 }
 
 async function recallRelatedTaskMemory(): Promise<void> {
+	const languagePack = getLanguagePack();
 	const workspaceRoot = getWorkspaceRoot();
 	if (!workspaceRoot) {
-		vscode.window.showErrorMessage('No workspace folder open.');
+		vscode.window.showErrorMessage(languagePack.common.noWorkspaceFolder);
 		return;
 	}
 
@@ -1324,7 +1898,7 @@ async function recallRelatedTaskMemory(): Promise<void> {
 	});
 
 	if (matches.length === 0) {
-		vscode.window.showInformationMessage(`RALPH: No related task memories found for ${targetStory.id}.`);
+		vscode.window.showInformationMessage(languagePack.taskMemoryRecall.noRelatedTaskMemories(targetStory.id));
 		log(`No related task memories found for ${targetStory.id}.`);
 		return;
 	}
@@ -1339,23 +1913,24 @@ async function recallRelatedTaskMemory(): Promise<void> {
 }
 
 async function selectStoryForTaskMemoryRecall(workspaceRoot: string): Promise<UserStory | undefined> {
+	const languagePack = getLanguagePack();
 	const prd = parsePrd(workspaceRoot);
 	const nextPendingStory = prd ? findNextPendingStory(prd, workspaceRoot) : null;
-	const splitStories = getExistingSplitUserStories(workspaceRoot);
+	const stories = getStoriesFromPrd(workspaceRoot);
 
 	const choice = await vscode.window.showQuickPick([
 		...(nextPendingStory ? [{
-			label: '下一个待执行故事',
-			description: `${nextPendingStory.id} — ${nextPendingStory.title}`,
+			label: languagePack.taskMemoryRecall.nextPendingStoryLabel,
+			description: languagePack.taskMemoryRecall.nextPendingStoryDescription(nextPendingStory.id, nextPendingStory.title),
 			value: 'next' as const,
 		}] : []),
-		...(splitStories.length > 0 ? [{
-			label: '选择故事',
-			description: '选择任意已拆分的用户故事以预览相关任务记忆',
+		...(stories.length > 0 ? [{
+			label: languagePack.taskMemoryRecall.chooseStoryLabel,
+			description: languagePack.taskMemoryRecall.chooseStoryDescription,
 			value: 'choose' as const,
 		}] : []),
 	], {
-		placeHolder: '选择用于回忆相关任务记忆的故事',
+		placeHolder: languagePack.taskMemoryRecall.chooseStoryPlaceholder,
 	});
 
 	if (!choice) {
@@ -1367,16 +1942,16 @@ async function selectStoryForTaskMemoryRecall(workspaceRoot: string): Promise<Us
 	}
 
 	const selected = await vscode.window.showQuickPick(
-		splitStories.map(story => ({
-			label: `${story.id} — ${story.title || '未命名故事'}`,
-			description: `[${normalizeStoryExecutionStatus(story.status) || '未开始'}] 优先级 ${story.priority}`,
-			detail: (story.description || '').trim() || '无描述。',
+		stories.map(story => ({
+			label: languagePack.common.storyFormat(story.id, story.title || languagePack.common.untitledStory),
+			description: languagePack.common.statusPriority(getLocalizedStoryStatus(RalphStateManager.getStoryExecutionStatus(workspaceRoot, story.id), languagePack.language), story.priority),
+			detail: (story.description || '').trim() || languagePack.common.noDescription,
 			story,
 		})),
 		{
 			matchOnDescription: true,
 			matchOnDetail: true,
-			placeHolder: '选择一个已拆分的故事以预览相关任务记忆',
+			placeHolder: languagePack.taskMemoryRecall.previewPlaceholder,
 		}
 	);
 
@@ -1384,22 +1959,23 @@ async function selectStoryForTaskMemoryRecall(workspaceRoot: string): Promise<Us
 }
 
 function renderRecalledTaskMemoryPreview(story: UserStory, matches: ReturnType<typeof recallRelatedTaskMemories>): string {
-	const lines = [`# 相关任务记忆预览`, '', `故事：${story.id} — ${story.title}`, ''];
+	const languagePack = getLanguagePack();
+	const lines = [`# ${languagePack.taskMemoryRecall.previewTitle}`, '', languagePack.taskMemoryRecall.previewStory(story.id, story.title), ''];
 	for (const match of matches) {
 		lines.push(`## ${match.memory.storyId} — ${match.memory.title}`);
-		lines.push(`分数：${match.score}`);
-		lines.push(`原因：${match.reasons.join('; ')}`);
+		lines.push(languagePack.taskMemoryRecall.previewScore(match.score));
+		lines.push(languagePack.taskMemoryRecall.previewReasons(match.reasons));
 		if (match.memory.summary) {
-			lines.push(`摘要：${match.memory.summary}`);
+			lines.push(languagePack.taskMemoryRecall.previewSummary(match.memory.summary));
 		}
 		if (match.memory.keyDecisions.length > 0) {
-			lines.push('关键决策：');
+			lines.push(languagePack.taskMemoryRecall.previewKeyDecisions);
 			for (const decision of match.memory.keyDecisions.slice(0, 3)) {
 				lines.push(`- ${decision}`);
 			}
 		}
 		if (match.memory.changedFiles.length > 0) {
-			lines.push('变更文件：');
+			lines.push(languagePack.taskMemoryRecall.previewChangedFiles);
 			for (const changedFile of match.memory.changedFiles.slice(0, 3)) {
 				lines.push(`- ${changedFile}`);
 			}
@@ -1410,76 +1986,682 @@ function renderRecalledTaskMemoryPreview(story: UserStory, matches: ReturnType<t
 	return lines.join('\n').trimEnd();
 }
 
-async function selectStoryForDesignContext(stories: SplitUserStory[]): Promise<SplitUserStory | undefined> {
+async function selectStoryForDesignContext(stories: UserStory[]): Promise<UserStory | undefined> {
+	const languagePack = getLanguagePack();
 	const selected = await vscode.window.showQuickPick(
 		stories.map(story => ({
-			label: `${story.id} — ${story.title || '未命名故事'}`,
-			description: `[${normalizeStoryExecutionStatus(story.status) || '未开始'}] 优先级 ${story.priority}`,
-			detail: (story.description || '').trim() || '无描述。',
+			label: languagePack.common.storyFormat(story.id, story.title || languagePack.common.untitledStory),
+			description: languagePack.common.statusPriority(getLocalizedStoryStatus(normalizeStoryExecutionStatus(story.status) || 'none', languagePack.language), story.priority),
+			detail: (story.description || '').trim() || languagePack.common.noDescription,
 			story,
 		})),
 		{
 			matchOnDescription: true,
 			matchOnDetail: true,
-			placeHolder: '选择要附加设计上下文的已拆分故事',
+			placeHolder: languagePack.designContext.selectStoryPlaceholder,
 		}
 	);
 
 	return selected?.story;
 }
 
+async function selectVisualDesignContextDraftTarget(
+	workspaceRoot: string,
+	story?: UserStory,
+	allowedScopes: ReadonlyArray<DesignContextScope> = ['story', 'screen', 'module', 'project'],
+): Promise<VisualDesignContextDraftTarget | undefined> {
+	const languagePack = getLanguagePack();
+	const scopeOptions = [
+		...(allowedScopes.includes('story') ? [{
+			label: languagePack.designContext.draft.scopeOptions.story.label,
+			description: languagePack.designContext.draft.scopeOptions.story.description,
+			value: 'story' as const,
+		}] : []),
+		...(allowedScopes.includes('screen') ? [{
+			label: languagePack.designContext.draft.scopeOptions.screen.label,
+			description: languagePack.designContext.draft.scopeOptions.screen.description,
+			value: 'screen' as const,
+		}] : []),
+		...(allowedScopes.includes('module') ? [{
+			label: languagePack.designContext.draft.scopeOptions.module.label,
+			description: languagePack.designContext.draft.scopeOptions.module.description,
+			value: 'module' as const,
+		}] : []),
+		...(allowedScopes.includes('project') ? [{
+			label: languagePack.designContext.draft.scopeOptions.project.label,
+			description: languagePack.designContext.draft.scopeOptions.project.description,
+			value: 'project' as const,
+		}] : []),
+	];
+	const pickedScope = await vscode.window.showQuickPick(scopeOptions, {
+		placeHolder: languagePack.designContext.draft.scopePlaceholder,
+	});
+
+	if (!pickedScope) {
+		return undefined;
+	}
+
+	if (pickedScope.value === 'project') {
+		return {
+			scope: 'project',
+			scopeId: 'project',
+			label: languagePack.designContext.draft.scopeOptions.project.label,
+			filePath: resolveProjectDesignContextPath(workspaceRoot),
+		};
+	}
+
+	if (pickedScope.value === 'story') {
+		if (!story) {
+			return undefined;
+		}
+		return {
+			scope: 'story',
+			scopeId: story.id,
+			label: `${pickedScope.label} — ${story.id}`,
+			filePath: resolveDesignContextPath(workspaceRoot, story.id),
+		};
+	}
+
+	const scopeId = await vscode.window.showInputBox({
+		title: pickedScope.value === 'screen'
+			? languagePack.designContext.draft.screenIdTitle
+			: languagePack.designContext.draft.moduleIdTitle,
+		prompt: pickedScope.value === 'screen'
+			? languagePack.designContext.draft.screenIdPrompt
+			: languagePack.designContext.draft.moduleIdPrompt,
+		value: getDefaultDraftScopeId(story, pickedScope.value),
+		ignoreFocusOut: true,
+	});
+
+	if (scopeId === undefined || scopeId.trim().length === 0) {
+		return undefined;
+	}
+
+	const normalizedScopeId = scopeId.trim();
+	return {
+		scope: pickedScope.value,
+		scopeId: normalizedScopeId,
+		label: `${pickedScope.label} — ${normalizedScopeId}`,
+		filePath: pickedScope.value === 'screen'
+			? resolveScreenDesignContextPath(workspaceRoot, normalizedScopeId)
+			: resolveModuleDesignContextPath(workspaceRoot, normalizedScopeId),
+	};
+}
+
+function getDefaultDraftScopeId(story: UserStory | undefined, scope: 'screen' | 'module'): string {
+	if (!story) {
+		return scope === 'screen' ? 'default-screen' : 'default-module';
+	}
+
+	if (scope === 'screen') {
+		for (const key of ['screenId', 'screenName', 'page', 'pageName', 'pageOrScreenName', 'screen']) {
+			const value = story[key];
+			if (typeof value === 'string' && value.trim().length > 0) {
+				return value.trim();
+			}
+		}
+		return story.title;
+	}
+
+	for (const key of ['module', 'moduleName']) {
+		const value = story[key];
+		if (typeof value === 'string' && value.trim().length > 0) {
+			return value.trim();
+		}
+	}
+
+	if (Array.isArray(story.moduleHints)) {
+		for (const value of story.moduleHints) {
+			if (typeof value === 'string' && value.trim().length > 0) {
+				return value.trim();
+			}
+		}
+	}
+
+	return story.title;
+}
+
 async function promptForDesignSourceType(): Promise<'figma' | 'screenshots' | 'notes' | undefined> {
+	const languagePack = getLanguagePack();
 	const picked = await vscode.window.showQuickPick([
 		{
-			label: '$(figma) Figma 链接',
-			description: '记录 Figma 链接以及补充说明',
+			label: languagePack.designContext.sources.figma.label,
+			description: languagePack.designContext.sources.figma.description,
 			value: 'figma' as const,
 		},
 		{
-			label: '$(device-camera) 截图',
-			description: '记录本地截图路径以及补充说明',
+			label: languagePack.designContext.sources.screenshots.label,
+			description: languagePack.designContext.sources.screenshots.description,
 			value: 'screenshots' as const,
 		},
 		{
-			label: '$(note) 手动备注',
-			description: '仅以结构化备注的方式记录设计要求',
+			label: languagePack.designContext.sources.notes.label,
+			description: languagePack.designContext.sources.notes.description,
 			value: 'notes' as const,
 		},
 	], {
-		placeHolder: '选择主要的设计上下文来源',
+		placeHolder: languagePack.designContext.sourcePlaceholder,
 	});
 
 	return picked?.value;
 }
 
-async function collectDesignContextInput(
-	workspaceRoot: string,
-	storyId: string,
-	sourceType: 'figma' | 'screenshots' | 'notes',
-): Promise<Partial<import('./types').DesignContextArtifact> | undefined> {
-	const existing = readDesignContext(workspaceRoot, storyId);
-	const figmaUrl = sourceType === 'figma'
-		? await vscode.window.showInputBox({
-			title: 'Design Context — Figma URL',
-			prompt: 'Paste the Figma link for this story',
-			value: existing?.figmaUrl ?? '',
-			ignoreFocusOut: true,
-		})
-		: existing?.figmaUrl;
+async function promptForDesignContextManagementAction(hasDrafts: boolean): Promise<DesignContextManagementAction | undefined> {
+	const languagePack = getLanguagePack();
+	const picked = await vscode.window.showQuickPick([
+		{
+			label: hasDrafts
+				? languagePack.designContext.managementActions.create.label
+				: languagePack.designContext.managementActions.createFirst.label,
+			description: hasDrafts
+				? languagePack.designContext.managementActions.create.description
+				: languagePack.designContext.managementActions.createFirst.description,
+			value: 'create' as const,
+		},
+		...(hasDrafts ? [{
+			label: languagePack.designContext.managementActions.delete.label,
+			description: languagePack.designContext.managementActions.delete.description,
+			value: 'delete' as const,
+		}] : []),
+		...(hasDrafts ? [{
+			label: languagePack.designContext.managementActions.match.label,
+			description: languagePack.designContext.managementActions.match.description,
+			value: 'match' as const,
+		}] : []),
+	], {
+		placeHolder: hasDrafts
+			? languagePack.designContext.managementPlaceholder
+			: languagePack.designContext.createFirstPlaceholder,
+	});
 
-	if (sourceType === 'figma' && figmaUrl === undefined) {
+	return picked?.value;
+}
+
+async function promptForSharedDesignContextTargets(
+	targets: ReturnType<typeof listAvailableSharedDesignContextTargets>,
+	currentReferences: string[],
+): Promise<ReturnType<typeof listAvailableSharedDesignContextTargets> | undefined> {
+	const languagePack = getLanguagePack();
+	const currentReferenceSet = new Set(currentReferences);
+	const picked = await vscode.window.showQuickPick(
+		targets.map(target => ({
+			label: getSharedDesignContextTargetLabel(target.scope, target.scopeId),
+			description: summarizeSharedDesignContextTarget(target.artifact),
+			picked: currentReferenceSet.has(`${target.scope}:${target.scopeId}`),
+			target,
+		})),
+		{
+			canPickMany: true,
+			matchOnDescription: true,
+			placeHolder: languagePack.designContext.linkTargetPlaceholder,
+		}
+	);
+
+	if (picked === undefined) {
 		return undefined;
 	}
 
+	return picked.map(item => item.target);
+}
+
+function getSharedDesignContextTargetLabel(scope: 'project' | 'screen' | 'module', scopeId: string): string {
+	if (scope === 'project') {
+		return '$(layers) Project Defaults';
+	}
+	if (scope === 'screen') {
+		return `$(browser) Screen: ${scopeId}`;
+	}
+	return `$(symbol-module) Module: ${scopeId}`;
+}
+
+function summarizeSharedDesignContextTarget(artifact: import('./types').DesignContextArtifact): string {
+	const summaryParts = [artifact.summary, artifact.pageOrScreenName]
+		.map(value => value?.trim())
+		.filter((value): value is string => Boolean(value));
+	if (summaryParts.length > 0) {
+		return summaryParts.join(' | ');
+	}
+	if (artifact.layoutConstraints.length > 0) {
+		return artifact.layoutConstraints.slice(0, 2).join('; ');
+	}
+	if (artifact.acceptanceChecks.length > 0) {
+		return artifact.acceptanceChecks.slice(0, 2).join('; ');
+	}
+	return `Source: ${artifact.sourceType}`;
+}
+
+function listExistingDesignDrafts(workspaceRoot: string): ExistingDesignDraft[] {
+	const drafts: ExistingDesignDraft[] = [];
+	const designContextDir = path.join(resolvePrdDirectoryPath(workspaceRoot), 'design-context');
+	const sharedDir = path.join(designContextDir, 'shared');
+
+	if (fs.existsSync(sharedDir)) {
+		for (const entry of fs.readdirSync(sharedDir)) {
+			if (!entry.endsWith('.design.json')) {
+				continue;
+			}
+
+			let scope: DesignContextScope | null = null;
+			if (entry === 'project.design.json') {
+				scope = 'project';
+			} else if (entry.startsWith('screen-')) {
+				scope = 'screen';
+			} else if (entry.startsWith('module-')) {
+				scope = 'module';
+			}
+			if (!scope) {
+				continue;
+			}
+
+			const filePath = path.join(sharedDir, entry);
+			const artifact = validateDesignContext(
+				JSON.parse(fs.readFileSync(filePath, 'utf-8')) as Partial<import('./types').DesignContextArtifact>,
+				scope === 'project' ? 'project' : entry.replace(/\.design\.json$/i, ''),
+			).artifact;
+			if (!artifact) {
+				continue;
+			}
+
+			drafts.push({
+				scope,
+				scopeId: artifact.scopeId ?? (scope === 'project' ? 'project' : entry.replace('.design.json', '')),
+				filePath,
+				artifact,
+			});
+		}
+	}
+
+	if (fs.existsSync(designContextDir)) {
+		for (const entry of fs.readdirSync(designContextDir)) {
+			if (!entry.endsWith('.design.json') || entry === 'shared') {
+				continue;
+			}
+
+			const storyId = entry.replace(/\.design\.json$/i, '');
+			const filePath = path.join(designContextDir, entry);
+			const artifact = readDesignContext(workspaceRoot, storyId);
+			if (!artifact) {
+				continue;
+			}
+
+			drafts.push({
+				scope: 'story',
+				scopeId: storyId,
+				filePath,
+				artifact,
+			});
+		}
+	}
+
+	return drafts.sort((left, right) => {
+		const order: Record<DesignContextScope, number> = { project: 0, screen: 1, module: 2, story: 3 };
+		if (order[left.scope] !== order[right.scope]) {
+			return order[left.scope] - order[right.scope];
+		}
+		return left.scopeId.localeCompare(right.scopeId, undefined, { sensitivity: 'base' });
+	});
+}
+
+function getPendingStoriesForDesignMatching(workspaceRoot: string, stories: UserStory[]): UserStory[] {
+	void workspaceRoot;
+	return stories.filter(story => normalizeStoryExecutionStatus(story.status) !== 'completed');
+}
+
+async function createDesignDraftFromMenu(workspaceRoot: string): Promise<void> {
+	const target = await selectVisualDesignContextDraftTarget(workspaceRoot, undefined, ['project', 'screen', 'module']);
+	if (!target) {
+		return;
+	}
+
+	await runVisualDesignContextDraft(workspaceRoot, undefined, target);
+	log(`Created UI design draft from menu for ${target.label}`);
+}
+
+async function deleteExistingDesignDraft(existingDrafts: ExistingDesignDraft[]): Promise<void> {
+	const languagePack = getLanguagePack();
+	const draft = await promptForExistingDesignDraft(existingDrafts);
+	if (!draft) {
+		return;
+	}
+
+	const label = getExistingDesignDraftLabel(draft);
+	const confirm = await vscode.window.showWarningMessage(
+		languagePack.designContext.deleteConfirm(label),
+		{ modal: true },
+		languagePack.designContext.deleteAction
+	);
+	if (confirm !== languagePack.designContext.deleteAction) {
+		return;
+	}
+
+	fs.unlinkSync(draft.filePath);
+	log(`Deleted design draft: ${draft.filePath}`);
+	vscode.window.showInformationMessage(languagePack.designContext.deleted(label));
+}
+
+async function matchDesignDraftsToStories(
+	workspaceRoot: string,
+	reusableDrafts: ExistingDesignDraft[],
+	pendingStories: UserStory[],
+): Promise<void> {
+	const languagePack = getLanguagePack();
+	if (reusableDrafts.length === 0) {
+		vscode.window.showWarningMessage(languagePack.designContext.noReusableDrafts);
+		return;
+	}
+	if (pendingStories.length === 0) {
+		vscode.window.showInformationMessage(languagePack.designContext.noPendingStories);
+		return;
+	}
+
+	const selectedDrafts = await promptForReusableDraftsToMatch(reusableDrafts);
+	if (!selectedDrafts || selectedDrafts.length === 0) {
+		return;
+	}
+
+	const selectedStories = await promptForStoriesToMatch(workspaceRoot, pendingStories);
+	if (!selectedStories || selectedStories.length === 0) {
+		return;
+	}
+
+	ensureDesignContextSuggestionDirectory(workspaceRoot);
+	const taskId = `design-context-match-${Date.now()}`;
+	const matchPlanPath = path.join(ensureDesignContextSuggestionDirectory(workspaceRoot), `${taskId}.json`);
+	RalphStateManager.clearStalledTask(workspaceRoot, taskId);
+
+	const allowedReferences = selectedDrafts.map(draft => `${draft.scope}:${draft.scopeId}`);
+	const prompt = buildStoryDesignContextBatchMatchPrompt({
+		workspaceRoot,
+		targetFilePath: matchPlanPath,
+		completionSignalPath: resolveTaskStatusPath(workspaceRoot, taskId),
+		candidateStories: selectedStories,
+		candidateDrafts: selectedDrafts.map(draft => ({
+			reference: `${draft.scope}:${draft.scopeId}`,
+			summaryLines: summarizeDesignContextForPrompt(draft.artifact),
+		})),
+	});
+
+	log(`Generating AI-guided design-story matches for ${selectedStories.length} candidate stories using ${selectedDrafts.length} reusable drafts.`);
+	vscode.window.showInformationMessage(languagePack.designContext.matching.started(selectedStories.length, selectedDrafts.length));
+	await openCopilotChatWithPrompt(prompt, languagePack.designContext.matching.copiedPrompt);
+
+	try {
+		await waitForCopilotCompletion(taskId, workspaceRoot);
+	} catch (error: unknown) {
+		const message = error instanceof Error ? error.message : String(error);
+		log(`ERROR: Design draft matching failed: ${message}`);
+		vscode.window.showErrorMessage(languagePack.designContext.matching.failed(message));
+		return;
+	}
+
+	const rawMatchPlan = readJsonFile<unknown>(matchPlanPath);
+	if (!rawMatchPlan) {
+		log('ERROR: Copilot completed design matching task but no match plan artifact was found.');
+		vscode.window.showErrorMessage(languagePack.designContext.matching.missingArtifact);
+		return;
+	}
+
+	const normalizedMatchPlan = normalizeStoryDesignContextBatchMatchResult(rawMatchPlan, selectedStories, allowedReferences);
+	if (normalizedMatchPlan.matches.length === 0) {
+		vscode.window.showInformationMessage(languagePack.designContext.matching.noRelevantMatches(selectedStories.length));
+		return;
+	}
+
+	await applyDesignDraftMatches(workspaceRoot, selectedStories, selectedDrafts, normalizedMatchPlan);
+
+	vscode.window.showInformationMessage(languagePack.designContext.matching.completed(
+		normalizedMatchPlan.matches.length,
+		selectedStories.length,
+		selectedDrafts.length,
+	));
+}
+
+
+async function applyDesignDraftMatches(
+	workspaceRoot: string,
+	selectedStories: UserStory[],
+	selectedDrafts: ExistingDesignDraft[],
+	normalizedMatchPlan: ReturnType<typeof normalizeStoryDesignContextBatchMatchResult>,
+): Promise<void> {
+	for (const match of normalizedMatchPlan.matches) {
+		const story = selectedStories.find(candidate => candidate.id === match.storyId);
+		if (!story) {
+			continue;
+		}
+
+		const existingContext = readDesignContext(workspaceRoot, story.id);
+		const availableTargets = listAvailableSharedDesignContextTargets(workspaceRoot, story);
+		const preservedTargets = availableTargets.filter(target => (existingContext?.inheritsFrom ?? []).includes(`${target.scope}:${target.scopeId}`));
+		const mergedTargetsMap = new Map<string, ReturnType<typeof listAvailableSharedDesignContextTargets>[number]>();
+		for (const target of [...preservedTargets, ...selectedDrafts
+			.filter(draft => match.linkedReferences.includes(`${draft.scope}:${draft.scopeId}`))
+			.map(draft => ({
+			scope: draft.scope as 'project' | 'screen' | 'module',
+			scopeId: draft.scopeId,
+			artifact: draft.artifact,
+		}))]) {
+			mergedTargetsMap.set(`${target.scope}:${target.scopeId}`, target);
+		}
+
+		const mergedTargets = Array.from(mergedTargetsMap.values());
+		const linkedReferences = mergedTargets.map(target => `${target.scope}:${target.scopeId}`);
+		const linkedSharedContext = mergeSharedDesignContextTargets(story.id, mergedTargets);
+		const draft = createReviewStoryDesignContextDraft(story, {
+			existingContext,
+			sharedContext: linkedSharedContext,
+			linkedReferences,
+		});
+		const validation = validateDesignContext(draft, story.id);
+		const filePath = writeDesignContext(workspaceRoot, story.id, validation.artifact);
+		log(`Matched UI design drafts to ${story.id}: ${filePath}`);
+		if (match.reason) {
+			log(`Design draft match rationale for ${story.id}: ${match.reason}`);
+		}
+		if (!validation.isValid) {
+			log(`UI design note warnings for ${story.id}: ${validation.errors.join(' | ')}`);
+		}
+	}
+}
+
+async function promptForExistingDesignDraft(
+	existingDrafts: ExistingDesignDraft[],
+): Promise<ExistingDesignDraft | undefined> {
+	const languagePack = getLanguagePack();
+	const picked = await vscode.window.showQuickPick(
+		existingDrafts.map(draft => ({
+			label: getExistingDesignDraftLabel(draft),
+			description: summarizeSharedDesignContextTarget(draft.artifact),
+			detail: draft.filePath,
+			draft,
+		})),
+		{
+			matchOnDescription: true,
+			matchOnDetail: true,
+			placeHolder: languagePack.designContext.deletePlaceholder,
+		}
+	);
+
+	return picked?.draft;
+}
+
+async function promptForReusableDraftsToMatch(existingDrafts: ExistingDesignDraft[]): Promise<ExistingDesignDraft[] | undefined> {
+	const languagePack = getLanguagePack();
+	const picked = await vscode.window.showQuickPick(
+		existingDrafts.map(draft => ({
+			label: getExistingDesignDraftLabel(draft),
+			description: summarizeSharedDesignContextTarget(draft.artifact),
+			detail: draft.filePath,
+			draft,
+		})),
+		{
+			canPickMany: true,
+			matchOnDescription: true,
+			matchOnDetail: true,
+			placeHolder: languagePack.designContext.matchDraftPlaceholder,
+		}
+	);
+
+	if (picked === undefined) {
+		return undefined;
+	}
+
+	return picked.map(item => item.draft);
+}
+
+async function promptForStoriesToMatch(workspaceRoot: string, stories: UserStory[]): Promise<UserStory[] | undefined> {
+	const languagePack = getLanguagePack();
+	return new Promise(resolve => {
+		const quickPick = vscode.window.createQuickPick<{
+			label: string;
+			description?: string;
+			detail?: string;
+			story?: UserStory;
+			value: 'all' | 'story';
+		}>();
+		let resolved = false;
+
+		const finish = (result: UserStory[] | undefined) => {
+			if (resolved) {
+				return;
+			}
+			resolved = true;
+			quickPick.dispose();
+			resolve(result);
+		};
+
+		quickPick.canSelectMany = true;
+		quickPick.matchOnDescription = true;
+		quickPick.matchOnDetail = true;
+		quickPick.placeholder = languagePack.designContext.matchStoryPlaceholder;
+		quickPick.items = [
+			{
+				label: languagePack.designContext.matchAllPending.label,
+				description: languagePack.designContext.matchAllPending.description(stories.length),
+				value: 'all',
+			},
+			...stories.map(story => ({
+				label: languagePack.common.storyFormat(story.id, story.title || languagePack.common.untitledStory),
+				description: languagePack.common.statusPriority(getLocalizedStoryStatus(normalizeStoryExecutionStatus(story.status) || 'none', languagePack.language), story.priority),
+				detail: (story.description || '').trim() || languagePack.common.noDescription,
+				story,
+				value: 'story' as const,
+			})),
+		];
+
+		quickPick.onDidChangeSelection(selection => {
+			if (selection.some(item => item.value === 'all')) {
+				quickPick.hide();
+				finish(stories);
+			}
+		});
+
+		quickPick.onDidAccept(() => {
+			const selectedStories = quickPick.selectedItems
+				.filter(item => item.value === 'story' && item.story)
+				.map(item => item.story as UserStory);
+			quickPick.hide();
+			finish(selectedStories);
+		});
+
+		quickPick.onDidHide(() => finish(undefined));
+		quickPick.show();
+	});
+}
+
+function getExistingDesignDraftLabel(draft: ExistingDesignDraft): string {
+	const languagePack = getLanguagePack();
+	if (draft.scope === 'project') {
+		return languagePack.designContext.draft.scopeOptions.project.label;
+	}
+	if (draft.scope === 'screen') {
+		return `${languagePack.designContext.draft.scopeOptions.screen.label} - ${draft.scopeId}`;
+	}
+	if (draft.scope === 'module') {
+		return `${languagePack.designContext.draft.scopeOptions.module.label} - ${draft.scopeId}`;
+	}
+	return `${languagePack.designContext.draft.scopeOptions.story.label} - ${draft.scopeId}`;
+}
+
+async function saveStoryDesignContextArtifact(
+	workspaceRoot: string,
+	storyId: string,
+	validation: ReturnType<typeof validateDesignContext>,
+	messageFactory: (validation: ReturnType<typeof validateDesignContext>) => string,
+): Promise<void> {
+	const languagePack = getLanguagePack();
+	const filePath = writeDesignContext(workspaceRoot, storyId, validation.artifact);
+	log(`Design context saved for ${storyId}: ${filePath}`);
+
+	if (!validation.isValid) {
+		log(`Design context validation warnings for ${storyId}: ${validation.errors.join(' | ')}`);
+	}
+
+	const action = await vscode.window.showInformationMessage(
+		messageFactory(validation),
+		languagePack.designContext.open
+	);
+
+	if (action === languagePack.designContext.open) {
+		const document = await vscode.workspace.openTextDocument(filePath);
+		await vscode.window.showTextDocument(document, { preview: false });
+	}
+}
+
+async function collectVisualDesignContextDraftInput(
+	workspaceRoot: string,
+	story: UserStory | undefined,
+	target: VisualDesignContextDraftTarget,
+): Promise<VisualDesignContextDraftInput | undefined> {
+	const languagePack = getLanguagePack();
+	const existing = readDesignContextForScope(workspaceRoot, target.scope, target.scopeId)
+		?? (target.scope === 'story' && story ? readDesignContext(workspaceRoot, story.id) : null);
+
+	const inputMode = await vscode.window.showQuickPick([
+		{
+			label: languagePack.designContext.draft.inputModes.figma.label,
+			description: languagePack.designContext.draft.inputModes.figma.description,
+			value: 'figma' as const,
+		},
+		{
+			label: languagePack.designContext.draft.inputModes.screenshots.label,
+			description: languagePack.designContext.draft.inputModes.screenshots.description,
+			value: 'screenshots' as const,
+		},
+		{
+			label: languagePack.designContext.draft.inputModes.both.label,
+			description: languagePack.designContext.draft.inputModes.both.description,
+			value: 'both' as const,
+		},
+	], {
+		placeHolder: languagePack.designContext.draft.inputModePlaceholder,
+	});
+
+	if (!inputMode) {
+		return undefined;
+	}
+
+	let figmaUrl = existing?.figmaUrl;
+	if (inputMode.value === 'figma' || inputMode.value === 'both') {
+		const nextValue = await promptForTextValue(
+			languagePack.designContext.draft.figmaUrlTitle,
+			languagePack.designContext.draft.figmaUrlPrompt,
+			existing?.figmaUrl,
+		);
+		if (nextValue === undefined) {
+			return undefined;
+		}
+		figmaUrl = nextValue.trim() || undefined;
+	}
+
 	let screenshotPaths = existing?.screenshotPaths ?? [];
-	if (sourceType === 'screenshots') {
+	if (inputMode.value === 'screenshots' || inputMode.value === 'both') {
 		const uris = await vscode.window.showOpenDialog({
-			title: 'Select screenshot files for this story',
+			title: languagePack.designContext.draft.screenshotDialogTitle,
 			canSelectMany: true,
 			canSelectFiles: true,
 			canSelectFolders: false,
 			filters: { Images: ['png', 'jpg', 'jpeg', 'webp'] },
-			openLabel: 'Use Screenshots',
+			openLabel: languagePack.designContext.draft.screenshotOpenLabel,
 		});
 		if (uris === undefined) {
 			return undefined;
@@ -1487,72 +2669,50 @@ async function collectDesignContextInput(
 		screenshotPaths = uris.map(uri => vscode.workspace.asRelativePath(uri, false));
 	}
 
-	const summary = await promptForTextValue('Design Context — Summary', 'Summarize the design intent for this story', existing?.summary);
-	if (summary === undefined) {
-		return undefined;
-	}
-
-	const pageOrScreenName = await promptForTextValue('Design Context — Screen Name', 'Optional page or screen name', existing?.pageOrScreenName);
-	if (pageOrScreenName === undefined) {
-		return undefined;
-	}
-
-	const manualNotes = await promptForListValue('Design Context — Manual Notes', 'Optional notes, separated by commas or new lines', existing?.manualNotes ?? []);
-	if (manualNotes === undefined) {
-		return undefined;
-	}
-
-	const referenceDocs = await promptForListValue('Design Context — Reference Docs', 'Optional relative document paths or URLs', existing?.referenceDocs ?? []);
+	const referenceDocs = await promptForListValue(
+		languagePack.designContext.input.referenceDocsTitle,
+		languagePack.designContext.input.referenceDocsPrompt,
+		existing?.referenceDocs ?? []
+	);
 	if (referenceDocs === undefined) {
 		return undefined;
 	}
 
-	const layoutConstraints = await promptForListValue('Design Context — Layout Constraints', 'List key layout constraints for this story', existing?.layoutConstraints ?? []);
-	if (layoutConstraints === undefined) {
-		return undefined;
-	}
-
-	const componentReuseTargets = await promptForListValue('Design Context — Component Reuse', 'List components that should be reused', existing?.componentReuseTargets ?? []);
-	if (componentReuseTargets === undefined) {
-		return undefined;
-	}
-
-	const tokenRules = await promptForListValue('Design Context — Token Rules', 'List color, spacing, or typography token rules', existing?.tokenRules ?? []);
-	if (tokenRules === undefined) {
-		return undefined;
-	}
-
-	const responsiveRules = await promptForListValue('Design Context — Responsive Rules', 'List responsive behavior requirements', existing?.responsiveRules ?? []);
-	if (responsiveRules === undefined) {
-		return undefined;
-	}
-
-	const doNotChange = await promptForListValue('Design Context — Do Not Change', 'List areas that must stay untouched', existing?.doNotChange ?? []);
-	if (doNotChange === undefined) {
-		return undefined;
-	}
-
-	const acceptanceChecks = await promptForListValue('Design Context — Acceptance Checks', 'List visual acceptance checks for implementation', existing?.acceptanceChecks ?? []);
-	if (acceptanceChecks === undefined) {
+	const additionalInstructions = await promptForTextValue(
+		languagePack.designContext.draft.additionalInstructionsTitle,
+		languagePack.designContext.draft.additionalInstructionsPrompt,
+		''
+	);
+	if (additionalInstructions === undefined) {
 		return undefined;
 	}
 
 	return {
-		storyId,
-		sourceType,
-		figmaUrl: figmaUrl?.trim(),
+		figmaUrl,
 		screenshotPaths,
-		manualNotes,
 		referenceDocs,
-		summary,
-		pageOrScreenName: pageOrScreenName?.trim(),
-		layoutConstraints,
-		componentReuseTargets,
-		tokenRules,
-		responsiveRules,
-		doNotChange,
-		acceptanceChecks,
-		updatedAt: new Date().toISOString(),
+		additionalInstructions: additionalInstructions.trim() || undefined,
+	};
+}
+
+function createVisualDesignContextDraftTaskId(storyId: string, scope: DesignContextScope, scopeId: string): string {
+	const normalizedScopeId = scopeId.toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/^-+|-+$/g, '') || 'default';
+	return `design-context-draft-${storyId.toLowerCase()}-${scope}-${normalizedScopeId}`;
+}
+
+async function collectStoryDesignContextSuggestionInput(): Promise<StoryDesignContextSuggestionInput | undefined> {
+	const languagePack = getLanguagePack();
+	const additionalInstructions = await promptForTextValue(
+		languagePack.designContext.suggestion.additionalInstructionsTitle,
+		languagePack.designContext.suggestion.additionalInstructionsPrompt,
+		''
+	);
+	if (additionalInstructions === undefined) {
+		return undefined;
+	}
+
+	return {
+		additionalInstructions: additionalInstructions.trim() || undefined,
 	};
 }
 
@@ -1583,365 +2743,79 @@ async function promptForListValue(title: string, prompt: string, currentValue: s
 		.filter(item => item.length > 0);
 }
 
-async function splitPrd(): Promise<void> {
+async function appendUserStories(): Promise<void> {
+	const languagePack = getLanguagePack();
 	const workspaceRoot = getWorkspaceRoot();
 	if (!workspaceRoot) {
-		vscode.window.showErrorMessage('No workspace folder open.');
+		vscode.window.showErrorMessage(languagePack.common.noWorkspaceFolder);
 		return;
 	}
 
 	const prd = parsePrd(workspaceRoot);
 	if (!prd) {
-		vscode.window.showWarningMessage('prd.json not found. Please run Generate PRD first.');
+		vscode.window.showWarningMessage(languagePack.appendStories.missingPrd);
 		return;
 	}
 
-	writeSplitPrdFiles(workspaceRoot, prd);
-
-	log(`Split PRD complete — wrote ${prd.userStories.length} user stories into ${PRD_DIR}/${USER_STORIES_DIR}.`);
-	vscode.window.showInformationMessage(`RALPH: Split PRD complete. Exported ${prd.userStories.length} user stories.`);
-}
-
-async function mergePrd(): Promise<void> {
-	const workspaceRoot = getWorkspaceRoot();
-	if (!workspaceRoot) {
-		vscode.window.showErrorMessage('No workspace folder open.');
-		return;
-	}
-
-	ensurePrdDirectories(workspaceRoot);
-	const basePrd = readJsonFile<BasePrdFile>(getBasePrdPath(workspaceRoot));
-	if (!basePrd) {
-		vscode.window.showWarningMessage('base_prd.json not found. Please run Split PRD first.');
-		return;
-	}
-
-	const userStoriesDir = getUserStoriesDirectoryPath(workspaceRoot);
-	const pendingStories: UserStory[] = [];
-	let normalizedCount = 0;
-
-	for (const entry of fs.readdirSync(userStoriesDir)) {
-		if (!/^US-.*\.json$/i.test(entry)) {
-			continue;
-		}
-
-		const storyPath = path.join(userStoriesDir, entry);
-		const story = readJsonFile<SplitUserStory>(storyPath);
-		if (!story) {
-			log(`WARNING: Skipping invalid user story file: ${entry}`);
-			continue;
-		}
-
-		const normalizedStatus = normalizeStoryExecutionStatus(story.status) || '未开始';
-		if (story.status !== normalizedStatus) {
-			story.status = normalizedStatus;
-			writeJsonFile(storyPath, story);
-			normalizedCount++;
-		}
-
-		if (normalizedStatus !== 'completed') {
-			pendingStories.push(stripStoryStatus(story));
-		}
-	}
-
-	pendingStories.sort(compareStoriesByPriority);
-
-	const mergedPrd = {
-		...basePrd,
-		userStories: pendingStories,
-	} as PrdFile;
-
-	writeJsonFile(getPrdPath(workspaceRoot), mergedPrd);
-	log(`Merge PRD complete — normalized ${normalizedCount} story statuses and wrote ${pendingStories.length} pending stories to prd.json.`);
-	vscode.window.showInformationMessage(`RALPH: Merge PRD complete. Normalized ${normalizedCount} stories and kept ${pendingStories.length} pending stories.`);
-}
-
-function loadSplitUserStories(workspaceRoot: string): SplitUserStory[] {
-	const userStoriesDir = getUserStoriesDirectoryPath(workspaceRoot);
-	if (!fs.existsSync(userStoriesDir)) {
-		return [];
-	}
-
-	const stories: SplitUserStory[] = [];
-	for (const entry of fs.readdirSync(userStoriesDir)) {
-		if (!/^US-.*\.json$/i.test(entry)) {
-			continue;
-		}
-
-		const storyPath = path.join(userStoriesDir, entry);
-		const story = readJsonFile<UserStory>(storyPath);
-		if (!story) {
-			log(`WARNING: Skipping invalid user story file: ${entry}`);
-			continue;
-		}
-
-		stories.push({
-			...story,
-			status: normalizeStoryExecutionStatus(story.status) || '未开始',
-		});
-	}
-
-	return stories.sort(compareStoriesByPriority);
-}
-
-function writeSplitPrdFiles(workspaceRoot: string, prd: PrdFile): void {
-	ensurePrdDirectories(workspaceRoot);
-	const basePrd = stripUserStoriesFromPrd(prd);
-	writeJsonFile(getBasePrdPath(workspaceRoot), basePrd);
-
-	const storyIds = new Set(prd.userStories.map(story => story.id));
-	for (const story of prd.userStories) {
-		const splitStory: SplitUserStory = {
-			...stripStoryStatus(story),
-			status: resolveStoryStatusForSplit(workspaceRoot, story),
-		};
-		writeJsonFile(getUserStoryFilePath(workspaceRoot, story.id), splitStory);
-	}
-
-	const userStoriesDir = getUserStoriesDirectoryPath(workspaceRoot);
-	for (const entry of fs.readdirSync(userStoriesDir)) {
-		if (!/^US-.*\.json$/i.test(entry)) {
-			continue;
-		}
-
-		const storyId = path.basename(entry, '.json');
-		if (!storyIds.has(storyId)) {
-			fs.unlinkSync(path.join(userStoriesDir, entry));
-		}
-	}
-}
-
-
-function getExistingSplitUserStories(workspaceRoot: string): SplitUserStory[] {
-	const stories = loadSplitUserStories(workspaceRoot);
-	if (stories.length > 0) {
-		log(`User story editor loaded ${stories.length} stories from ${PRD_DIR}/${USER_STORIES_DIR}.`);
-	} else {
-		log(`User story editor found no readable stories in ${PRD_DIR}/${USER_STORIES_DIR}.`);
-	}
-	return stories;
-}
-
-function getUserStoryEditorPayload(workspaceRoot: string): SplitUserStory[] {
-	return loadSplitUserStories(workspaceRoot);
-}
-
-function getNextUserStoryId(stories: SplitUserStory[]): string {
-	let maxNumericId = 0;
-
-	for (const story of stories) {
-		const match = story.id.match(/^US-(\d+)/i);
-		if (!match) {
-			continue;
-		}
-
-		const numericId = Number(match[1]);
-		if (Number.isFinite(numericId)) {
-			maxNumericId = Math.max(maxNumericId, numericId);
-		}
-	}
-
-	return `US-${String(maxNumericId + 1).padStart(3, '0')}`;
-}
-
-function createEmptyUserStoryTemplate(stories: SplitUserStory[]): SplitUserStory {
-	const nextId = getNextUserStoryId(stories);
-	return {
-		id: nextId,
-		title: 'New User Story',
-		description: '',
-		priority: stories.length > 0 ? Math.max(...stories.map(story => Number(story.priority) || 0)) + 1 : 1,
-		acceptanceCriteria: [],
-		status: '未开始',
-		screenIds: [],
-		dependsOn: [],
-		designTrace: {},
-	};
-}
-
-function isRecord(value: unknown): value is Record<string, unknown> {
-	return typeof value === 'object' && value !== null && !Array.isArray(value);
-}
-
-async function openNativeStoryFile(workspaceRoot: string, storyId: string): Promise<void> {
-	const storyPath = getUserStoryFilePath(workspaceRoot, storyId);
-	if (!fs.existsSync(storyPath)) {
-		vscode.window.showErrorMessage(`Story file not found for ${storyId}.`);
-		return;
-	}
-
-	const document = await vscode.workspace.openTextDocument(storyPath);
-	await vscode.window.showTextDocument(document, {
-		preview: false,
-		preserveFocus: false,
+	const request = await vscode.window.showInputBox({
+		title: languagePack.appendStories.requestTitle,
+		prompt: languagePack.appendStories.requestPrompt,
+		placeHolder: languagePack.appendStories.requestPlaceholder,
+		ignoreFocusOut: true,
 	});
-}
 
-async function createStoryFromNativeEditor(workspaceRoot: string): Promise<SplitUserStory | null> {
-	const storiesBeforeCreate = getExistingSplitUserStories(workspaceRoot);
-	const newStory = createEmptyUserStoryTemplate(storiesBeforeCreate);
-	writeJsonFile(getUserStoryFilePath(workspaceRoot, newStory.id), newStory);
-	log(`User story ${newStory.id} created from native editor.`);
-	vscode.window.showInformationMessage(`RALPH: ${newStory.id} created.`);
-	await openNativeStoryFile(workspaceRoot, newStory.id);
-	return newStory;
-}
-
-async function deleteStoryFromNativeEditor(workspaceRoot: string, story: SplitUserStory): Promise<boolean> {
-	const confirmed = await vscode.window.showWarningMessage(
-		`Delete ${story.id} — ${story.title}? This removes the split story file.`,
-		{ modal: true },
-		'Delete'
-	);
-
-	if (confirmed !== 'Delete') {
-		return false;
-	}
-
-	const storyPath = getUserStoryFilePath(workspaceRoot, story.id);
-	if (!fs.existsSync(storyPath)) {
-		vscode.window.showErrorMessage(`Story file not found for ${story.id}.`);
-		return false;
-	}
-
-	fs.unlinkSync(storyPath);
-	log(`User story ${story.id} deleted from native editor.`);
-	vscode.window.showInformationMessage(`RALPH: ${story.id} deleted.`);
-	return true;
-}
-
-async function showNativeStoryActions(workspaceRoot: string, story: SplitUserStory): Promise<'back' | 'deleted' | 'exit'> {
-	while (true) {
-		const action = await vscode.window.showQuickPick([
-			{
-				label: '$(edit) 在编辑器中打开 JSON',
-				description: `${story.id} — 使用 VS Code 原生文本编辑器编辑`,
-				value: 'open',
-			},
-			{
-				label: '$(refresh) 从磁盘重新打开',
-				description: '从磁盘重新加载该故事并在编辑器中打开',
-				value: 'reload',
-			},
-			{
-				label: '$(trash) 删除故事',
-				description: '删除该已拆分的故事文件',
-				value: 'delete',
-			},
-			{
-				label: '$(arrow-left) 返回故事列表',
-				description: '选择其他故事',
-				value: 'back',
-			},
-		], {
-			placeHolder: `${story.id} — 选择一个操作`,
-			ignoreFocusOut: false,
-		});
-
-		if (!action) {
-			return 'exit';
-		}
-
-		if (action.value === 'open') {
-			await openNativeStoryFile(workspaceRoot, story.id);
-			return 'exit';
-		}
-
-		if (action.value === 'reload') {
-			const refreshedStory = readJsonFile<SplitUserStory>(getUserStoryFilePath(workspaceRoot, story.id));
-			if (!refreshedStory) {
-				vscode.window.showErrorMessage(`无法从磁盘重新加载 ${story.id}。`);
-				return 'back';
-			}
-			story = {
-				...refreshedStory,
-				status: normalizeStoryExecutionStatus(refreshedStory.status) || '未开始',
-			};
-			await openNativeStoryFile(workspaceRoot, story.id);
-			return 'exit';
-		}
-
-		if (action.value === 'delete') {
-			const deleted = await deleteStoryFromNativeEditor(workspaceRoot, story);
-			if (deleted) {
-				return 'deleted';
-			}
-			continue;
-		}
-
-		return 'back';
-	}
-}
-
-async function openUserStoryEditor(): Promise<void> {
-	const workspaceRoot = getWorkspaceRoot();
-	if (!workspaceRoot) {
-		vscode.window.showErrorMessage('当前未打开工作区文件夹。');
+	if (!request || request.trim().length === 0) {
+		vscode.window.showWarningMessage(languagePack.appendStories.requestCancelled);
 		return;
 	}
 
-	const userStoriesDir = getUserStoriesDirectoryPath(workspaceRoot);
-	if (!fs.existsSync(userStoriesDir)) {
-		vscode.window.showWarningMessage('未找到已拆分的用户故事，请先执行“拆分 PRD”。');
-		return;
-	}
+	const prompt = buildAppendUserStoriesPrompt(request.trim(), workspaceRoot, prd);
+	log(`Append user stories request: ${request.trim()}`);
+	await openCopilotChatWithPrompt(prompt, languagePack.appendStories.copiedPrompt);
+	vscode.window.showInformationMessage(languagePack.appendStories.started);
+	log('Append user stories prompt sent to Copilot. Waiting for prd.json update…');
+}
 
-	const stories = getExistingSplitUserStories(workspaceRoot);
-	if (stories.length === 0) {
-		vscode.window.showWarningMessage('未找到可读取的已拆分用户故事，请检查 .prd/user_stories/*.json 或重新执行“拆分 PRD”。');
-		return;
-	}
+function buildAppendUserStoriesPrompt(request: string, workspaceRoot: string, prd: PrdFile): string {
+	const languagePack = getLanguagePack();
+	const nextStoryId = getNextUserStoryIdFromPrd(prd.userStories);
+	const nextPriority = prd.userStories.length > 0
+		? Math.max(...prd.userStories.map(story => Number(story.priority) || 0)) + 1
+		: 1;
+	const hasGitRepo = isGitRepository(workspaceRoot);
+	const autoCommitEnabled = getConfig().AUTO_COMMIT_GIT;
 
-	while (true) {
-		const refreshedStories = getExistingSplitUserStories(workspaceRoot);
-		const picked = await vscode.window.showQuickPick([
-			{
-				label: '$(add) 新建故事',
-				description: '创建新的已拆分用户故事 JSON 文件并在编辑器中打开',
-				value: '__create__',
-			},
-			{
-				label: '$(refresh) 刷新故事列表',
-				description: '从 .prd/user_stories 重新加载用户故事',
-				value: '__refresh__',
-			},
-			...refreshedStories.map(story => ({
-				label: `${story.id} — ${story.title || '未命名故事'}`,
-				description: `[${normalizeStoryExecutionStatus(story.status) || '未开始'}] 优先级 ${story.priority}`,
-				detail: (story.description || '').trim() || '无描述。',
-				value: story.id,
-			})),
-		], {
-			matchOnDescription: true,
-			matchOnDetail: true,
-			ignoreFocusOut: false,
-			placeHolder: '选择要在 VS Code 中原生编辑的用户故事',
-		});
+	const storySummaryLines = prd.userStories.length > 0
+		? prd.userStories
+			.slice()
+			.sort(compareStoriesByPriority)
+			.map(story => `- ${story.id} [P${story.priority}] ${story.title}`)
+		: [languagePack.appendStories.prompt.noExistingStories];
 
-		if (!picked) {
-			return;
-		}
-
-		if (picked.value === '__refresh__') {
-			continue;
-		}
-
-		if (picked.value === '__create__') {
-			await createStoryFromNativeEditor(workspaceRoot);
-			continue;
-		}
-
-		const selectedStory = refreshedStories.find(story => story.id === picked.value);
-		if (!selectedStory) {
-			vscode.window.showWarningMessage(`找不到用户故事 ${picked.value}。`);
-			continue;
-		}
-
-		const result = await showNativeStoryActions(workspaceRoot, selectedStory);
-		if (result === 'exit') {
-			return;
-		}
-	}
+	return [
+		languagePack.appendStories.prompt.workspaceAnalysis,
+		languagePack.appendStories.prompt.requestLine(request),
+		languagePack.appendStories.prompt.workspaceRootLine(workspaceRoot),
+		languagePack.appendStories.prompt.currentProjectLine(prd.project),
+		languagePack.appendStories.prompt.currentBranchLine(prd.branchName),
+		languagePack.appendStories.prompt.currentStoryCountLine(prd.userStories.length),
+		languagePack.appendStories.prompt.gitModeLine(hasGitRepo, autoCommitEnabled),
+		languagePack.appendStories.prompt.readCurrentPrd,
+		languagePack.appendStories.prompt.nextStoryLine(nextStoryId, nextPriority),
+		'',
+		languagePack.appendStories.prompt.existingStoriesHeading,
+		...storySummaryLines,
+		'',
+		languagePack.appendStories.prompt.instructionsHeading,
+		`- ${languagePack.appendStories.prompt.appendOnlyInstruction}`,
+		`- ${languagePack.appendStories.prompt.preserveExisting}`,
+		`- ${languagePack.appendStories.prompt.numberStories}`,
+		`- ${languagePack.appendStories.prompt.sequentialPriority}`,
+		`- ${languagePack.appendStories.prompt.noPassesOrNotes}`,
+		`- ${languagePack.appendStories.prompt.noSeparateGitStories}`,
+		`- ${languagePack.appendStories.prompt.storyLevelGitInstruction}`,
+		`- ${languagePack.appendStories.prompt.directWriteInstruction}`,
+	].join('\n');
 }
 
 // ── Utilities ───────────────────────────────────────────────────────────────
@@ -1964,57 +2838,33 @@ function sleep(ms: number): Promise<void> {
 
 function updateStatusBar(state: 'idle' | 'running'): void {
 	if (!statusBarItem) { return; }
+	const languagePack = getLanguagePack();
 	if (state === 'running') {
-		statusBarItem.text = '$(sync~spin) Ralph Runner';
-		statusBarItem.tooltip = 'RALPH Runner：任务执行中，点击打开菜单';
+		statusBarItem.text = languagePack.statusBar.runningText;
+		statusBarItem.tooltip = languagePack.statusBar.runningTooltip;
 		statusBarItem.backgroundColor = new vscode.ThemeColor('statusBarItem.warningBackground');
 	} else {
-		statusBarItem.text = '$(rocket) Ralph Runner';
-		statusBarItem.tooltip = 'RALPH Runner：点击显示命令菜单';
+		statusBarItem.text = languagePack.statusBar.idleText;
+		statusBarItem.tooltip = languagePack.statusBar.idleTooltip;
 		statusBarItem.backgroundColor = undefined;
 	}
 }
 
 async function showCommandMenu(): Promise<void> {
-	const items: vscode.QuickPickItem[] = [
-		{ label: '$(symbol-key)  初始化项目约束', description: '扫描仓库并生成可编辑和机器可读的项目规则' },
-		{ label: '$(device-camera-video)  记录设计上下文', description: '为已拆分的故事附加结构化设计输入' },
-		{ label: '$(history)  回忆相关任务记忆', description: '预览某个故事最相关的历史任务记忆' },
-		{ label: '$(zap)  生成 PRD', description: '通过 Copilot 生成 prd.json' },
-		{ label: '$(split-horizontal)  拆分 PRD', description: '将 prd.json 拆分为 base_prd.json 和每个故事的独立文件' },
-		{ label: '$(git-merge)  合并 PRD', description: '将 base_prd.json 和待处理故事文件合并回 prd.json' },
-		{ label: '$(edit)  编辑用户故事', description: '打开已拆分用户故事的可视化编辑入口' },
-		{ label: '$(play)  开始执行', description: '开始或继续自动任务循环' },
-		{ label: '$(debug-stop)  停止执行', description: '取消当前运行' },
-		{ label: '$(info)  查看状态', description: '显示用户故事进度摘要' },
-		{ label: '$(debug-restart)  重置故事', description: '重置某个已完成的用户故事' },
-		{ label: '$(gear)  打开设置', description: '配置 RALPH Runner 选项' },
-	];
+	const languagePack = getLanguagePack();
+	const items: Array<vscode.QuickPickItem & { command: string }> = languagePack.menu.items.map(item => ({
+		label: item.label,
+		description: item.description,
+		command: item.command,
+	}));
 
 	const selected = await vscode.window.showQuickPick(items, {
-		placeHolder: 'RALPH Runner：选择一个命令',
+		placeHolder: languagePack.menu.placeholder,
 	});
 
 	if (!selected) { return; }
-
-	const commandMap: Record<string, string> = {
-		'$(symbol-key)  初始化项目约束': 'ralph-runner.initProjectConstraints',
-		'$(device-camera-video)  记录设计上下文': 'ralph-runner.recordDesignContext',
-		'$(history)  回忆相关任务记忆': 'ralph-runner.recallTaskMemory',
-		'$(zap)  生成 PRD': 'ralph-runner.quickStart',
-		'$(split-horizontal)  拆分 PRD': 'ralph-runner.splitPrd',
-		'$(git-merge)  合并 PRD': 'ralph-runner.mergePrd',
-		'$(edit)  编辑用户故事': 'ralph-runner.openUserStoryEditor',
-		'$(play)  开始执行': 'ralph-runner.start',
-		'$(debug-stop)  停止执行': 'ralph-runner.stop',
-		'$(info)  查看状态': 'ralph-runner.status',
-		'$(debug-restart)  重置故事': 'ralph-runner.resetStep',
-		'$(gear)  打开设置': 'ralph-runner.openSettings',
-	};
-
-	const cmd = commandMap[selected.label];
-	if (cmd) {
-		vscode.commands.executeCommand(cmd);
+	if (selected.command) {
+		vscode.commands.executeCommand(selected.command);
 	}
 }
 
@@ -2026,9 +2876,10 @@ async function showCommandMenu(): Promise<void> {
 //    uses Copilot to generate prd.json in the expected format.
 
 async function quickStart(): Promise<void> {
+	const languagePack = getLanguagePack();
 	const workspaceRoot = getWorkspaceRoot();
 	if (!workspaceRoot) {
-		vscode.window.showErrorMessage('No workspace folder open.');
+		vscode.window.showErrorMessage(languagePack.common.noWorkspaceFolder);
 		return;
 	}
 
@@ -2044,12 +2895,12 @@ async function quickStart(): Promise<void> {
 	if (prdExists) {
 		log('prd.json already exists.');
 		const action = await vscode.window.showInformationMessage(
-			'RALPH：工作区根目录中已存在 prd.json。',
-			'开始执行', '打开 PRD'
+			languagePack.quickStart.existingPrd,
+			languagePack.quickStart.start, languagePack.quickStart.openPrd
 		);
-		if (action === '开始执行') {
+		if (action === languagePack.quickStart.start) {
 			vscode.commands.executeCommand('ralph-runner.start');
-		} else if (action === '打开 PRD') {
+		} else if (action === languagePack.quickStart.openPrd) {
 			const doc = await vscode.workspace.openTextDocument(prdPath);
 			vscode.window.showTextDocument(doc);
 		}
@@ -2062,17 +2913,17 @@ async function quickStart(): Promise<void> {
 	const choice = await vscode.window.showQuickPick(
 		[
 			{
-				label: '$(file-directory) 我已有这个文件，手动提供路径',
-				description: '选择一个已有的 prd.json 文件',
+				label: languagePack.quickStart.provideChoice.label,
+				description: languagePack.quickStart.provideChoice.description,
 				value: 'provide'
 			},
 			{
-				label: '$(sparkle) 我还没有，让 Copilot 帮我生成',
-				description: '描述你的目标，让 Copilot 生成 prd.json',
+				label: languagePack.quickStart.generateChoice.label,
+				description: languagePack.quickStart.generateChoice.description,
 				value: 'generate'
 			}
 		],
-		{ placeHolder: '工作区根目录中未找到 prd.json，你希望如何继续？' }
+		{ placeHolder: languagePack.quickStart.missingPrdPlaceholder }
 	);
 
 	if (!choice) { return; }
@@ -2089,23 +2940,24 @@ async function quickStart(): Promise<void> {
  * and copy it into the workspace root.
  */
 async function quickStartProvideFile(prdPath: string): Promise<void> {
+	const languagePack = getLanguagePack();
 	const uris = await vscode.window.showOpenDialog({
-		title: '选择你的 prd.json 文件',
+		title: languagePack.quickStart.provideDialogTitle,
 		canSelectMany: false,
 		canSelectFolders: false,
 		filters: { 'JSON': ['json'], 'All Files': ['*'] },
-		openLabel: '选择 prd.json'
+		openLabel: languagePack.quickStart.provideDialogOpenLabel
 	});
 
 	if (!uris || uris.length === 0) {
-		vscode.window.showWarningMessage('RALPH：已取消，未选择 prd.json。');
+		vscode.window.showWarningMessage(languagePack.quickStart.provideCancelled);
 		return;
 	}
 
 	const srcPath = uris[0].fsPath;
 	fs.copyFileSync(srcPath, prdPath);
 	log(`Copied prd.json from ${srcPath}`);
-	vscode.window.showInformationMessage('RALPH：prd.json 已准备完成，现在可以执行“RALPH: 开始执行”。');
+	vscode.window.showInformationMessage(languagePack.quickStart.provideSuccess);
 	log('Generate PRD complete — file placed in workspace root.');
 }
 
@@ -2114,15 +2966,16 @@ async function quickStartProvideFile(prdPath: string): Promise<void> {
  * generates prd.json in the expected format used by the RALPH Runner extension.
  */
 async function quickStartGenerate(workspaceRoot: string): Promise<void> {
+	const languagePack = getLanguagePack();
 	const userGoal = await vscode.window.showInputBox({
-		title: 'RALPH 生成 PRD：描述你的目标',
-		prompt: '你想完成什么？例如“修复所有 TypeScript 错误”“给所有服务补充单元测试”“从 jQuery 迁移到 React”',
-		placeHolder: '请描述你想完成的目标…',
+		title: languagePack.quickStart.goalTitle,
+		prompt: languagePack.quickStart.goalPrompt,
+		placeHolder: languagePack.quickStart.goalPlaceholder,
 		ignoreFocusOut: true
 	});
 
 	if (!userGoal || userGoal.trim().length === 0) {
-		vscode.window.showWarningMessage('RALPH：已取消，未提供目标描述。');
+		vscode.window.showWarningMessage(languagePack.quickStart.goalCancelled);
 		return;
 	}
 
@@ -2130,28 +2983,9 @@ async function quickStartGenerate(workspaceRoot: string): Promise<void> {
 	log('Sending generation prompt to Copilot…');
 
 	const prompt = buildQuickStartPrompt(userGoal, workspaceRoot);
+	await openCopilotChatWithPrompt(prompt, languagePack.quickStart.copiedPrompt);
 
-	try {
-		await vscode.commands.executeCommand('workbench.action.chat.open', {
-			query: prompt,
-			isPartialQuery: false
-		});
-	} catch {
-		try {
-			await vscode.commands.executeCommand('workbench.panel.chat.view.copilot.focus');
-			await sleep(1000);
-			await vscode.commands.executeCommand('workbench.action.chat.open', prompt);
-		} catch {
-			log('WARNING: Could not programmatically send to Copilot. Copying to clipboard.');
-			await vscode.env.clipboard.writeText(prompt);
-			await vscode.commands.executeCommand('workbench.action.chat.open');
-			vscode.window.showInformationMessage('RALPH：提示词已复制到剪贴板，请粘贴到 Copilot Chat。');
-		}
-	}
-
-	vscode.window.showInformationMessage(
-		'RALPH：Copilot 正在生成 prd.json。生成后出现在工作区根目录时，执行“RALPH: 开始执行”。'
-	);
+	vscode.window.showInformationMessage(languagePack.quickStart.generationStarted);
 	log('Generate PRD prompt sent to Copilot. Waiting for file generation…');
 }
 
@@ -2160,13 +2994,17 @@ async function quickStartGenerate(workspaceRoot: string): Promise<void> {
  * in the exact format the RALPH Runner expects.
  */
 function buildQuickStartPrompt(userGoal: string, workspaceRoot: string): string {
+	const languagePack = getLanguagePack();
+	const hasGitRepo = isGitRepository(workspaceRoot);
+	const autoCommitEnabled = getConfig().AUTO_COMMIT_GIT;
 	return [
-		'Go through entire codebase and understand the code.',
-		`The user wants to accomplish the following goal: ${userGoal}`,
+		languagePack.quickStart.prompt.workspaceAnalysis,
+		languagePack.quickStart.prompt.goalLine(userGoal),
 		``,
-		`Workspace root: ${workspaceRoot}`,
+		languagePack.quickStart.prompt.workspaceRootLine(workspaceRoot),
+		languagePack.quickStart.prompt.gitModeLine(hasGitRepo, autoCommitEnabled),
 		``,
-		`Please analyze the workspace and generate one file in the workspace root called prd.json following the syntax below.`,
+		languagePack.quickStart.prompt.generateFileInstruction,
 		``,
 		'```json',
 		'{',
@@ -2185,25 +3023,23 @@ function buildQuickStartPrompt(userGoal: string, workspaceRoot: string): string 
 		'}',
 		'```',
 		``,
-		`INSTRUCTIONS:`,
-		`- If the user forgot to provide a goal, ask him again to provide one. A goal is mandatory. If the provided goal is generic/placeholder/not clear enough. Ask again.`,
-		`- The json should have a logical sequence of user stories organized into phases.`,
-		`- Each user story should be granular enough to be independently executable and verifiable.`,
-		`- Number user stories sequentially starting from "US-001".`,
-		`- Do NOT include "passes" or "notes" fields in the user stories. Progress is tracked separately.`,
-		`- After EVERY user story, insert a git commit user story. This story should stage all changes and commit them with a meaningful message describing what was done in the preceding user story. For example: { "id": "US-002", "title": "Git Commit: Setup Project Structure", "description": "Stage all changes and commit to git with message: 'feat: setup project structure and enums'", "acceptanceCriteria": ["All changes are staged", "Changes are committed with a descriptive message"], "priority": 2 }.`,
-		`- The git commit stories must use conventional commit message format (feat:, fix:, refactor:, docs:, chore:, etc.).`,
+		languagePack.quickStart.prompt.instructionsHeading,
+		`- ${languagePack.quickStart.prompt.goalMandatory}`,
+		`- ${languagePack.quickStart.prompt.logicalSequence}`,
+		`- ${languagePack.quickStart.prompt.granularStories}`,
+		`- ${languagePack.quickStart.prompt.numberStories}`,
+		`- ${languagePack.quickStart.prompt.noPassesOrNotes}`,
+		`- ${languagePack.quickStart.prompt.noSeparateGitStories}`,
+		`- ${languagePack.quickStart.prompt.storyLevelGitInstruction}`,
 		``,
-		`IMPORTANT:`,
-		`- DO NOT use any absolute, user-specific, or local system-specific paths, directories, namespaces, or usernames in any command or file path.`,
-		`- All file paths and commands must be relative and portable, so the plan works for any user on any system.`,
-		`- Avoid referencing any local folders outside the workspace root.`,
-		`- Do not use commands that reference your own username, home directory, or machine-specific details.`,
-		`- The plan must be fully shareable and portable.`,
+		languagePack.quickStart.prompt.importantHeading,
+		...languagePack.quickStart.prompt.portablePaths.map(line => `- ${line}`),
+		`- ${languagePack.language === 'Chinese' ? '不要使用引用你自己的用户名、主目录或机器特定细节的命令。' : 'Do not use commands that reference your own username, home directory, or machine-specific details.'}`,
+		`- ${languagePack.language === 'Chinese' ? '整个计划必须可共享且可移植。' : 'The plan must be fully shareable and portable.'}`,
 		``,
-		`IMPORTANT:`,
-		`- Create the file at the workspace root: ${workspaceRoot}`,
-		`- Be thorough: include all necessary user stories for the user's goal`,
-		`- Actually create the file — do not just show its content`,
+		languagePack.quickStart.prompt.importantHeading,
+		`- ${languagePack.language === 'Chinese' ? `在工作区根目录创建该文件：${workspaceRoot}` : `Create the file at the workspace root: ${workspaceRoot}`}`,
+		`- ${languagePack.language === 'Chinese' ? '请尽量完整，覆盖实现该目标所需的全部用户故事。' : 'Be thorough: include all necessary user stories for the user\'s goal'}`,
+		`- ${languagePack.language === 'Chinese' ? '请直接创建文件，而不是仅展示其内容。' : 'Actually create the file — do not just show its content'}`,
 	].join('\n');
 }

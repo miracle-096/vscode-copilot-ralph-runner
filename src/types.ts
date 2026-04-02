@@ -20,12 +20,6 @@ export type StoryExecutionStatus = '未开始' | 'inprogress' | 'completed' | 'f
 
 export const STORY_STATUSES: StoryExecutionStatus[] = ['未开始', 'inprogress', 'completed', 'failed'];
 
-export type BasePrdFile = Omit<PrdFile, 'userStories'>;
-
-export interface SplitUserStory extends UserStory {
-	status: StoryExecutionStatus;
-}
-
 export interface GeneratedProjectConstraints {
 	version: number;
 	generatedAt: string;
@@ -54,8 +48,13 @@ export interface EditableProjectConstraintSection {
 	items: string[];
 }
 
+export type DesignContextScope = 'project' | 'screen' | 'module' | 'story';
+
 export interface DesignContextArtifact {
 	storyId: string;
+	scope?: DesignContextScope;
+	scopeId?: string;
+	inheritsFrom?: string[];
 	sourceType: 'figma' | 'screenshots' | 'notes';
 	figmaUrl?: string;
 	screenshotPaths: string[];

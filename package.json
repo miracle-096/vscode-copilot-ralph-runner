@@ -2,7 +2,7 @@
   "name": "ralph-runner",
   "displayName": "Ralph Runner",
   "description": "Autonomous task runner — reads prd.json user stories, tracks progress inline, and drives Copilot Chat to execute each story in an automated loop",
-  "version": "0.0.5",
+  "version": "0.0.7",
   "publisher": "recent-graduates",
   "repository": {
     "type": "git",
@@ -14,7 +14,10 @@
   "categories": [
     "Other"
   ],
-  "activationEvents": ["onStartupFinished"],
+  "activationEvents": [
+    "onStartupFinished",
+    "onChatParticipant:recent-graduates.ralph-runner"
+  ],
   "main": "./dist/extension.js",
   "contributes": {
     "commands": [
@@ -40,11 +43,7 @@
       },
       {
         "command": "ralph-runner.recordDesignContext",
-        "title": "RALPH: 记录设计上下文"
-      },
-      {
-        "command": "ralph-runner.recallTaskMemory",
-        "title": "RALPH: 回忆相关任务记忆"
+        "title": "RALPH: 界面设计描述"
       },
       {
         "command": "ralph-runner.openSettings",
@@ -59,16 +58,23 @@
         "title": "RALPH: 生成 PRD"
       },
       {
-        "command": "ralph-runner.splitPrd",
-        "title": "RALPH: 拆分 PRD"
-      },
+        "command": "ralph-runner.appendUserStories",
+        "title": "RALPH: 追加用户故事"
+      }
+    ],
+    "chatParticipants": [
       {
-        "command": "ralph-runner.mergePrd",
-        "title": "RALPH: 合并 PRD"
-      },
-      {
-        "command": "ralph-runner.openUserStoryEditor",
-        "title": "RALPH: 编辑用户故事"
+        "id": "recent-graduates.ralph-runner",
+        "name": "ralph",
+        "fullName": "RALPH Runner",
+        "description": "Refine a change request against RALPH project constraints, then auto-send the final prompt to Copilot Chat.",
+        "isSticky": true,
+        "commands": [
+          {
+            "name": "ralph-spec",
+            "description": "Polish a request with the merged RALPH project constraints, then auto-send the ready-to-use final version to Copilot Chat."
+          }
+        ]
       }
     ],
     "configuration": {
@@ -117,12 +123,17 @@
         "ralph-runner.autoInjectDesignContext": {
           "type": "boolean",
           "default": true,
-          "description": "启用后，在构建任务提示词时自动注入已记录的设计上下文。"
+          "description": "启用后，在构建任务提示词时自动注入已记录的界面设计描述。"
         },
         "ralph-runner.autoRecallTaskMemory": {
           "type": "boolean",
           "default": true,
           "description": "启用后，在执行故事前自动回忆相关任务记忆，并注入有限长度的既往工作上下文。"
+        },
+        "ralph-runner.autoCommitGit": {
+          "type": "boolean",
+          "default": true,
+          "description": "启用后，若工作区检测到 Git 仓库，RALPH 会在执行单个用户故事时要求 Copilot 直接完成对应的 Git 提交，而不是额外生成单独的 Git 提交故事。"
         },
         "ralph-runner.recalledTaskMemoryLimit": {
           "type": "number",
@@ -134,17 +145,17 @@
         "ralph-runner.requireDesignContextForTaggedStories": {
           "type": "boolean",
           "default": false,
-          "description": "启用后，被识别为设计敏感的故事必须先补充设计上下文才可执行。"
+          "description": "启用后，被识别为设计敏感的故事必须先补充界面设计描述才可执行。"
         },
-        "ralph-runner.gitCommitLanguage": {
+        "ralph-runner.language": {
           "type": "string",
           "default": "Chinese",
           "enum": ["Chinese", "English"],
           "enumDescriptions": [
-            "使用中文生成用户故事相关的 Git 提交标题和描述。",
-            "使用英文生成用户故事相关的 Git 提交标题和描述。"
+            "插件运行时操作文案使用中文，并在初始化项目约束时生成中文 Git 提交规则。",
+            "Plugin runtime UI uses English, and project-constraint initialization generates English Git commit rules."
           ],
-          "description": "初始化项目约束时用于生成 Git 提交语言规则。修改后需重新初始化项目约束。"
+          "description": "切换 Ralph Runner 的运行时语言。修改后若要更新项目约束中的语言相关规则，需要重新初始化项目约束。"
         }
       }
     }
