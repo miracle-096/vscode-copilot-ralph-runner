@@ -1429,6 +1429,50 @@ suite('Extension Test Suite', () => {
 		assert.strictEqual(afterNote.approvalHistory[2].action, 'note');
 	});
 
+	test('Legacy evidence artifacts without approval fields remain compatible after normalization', () => {
+		const completedValidation = validateStoryEvidence({
+			storyId: 'US-038A',
+			title: 'Legacy completed evidence',
+			status: 'completed',
+			summary: 'Old workspaces may have evidence without approval metadata.',
+			changedFiles: ['src/storyEvidence.ts'],
+			changedModules: ['src'],
+			tests: [{ command: 'npm test', success: true }],
+			riskLevel: 'medium',
+			riskReasons: ['Migration should keep old evidence readable.'],
+			releaseNotes: ['No new approval metadata was stored originally.'],
+			rollbackHints: ['Revert the evidence migration change if necessary.'],
+			followUps: [],
+			recommendFeatureFlag: false,
+			evidenceGaps: [],
+		}, 'US-038A');
+
+		assert.strictEqual(completedValidation.isValid, true);
+		assert.strictEqual(completedValidation.artifact.approvalState, 'notRequired');
+		assert.deepStrictEqual(completedValidation.artifact.approvalHistory, []);
+
+		const pendingValidation = validateStoryEvidence({
+			storyId: 'US-038B',
+			title: 'Legacy pending evidence',
+			status: 'pendingRelease',
+			summary: 'Old high-risk evidence should fall into pending approval automatically.',
+			changedFiles: ['src/extension.ts'],
+			changedModules: ['src'],
+			tests: [{ command: 'npm test', success: true }],
+			riskLevel: 'high',
+			riskReasons: ['Touches core execution surfaces.'],
+			releaseNotes: ['Approval metadata was added later.'],
+			rollbackHints: ['Revert the high-risk story if release is blocked.'],
+			followUps: [],
+			recommendFeatureFlag: true,
+			evidenceGaps: ['Manual release review still required.'],
+		}, 'US-038B');
+
+		assert.strictEqual(pendingValidation.isValid, true);
+		assert.strictEqual(pendingValidation.artifact.approvalState, 'pending');
+		assert.deepStrictEqual(pendingValidation.artifact.approvalHistory, []);
+	});
+
 	test('Story evidence validation rejects unresolved approval state for completed stories', () => {
 		const validation = validateStoryEvidence({
 			storyId: 'US-038',

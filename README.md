@@ -1,49 +1,50 @@
 # RALPH Runner
 
-RALPH (Run Autonomous Loops Per Handoff) is a VS Code extension that turns `prd.json` user stories into a context-aware execution loop for GitHub Copilot Chat. It still manages autonomous story execution, but now enriches each prompt with project constraints, per-story design context, recalled task memory, and a stricter completion contract before a story is considered done.
+RALPH（Run Autonomous Loops Per Handoff）是一个 VS Code 扩展，用来把 `prd.json` 里的用户故事转成面向 GitHub Copilot Chat 的上下文增强执行循环。它不仅会按优先级自动推进故事，还会在每次执行时注入项目约束、设计上下文、既往任务记忆、源码上下文、执行检查点，以及更严格的完成契约。
 
-Use it when you want Copilot to execute a queue of implementation stories while preserving repo-specific rules, UI intent, and prior decisions across the run.
+如果你希望 Copilot 在持续执行实现类故事时，仍然遵守仓库规则、UI 设计意图和已有决策，RALPH 就是为这个场景准备的。
 
-RALPH also contributes a Copilot Chat participant command for constraint-aware prompt finalization: use `@ralph /ralph-spec <your request>` to refine a task description or implementation idea, absorb the relevant constraint-driven adjustments, and then auto-send the finalized execution prompt to Copilot Chat.
+RALPH 还提供了 Copilot Chat 参与者命令 `@ralph /ralph-spec <你的需求>`，用于把一个初始想法改写成更贴合当前仓库约束的最终执行提示词，并自动发送到新的 Copilot Chat 会话。
 
-## What RALPH Does
+## 核心能力
 
-- Runs user stories in priority order from `prd.json`
-- Persists workflow state in `.ralph/` so execution is resumable
-- Lets Copilot append new user stories into the existing `prd.json`
-- Scans the workspace to generate machine-readable and editable project constraints
-- Stores layered design context in `.prd/design-context/` with reusable shared artifacts and story-level overrides
-- Requires a structured task memory artifact before accepting completion
-- Generates a structured evidence artifact with risk classification before accepting completion
-- Recalls relevant prior task memories and injects them into later prompts
-- Evaluates optional machine-executable policy gates before a story starts and before it can be accepted as complete
-- Builds prompts in a fixed order: system rules, project constraints, design context, prior work, source context, checkpoint, machine policy gates, current story, completion contract
+- 按 `prd.json` 中的优先级顺序执行用户故事
+- 把运行状态持久化到 `.ralph/`，支持中断后恢复
+- 允许 Copilot 在不改写既有故事的前提下追加新的用户故事
+- 扫描工作区生成机器可读和人工可编辑的项目约束
+- 在 `.prd/design-context/` 下维护分层设计上下文，支持共享稿与故事级覆盖
+- 要求故事完成前必须存在结构化任务记忆、执行检查点和证据包
+- 根据证据自动给故事打风险等级，并进入 `completed`、`pendingReview` 或 `pendingRelease`
+- 对高风险故事提供 IDE 内人工审批流，支持批准、拒绝和补充说明
+- 在执行前回忆相关任务记忆与源码上下文，减少长会话漂移
+- 通过可选的机器策略门禁，在故事开始前和完成前执行硬性校验
+- 以固定顺序拼装提示词，保证新增上下文不会打乱主任务
 
-## Requirements
+## 运行要求
 
-- VS Code 1.109.0 or later
-- GitHub Copilot Chat installed and signed in
-- A workspace root containing `prd.json`
+- VS Code 1.109.0 及以上
+- 已安装并登录 GitHub Copilot Chat
+- 工作区根目录存在 `prd.json`
 
-## Core Files
+## 核心文件
 
 ### `prd.json`
 
-`prd.json` remains the execution source of truth. It defines the project metadata and the ordered user story list.
+`prd.json` 仍然是执行入口和故事清单的事实来源。它定义项目元数据以及待执行的用户故事列表。
 
 ```json
 {
   "project": "MyProject",
   "branchName": "ralph/feature-branch",
-  "description": "Short description of the project goal",
+  "description": "项目目标的简短描述",
   "userStories": [
     {
       "id": "US-001",
-      "title": "Setup Project Structure",
-      "description": "Create the initial project directory structure and configuration files",
+      "title": "初始化项目结构",
+      "description": "创建初始目录结构和配置文件",
       "acceptanceCriteria": [
-        "Project directories exist",
-        "Configuration files are created"
+        "目录创建完成",
+        "配置文件已就位"
       ],
       "priority": 1
     }
@@ -51,220 +52,187 @@ RALPH also contributes a Copilot Chat participant command for constraint-aware p
 }
 ```
 
-| Field | Required | Description |
+| 字段 | 是否必填 | 说明 |
 | --- | --- | --- |
-| `project` | Yes | Project name |
-| `branchName` | Yes | Suggested Git branch name |
-| `description` | Yes | Overall project goal |
-| `userStories` | Yes | Array of executable user stories |
-| `userStories[].id` | Yes | Stable story identifier such as `US-001` |
-| `userStories[].title` | Yes | Short story title |
-| `userStories[].description` | Yes | Task description given to Copilot |
-| `userStories[].acceptanceCriteria` | Yes | Flat list of checks for the story |
-| `userStories[].priority` | Yes | Lower number runs first |
+| `project` | 是 | 项目名称 |
+| `branchName` | 是 | 建议使用的 Git 分支名 |
+| `description` | 是 | 项目整体目标 |
+| `userStories` | 是 | 可执行用户故事数组 |
+| `userStories[].id` | 是 | 稳定故事标识，如 `US-001` |
+| `userStories[].title` | 是 | 故事短标题 |
+| `userStories[].description` | 是 | 交给 Copilot 的任务描述 |
+| `userStories[].acceptanceCriteria` | 是 | 扁平化验收标准列表 |
+| `userStories[].priority` | 是 | 数字越小越先执行 |
 
-### Runtime Artifacts
+### 运行期工件
 
-RALPH creates and maintains these files during the workflow:
+RALPH 会在执行过程中创建并维护下列工件：
 
-| Path | Purpose |
+| 路径 | 作用 |
 | --- | --- |
-| `.ralph/task-<id>-status` | Execution lock and completion signal for the active story |
-| `.ralph/story-status.json` | Durable per-story workflow status used by split and merge workflows |
-| `.ralph/project-constraints.generated.json` | Machine-generated summary of stack, scripts, architecture, allowed paths, and delivery checks |
-| `.ralph/source-context-index.json` | Lightweight repository source-context index for directories, scripts, entry files, types, and hotspots |
-| `.ralph/policy-baselines/US-xxx.policy-baseline.json` | Per-story baseline of pre-existing workspace changes so completion gates only inspect new edits from the current story |
-| `.ralph/memory/US-xxx.json` | Structured task memory for one completed story |
-| `.ralph/memory-index.json` | Compact recall index built from all persisted task memories |
-| `.ralph/checkpoints/US-xxx.checkpoint.json` | Latest execution checkpoint for one completed, failed, or interrupted story |
-| `.ralph/evidence/US-xxx.evidence.json` | Auditable story evidence bundle with test results, risk level, release notes, rollback hints, and final auditable status |
-| `.github/ralph/project-constraints.md` | Team-maintained editable constraint document layered over generated constraints |
-| `.prd/design-context/US-xxx.design.json` | Story-specific design context override or review draft |
-| `.prd/design-context/shared/project.design.json` | Shared project-wide design defaults |
-| `.prd/design-context/shared/screen-<id>.design.json` | Reusable screen-level design context |
-| `.prd/design-context/shared/module-<id>.design.json` | Reusable module-level design context |
-| `.ralph/design-context-suggestions/US-xxx.suggestion.json` | Temporary story suggestion artifact generated before save |
-| `progress.txt` | Append-only execution log of done or failed outcomes |
+| `.ralph/task-<id>-status` | 当前故事的执行锁与完成信号 |
+| `.ralph/story-status.json` | 故事级持久状态表，是完成/失败/待评审的耐久真相源 |
+| `.ralph/project-constraints.generated.json` | 扫描生成的项目约束摘要，包含脚本、目录、允许路径、交付检查等 |
+| `.github/ralph/project-constraints.md` | 团队手工维护的项目约束文档，会覆盖生成结果 |
+| `.ralph/source-context-index.json` | 轻量级源码上下文索引，记录目录、入口、类型、热点路径等 |
+| `.ralph/policy-baselines/US-xxx.policy-baseline.json` | 故事开始前的工作区变更基线，供 completion 门禁忽略历史遗留改动 |
+| `.ralph/memory/US-xxx.json` | 单个故事的结构化任务记忆 |
+| `.ralph/memory-index.json` | 所有任务记忆的紧凑索引，用于后续 recall |
+| `.ralph/checkpoints/US-xxx.checkpoint.json` | 单个故事最近一次执行检查点，记录摘要、风险、恢复建议 |
+| `.ralph/evidence/US-xxx.evidence.json` | 故事证据包，记录测试、风险、发布说明、回滚线索和审批状态 |
+| `.prd/design-context/US-xxx.design.json` | 故事级设计上下文或自动整理结果 |
+| `.prd/design-context/shared/project.design.json` | 项目级共享设计上下文 |
+| `.prd/design-context/shared/screen-<id>.design.json` | 页面/屏幕级共享设计上下文 |
+| `.prd/design-context/shared/module-<id>.design.json` | 模块级共享设计上下文 |
+| `.ralph/design-context-suggestions/US-xxx.suggestion.json` | 故事设计建议的临时工件 |
+| `progress.txt` | 故事执行日志，记录 done/failed/pending-review/pending-release |
 
-## Context-Aware Workflow
+## 推荐工作流
 
-### 1. Generate the PRD
+### 1. 生成或追加 PRD
 
-Use `RALPH: Generate PRD` to create the root PRD. When new scope appears later, use `RALPH: Append User Stories` to ask Copilot to update the existing `prd.json` in place.
+使用 `RALPH: 生成 PRD` 在工作区根目录创建 `prd.json`。后续有新增范围时，使用 `RALPH: 追加用户故事` 让 Copilot 基于现有 `prd.json` 原地追加。
 
-When generating or appending stories, RALPH now keeps the PRD focused on requirement-related user stories only. It detects whether the workspace is a Git repository and combines that with the `ralph-runner.autoCommitGit` setting to decide whether implementation stories should handle their own commits during execution, instead of generating separate Git commit stories.
+RALPH 会结合工作区是否为 Git 仓库以及 `ralph-runner.autoCommitGit` 设置，决定实现类故事是否应在同一故事内自行提交，而不是拆出专门的 Git 提交故事。
 
-### 2. Initialize project constraints
+### 2. 初始化项目约束
 
-Run `RALPH: Initialize Project Constraints` before executing stories that need repo-specific guidance.
+在需要仓库特定规则之前，先执行 `RALPH: 初始化项目约束`。
 
-The command scans the workspace for:
+扫描范围包括：
 
-- `package.json` scripts and dependencies
+- `package.json` 中的脚本与依赖
 - `tsconfig.json`
-- ESLint configuration
+- ESLint 配置
 - `README.md`
-- common source, test, docs, and script directories
+- 常见源码、测试、文档和脚本目录
 
-It writes two artifacts:
+命令会产出两个工件：
 
-- `.ralph/project-constraints.generated.json` for normalized machine-readable prompt injection
-- `.github/ralph/project-constraints.md` for human-maintained overrides and rules
+- `.ralph/project-constraints.generated.json`：给提示词注入用的标准化 JSON
+- `.github/ralph/project-constraints.md`：团队维护的可编辑规则文档
 
-The generated defaults are intentionally generic. They summarize common engineering signals such as scripts, source roots, linting, test locations, reusable-module guidance, likely editable paths, and likely generated output directories. Repo-specific workflow rules should be added manually in the editable constraints file instead of being inferred automatically.
+生成结果故意保持通用，只总结脚本、目录、约束线索等基础信号。真正的团队规则应当手工写进 `.github/ralph/project-constraints.md`，不要完全依赖自动推断。
 
-### 3. Refresh the source context index
+### 3. 刷新源码上下文索引
 
-Run `RALPH: Refresh Source Context Index` to generate `.ralph/source-context-index.json`.
+执行 `RALPH: 刷新源码上下文索引`，生成 `.ralph/source-context-index.json`。
 
-The index stays intentionally lightweight and reuses the existing project-constraints scan as its baseline, then adds compact repo-graph hints for:
+该索引复用项目约束扫描结果，再补充以下轻量信号：
 
-- source directories
-- test directories
-- build and validation scripts
-- key entry files
-- reusable module hints
-- exported type-definition hints
-- recent Git hotspot paths when history is available
+- 源码目录
+- 测试目录
+- 构建与校验脚本
+- 关键入口文件
+- 可复用模块线索
+- 类型定义线索
+- Git 历史存在时的近期热点路径
 
-During normal story execution, RALPH refreshes this index automatically before entering each next story. If the repository is large, Git history is unavailable, or some files are missing, the scan degrades gracefully and still writes a valid artifact.
+在正常执行流程中，RALPH 会在进入下一个故事前自动刷新索引。如果仓库很大、没有 Git 历史、或部分文件缺失，索引生成会降级为更少的信号，但仍会写出合法工件，不会阻塞运行。
 
-### 4. Recall the most relevant source context per story
+### 4. 为故事回忆最相关的源码上下文
 
-Before execution, RALPH can now recall the most relevant repository source context for the current story from `.ralph/source-context-index.json`.
+RALPH 会从 `.ralph/source-context-index.json` 中，为当前故事召回最相关的源码上下文，并把结果注入 `Relevant Source Context` 提示词段落。
 
-Recall scoring combines:
+召回评分会综合：
 
-- story title, description, and acceptance-criteria keywords
-- explicit story module hints and file hints when present
-- bounded task-memory recall hints from related prior work
-- source-context category weights such as entry files, reusable modules, types, and recent hotspots
+- 故事标题、描述、验收标准中的关键词
+- 显式的模块提示与文件提示
+- 来自相关任务记忆的有界 recall 提示
+- 入口文件、复用模块、类型定义、热点路径等不同类别的权重
 
-The recalled result stays compact and bounded. It is injected as a separate `Relevant Source Context` prompt section so it complements `Relevant Prior Work` instead of replacing it.
+使用 `RALPH: 预览故事源上下文` 可以在执行前查看命中结果。如果没有足够强的匹配，RALPH 会回退到原有提示构建流程并记录可读日志，而不是直接失败。
 
-Run `RALPH: Preview Story Source Context` to inspect the main matches before execution. If no strong source-context matches are found, RALPH falls back to the existing prompt construction flow and logs a readable message instead of failing the run.
+### 5. 为 UI 敏感故事维护分层设计上下文
 
-### 5. Build layered design context for UI-sensitive work
+使用 `RALPH: 界面设计描述` 作为 UI 相关流程的统一入口。
 
-The design workflow is now layered instead of story-only.
+推荐用法：
 
-Use `RALPH: UI Design Notes` as the single entry for UI-related setup.
+1. 先选择“批量匹配多个故事”或生成共享设计稿，把可复用规则存到 `.prd/design-context/shared/`
+2. 对单个故事选择“单独匹配当前故事”，按需挂接项目级、页面级或模块级共享设计上下文
+3. 如果故事存在特殊视觉差异，再补故事级设计稿或导入 Figma / 截图
 
-1. Choose `Prepare Reusable Notes` when you want to import screenshots, a Figma link, or both and save reusable UI guidance under `.prd/design-context/shared/`.
-2. Choose `Match One Story` when you only need to prepare the current story, optionally matching existing project, screen, or module notes.
-3. Inside the story path, either auto-prepare lightweight story notes or import story-specific visuals.
+设计工件可记录：
 
-Shared and story artifacts can capture:
+- Figma 链接
+- 截图路径
+- 参考文档
+- 摘要和手工说明
+- 布局约束
+- 组件复用目标
+- Token 规则
+- 响应式要求
+- 禁止修改区域
+- 明确的视觉验收项
 
-- Figma URL
-- screenshot paths
-- reference docs
-- summary and manual notes
-- layout constraints
-- component reuse targets
-- token rules
-- responsive rules
-- protected UI regions
-- explicit visual acceptance checks
+共享稿适合多个故事共用的壳层、布局或组件规则；故事级稿只保留差异项，避免提示词冗余。
 
-Use shared artifacts when the same shell, layout, or component rules apply across multiple stories. Use story-level artifacts only for deltas such as one-off spacing, acceptance, or protected-area refinements.
+### 6. 执行时懒加载设计合成
 
-The UI notes flow is designed to reduce repeated entry. The primary interaction is no longer a long manual questionnaire. Instead, the single command lets the user:
+对设计敏感故事，如果没有显式的故事级设计工件，RALPH 会在执行时根据已有共享设计上下文和故事元数据，合成一个有界的 `Design Context` 段落。
 
-- confirm inherited shared context
-- match the story to project, screen, or module artifacts
-- auto-generate a lightweight story-level description
-- import Figma or screenshots when a fresh description is needed
+优先顺序是：
 
-Attach or review design context when a story changes any of the following:
+- 已关联或推断出的共享项目/页面/模块设计稿
+- 共享稿中已有的视觉输入
+- 当前故事的标题、描述和验收标准
 
-- page layout or information hierarchy
-- reusable UI components
-- color, spacing, or typography tokens
-- responsive behavior
-- a designer-approved acceptance target
+合成结果只保留执行关键字段，例如视觉输入、布局关注点、复用关注点、Token 关注点、保护区和验收重点，不会把原始说明全部倾倒进提示词。
 
-### 6. Lazy design synthesis during execution
+### 7. 注入相关任务记忆与最近检查点
 
-RALPH can now synthesize a bounded Design Context section at execution time for design-sensitive stories when no explicit story-level artifact exists.
+执行过程中，RALPH 会自动回忆相关任务记忆，并以有界形式注入 `Relevant Prior Work`。
 
-The runtime uses, in order of preference:
+评分因子包括：
 
-- linked or inferred shared project, screen, and module design context
-- visual references already captured in shared context
-- the current story title, description, and acceptance criteria
+- 关联故事或依赖关系
+- 关键词重叠
+- 模块提示
+- 变更文件重叠
+- 时间新近度
 
-The injected synthesis is intentionally compact. It focuses on execution-critical fields such as visual inputs, layout focus, reuse focus, token focus, protected areas, and acceptance focus, instead of dumping raw notes.
+在此基础上，RALPH 还会从 `.ralph/checkpoints/` 中选择合适的检查点，注入 `Recent Checkpoint`。
 
-This means most UI stories no longer need a fully completed story-level design file before execution. Shared context plus story metadata is often enough.
+选择策略固定且可预期：
 
-### 7. Execute or preview memory recall
+- 重跑同一个故事时，优先选择该故事自己的最新有效检查点
+- 否则回退到其他故事里最近更新的有效检查点
+- 如果没有有效检查点，则省略该段并继续运行
 
-Run `RALPH: Recall Related Task Memory` to preview which prior stories are likely relevant to the current work. During normal execution, RALPH can also do this automatically and inject a bounded `Relevant Prior Work` section.
+这保证了会话切换后仍有一个短而稳定的“上一次执行摘要”。
 
-Recall scoring uses:
+### 8. 机器策略门禁
 
-- related or dependent story IDs
-- keyword overlap
-- module hints
-- changed file overlap
-- recency
+`ralph-runner.policyGates` 用于启用机器可执行的策略门禁。它分为两个阶段：
 
-### 8. Inject the recent checkpoint and reset chat state
+- `preflightRules`：故事开始前执行
+- `completionRules`：Copilot 写出完成信号后、RALPH 接受故事完成前执行
 
-Before each story is sent to Copilot, RALPH now starts a fresh Copilot Chat session instead of continuing an unbounded long-running thread.
+首批规则类型包括：
 
-The runner explicitly reads execution checkpoints from `.ralph/checkpoints/` and injects a compact `Recent Checkpoint` section when a valid checkpoint exists. Selection is predictable:
+- `required-artifact`：要求存在某类工件，如项目约束、设计上下文、任务记忆、检查点、证据包
+- `restricted-paths`：阻止改动危险路径，如 `prd.json`、`.prd/**`、构建产物目录等
+- `require-command`：要求至少一个相关测试或构建命令成功执行
 
-- prefer the current story's own latest valid checkpoint when rerunning the same story
-- otherwise fall back to the most recently updated valid checkpoint from other stories
-- if no valid checkpoint exists, omit the section and continue with the existing execution path
+一旦启用门禁，RALPH 还会在 `.ralph/policy-baselines/` 中记录故事开始前的工作区变更基线。completion 门禁只检查本次故事新增的改动，避免历史遗留脏工作区误伤当前故事。
 
-This keeps handoff state explicit: previous session context is discarded, and the checkpoint becomes the short authoritative reminder for plan, execution status, risks, prerequisites, and resume guidance.
-
-### 9. Enforce machine policy gates
-
-RALPH can now promote selected project constraints from advisory prompt text into machine-executable policy gates.
-
-The `ralph-runner.policyGates` setting defines a first-pass schema with two phases:
-
-- `preflightRules` run before a story starts
-- `completionRules` run after Copilot signals completion but before RALPH accepts the story as done
-
-The initial rule types are:
-
-- `required-artifact` for prerequisites such as project constraints, design context, task memory, or execution checkpoints
-- `restricted-paths` for high-risk locations such as `prd.json`, `.prd/**`, and generated output directories
-- `require-command` for enforcing at least one relevant test or build command before completion
-
-When policy gates are enabled, RALPH also captures a per-story workspace-change baseline in `.ralph/policy-baselines/`. Completion gates compare the current working tree against that baseline so unrelated pre-existing edits do not accidentally fail the current story.
-
-Existing compatibility switches still fit naturally into the unified policy system:
+与旧逻辑兼容的设置仍然保留：
 
 - `ralph-runner.requireProjectConstraintsBeforeRun`
 - `ralph-runner.requireDesignContextForTaggedStories`
 
-If `ralph-runner.policyGates.enabled` stays `false`, the current legacy behavior is preserved.
+如果 `ralph-runner.policyGates.enabled` 仍为 `false`，则继续沿用旧行为，不会突然强制启用这些新门禁。
 
-### 10. Start autonomous execution
+### 9. 结构化完成契约
 
-When you run `RALPH: Start`, RALPH composes a prompt in this fixed order:
+RALPH 不再只依赖 `completed` 文件信号来认定故事完成。Copilot 在结束前必须写出：
 
-1. System execution rules
-2. Project constraints
-3. Design context
-4. Relevant prior work
-5. Relevant source context
-6. Recent checkpoint
-7. Machine policy gates
-8. Current story
-9. Completion contract
+- `.ralph/memory/US-xxx.json` 任务记忆
+- `.ralph/checkpoints/US-xxx.checkpoint.json` 执行检查点
+- `.ralph/evidence/US-xxx.evidence.json` 证据包
 
-The prompt remains bounded so optional context does not overwhelm the current task. The `Relevant Source Context` section comes after older recalled task memory and before the `Recent Checkpoint` handoff so repository structure hints can complement prior implementation history without overriding durable repo constraints or design guidance. When machine policy gates are enabled, the prompt also exposes the active preflight and completion rules explicitly so Copilot can see the hard blockers before writing the completion signal.
-
-### 11. Require task memory and execution checkpoint before completion
-
-RALPH no longer treats the completion signal as sufficient by itself. Before a story is finalized, Copilot must persist a structured task memory artifact to `.ralph/memory/US-xxx.json` with fields such as:
+任务记忆至少应包含：
 
 - `summary`
 - `changedFiles`
@@ -276,140 +244,229 @@ RALPH no longer treats the completion signal as sufficient by itself. Before a s
 - `followUps`
 - `searchKeywords`
 
-If Copilot fails to write a valid artifact, RALPH synthesizes a fallback memory entry and updates `.ralph/memory-index.json` so later stories can still recall useful context.
+如果 Copilot 没有写出合法工件，RALPH 会合成一个可恢复的 fallback 工件，并继续推进，而不是因为上下文损坏直接卡死。
 
-RALPH also persists a separate latest-only execution checkpoint to `.ralph/checkpoints/US-xxx.checkpoint.json`. The checkpoint captures the current story summary, stage goal, key decisions, confirmed constraints, unresolved risks, next-story prerequisites, and a recommended resume point.
+### 10. 证据包与人工审批流
 
-Checkpoint retention is deterministic: each story owns one fixed checkpoint path, and the newest completed, failed, or interrupted run overwrites that story's previous checkpoint. Resetting a story does not delete the checkpoint; the next execution simply replaces it with the latest state.
+`.ralph/evidence/US-xxx.evidence.json` 会记录：
 
-If Copilot fails to write a valid task memory or checkpoint artifact, or if an existing checkpoint is missing or corrupted, RALPH synthesizes a recoverable fallback artifact and continues instead of blocking on broken session context.
+- 变更文件与模块范围
+- 测试执行证据
+- 风险等级及原因
+- 发布说明与回滚线索
+- 后续事项与证据缺口
+- 是否建议 feature flag
+- 审批状态、审批时间、审批摘要和审批历史
+- 最终可审计状态：`completed`、`pendingReview`、`pendingRelease`
 
-RALPH now also persists a structured evidence bundle to `.ralph/evidence/US-xxx.evidence.json` when a story reaches its completion checkpoint. The evidence artifact captures:
+如果关键证据缺失，例如没有通过的测试、无法确认变更范围、或触达了核心执行面，故事不会被静默视作普通完成，而是进入 `pendingReview` 或 `pendingRelease`。
 
-- changed file scope and changed modules
-- test execution evidence
-- risk level and readable risk reasons
-- release notes and rollback hints
-- follow-up items and evidence gaps
-- whether a feature flag is recommended
-- manual approval state, approval timestamps, reviewer notes, and approval history
-- a final auditable story status: `completed`, `pendingReview`, or `pendingRelease`
+对高风险故事，可以使用 `RALPH: 审批高风险故事` 在 VS Code 内完成以下操作：
 
-When key evidence is missing, especially passing tests or critical changed-file scope, the story is not silently treated as a normal completion. Instead, the synthesized evidence is marked high risk and the final status moves into `pendingReview` or `pendingRelease` so downstream review or release workflows can consume it directly.
+- 批准当前评审阶段
+- 批准发布阶段
+- 拒绝并退回 `pendingReview`
+- 只补充审批说明而不改变状态
 
-High-risk stories now stay inside a lightweight in-IDE approval loop. Use `RALPH: 审批高风险故事` / `RALPH: Review Approval` to approve review-stage evidence, approve release-stage evidence, reject a story back to `pendingReview`, or add approval notes without changing status. Each action updates the evidence artifact, `.ralph/story-status.json`, and `progress.txt` together so the approval trail remains auditable.
+这些操作会同时更新 evidence、`.ralph/story-status.json` 和 `progress.txt`，确保审计轨迹一致。
 
-The built-in status panel now consumes these evidence artifacts to show additional operational signals such as awaiting-review count, awaiting-release count, and how many stories are currently high risk.
+### 11. 提示词拼装顺序
 
-## Commands
+执行 `RALPH: 开始执行` 时，提示词固定按下列顺序构建：
 
-| Command | Description |
+1. 系统执行规则
+2. 项目约束
+3. 设计上下文
+4. 相关既往工作
+5. 相关源码上下文
+6. 最近检查点
+7. 机器策略门禁
+8. 当前故事
+9. 完成契约
+
+每个可选段落都有长度上限，避免上下文无限膨胀。新增的 `Relevant Source Context` 固定处于 `Relevant Prior Work` 和 `Recent Checkpoint` 之间，新增的 `Machine Policy Gates` 固定处于 `Recent Checkpoint` 和 `Current Story` 之间。
+
+## 命令
+
+| 命令 | 说明 |
 | --- | --- |
-| `RALPH: Start` | Begin or resume the autonomous execution loop |
-| `RALPH: Stop` | Cancel the current loop immediately |
-| `RALPH: Show Status` | Show counts, next pending story, and current progress |
-| `RALPH: Review Approval` | Approve, reject, or annotate high-risk stories that are waiting for manual review |
-| `RALPH: Reset Story` | Reset a completed or failed story for re-execution |
-| `RALPH: Generate PRD` | Generate a new `prd.json` from an existing file or prompt |
-| `RALPH: Append User Stories` | Ask Copilot to append new user stories into the existing `prd.json` |
-| `RALPH: Initialize Project Constraints` | Scan the workspace and generate project constraint artifacts |
-| `RALPH: Refresh Source Context Index` | Scan the workspace and refresh the lightweight source-context index |
-| `RALPH: Preview Story Source Context` | Preview the most relevant repository source-context hints for a selected story |
-| `RALPH: UI Design Notes` | Single entry for UI design setup: match one story, import story visuals, or prepare reusable project/screen/module notes |
-| `RALPH: Open Settings` | Open extension settings |
-| `RALPH: Show Menu` | Open the status bar command menu |
+| `RALPH: 开始执行` | 开始或继续自动执行循环 |
+| `RALPH: 停止执行` | 立即取消当前循环 |
+| `RALPH: 查看状态` | 查看完成数、待处理数、下一个故事和运行状态 |
+| `RALPH: 审批高风险故事` | 对待人工审批的高风险故事执行批准、拒绝或补充说明 |
+| `RALPH: 重置故事` | 重置某个已完成或已失败的故事，允许重新执行 |
+| `RALPH: 初始化项目约束` | 扫描工作区并生成项目约束工件 |
+| `RALPH: 刷新源码上下文索引` | 刷新轻量级源码上下文索引 |
+| `RALPH: 预览故事源上下文` | 预览当前故事最相关的源码上下文线索 |
+| `RALPH: 界面设计描述` | 统一处理故事级与共享级设计上下文 |
+| `RALPH: 生成 PRD` | 生成新的 `prd.json` |
+| `RALPH: 追加用户故事` | 在现有 `prd.json` 上追加新故事 |
+| `RALPH: 打开设置` | 打开扩展设置 |
+| `RALPH: 显示菜单` | 打开状态栏命令菜单 |
 
-## Copilot Chat Command
+## Copilot Chat 命令
 
-After you initialize project constraints, you can ask Copilot Chat to refine a request against those rules with:
+初始化项目约束后，可以使用：
 
-`@ralph /ralph-spec <your description>`
+`@ralph /ralph-spec <你的需求>`
 
-Use it when you want RALPH to:
+适用场景：
 
-- rewrite a vague change request into a repo-specific implementation brief
-- absorb the useful revision advice into a final prompt you can give directly to another model
-- automatically forward that finalized prompt into a fresh Copilot Chat for execution
-- point out only the remaining conflicts or missing information after producing the final version
+- 把模糊需求改写成贴合仓库约束的执行说明
+- 吸收项目约束后生成可直接执行的最终提示词
+- 将最终提示词自动转交给新的 Copilot Chat 会话
+- 在产出最终版本后，仅指出剩余冲突或缺失信息
 
-The command reads the merged constraints from `.ralph/project-constraints.generated.json` and `.github/ralph/project-constraints.md`, so manual overrides in the editable markdown file take precedence. The output is intended to be execution-ready, not just advisory.
+该命令读取 `.ralph/project-constraints.generated.json` 和 `.github/ralph/project-constraints.md` 的合并结果，其中人工维护的 Markdown 规则优先级更高。
 
-## Settings
+## 设置项
 
-| Setting | Default | Description |
-| --- | --- | --- |
-| `ralph-runner.maxAutonomousLoops` | `2` | Maximum stories to execute per run |
-| `ralph-runner.loopDelayMs` | `3000` | Delay between autonomous iterations |
-| `ralph-runner.copilotResponsePollMs` | `5000` | Poll interval for completion detection |
-| `ralph-runner.copilotTimeoutMs` | `3600000` | Per-story timeout |
-| `ralph-runner.copilotMinWaitMs` | `15000` | Minimum wait before checking completion |
-| `ralph-runner.autoInjectProjectConstraints` | `true` | Inject merged project constraints into story prompts |
-| `ralph-runner.requireProjectConstraintsBeforeRun` | `false` | Block execution until project constraints are initialized |
-| `ralph-runner.autoInjectDesignContext` | `true` | Inject resolved or synthesized design context when available |
-| `ralph-runner.requireDesignContextForTaggedStories` | `false` | Block design-sensitive stories only when no explicit or synthesized design coverage is available |
-| `ralph-runner.policyGates` | schema object | Enable machine-executable preflight and completion gates for artifacts, dangerous paths, and relevant test/build commands |
-| `ralph-runner.policyGateCommandTimeoutMs` | `600000` | Timeout for policy-gated test/build command execution |
-| `ralph-runner.autoRecallTaskMemory` | `true` | Recall and inject related prior task memory automatically |
-| `ralph-runner.autoCommitGit` | `true` | When a Git repository is detected, ask Copilot to commit within the same implementation story instead of relying on separate Git commit stories |
-| `ralph-runner.recalledTaskMemoryLimit` | `3` | Maximum memory entries to inject or preview |
-| `ralph-runner.language` | `Chinese` | Switch runtime UI language between Chinese and English |
+| 设置项 | 默认值 | 类型 | 说明 |
+| --- | --- | --- | --- |
+| `ralph-runner.maxAutonomousLoops` | `2` | number | 单次运行最多连续执行多少个故事 |
+| `ralph-runner.loopDelayMs` | `3000` | number | 每轮自动执行之间的等待时间 |
+| `ralph-runner.copilotResponsePollMs` | `5000` | number | 轮询 Copilot 是否完成的间隔 |
+| `ralph-runner.copilotTimeoutMs` | `3600000` | number | 单个故事的最大等待时长 |
+| `ralph-runner.copilotMinWaitMs` | `15000` | number | 开始检查完成信号前的最小等待时间 |
+| `ralph-runner.autoInjectProjectConstraints` | `true` | boolean | 自动把合并后的项目约束注入故事提示词 |
+| `ralph-runner.requireProjectConstraintsBeforeRun` | `false` | boolean | 开启后，未初始化项目约束时阻止执行 |
+| `ralph-runner.autoInjectDesignContext` | `true` | boolean | 自动注入已解析或合成的设计上下文 |
+| `ralph-runner.requireDesignContextForTaggedStories` | `false` | boolean | 开启后，设计敏感故事缺少设计覆盖时阻止执行 |
+| `ralph-runner.policyGates` | schema object | object | 机器策略门禁配置，统一描述 preflight/completion 规则 |
+| `ralph-runner.policyGateCommandTimeoutMs` | `600000` | number | 门禁执行测试/构建命令时的超时时间 |
+| `ralph-runner.autoRecallTaskMemory` | `true` | boolean | 自动回忆并注入相关任务记忆 |
+| `ralph-runner.autoCommitGit` | `true` | boolean | 在 Git 仓库中，要求故事在同一执行阶段内自行提交 |
+| `ralph-runner.recalledTaskMemoryLimit` | `3` | number | 最多注入或预览多少条任务记忆 |
+| `ralph-runner.language` | `Chinese` | string | 运行时 UI 语言，支持中文和英文 |
 
-## Visual Design Workflow
+### 默认开启与默认关闭
 
-Use this workflow for UI-heavy work:
+默认开启：
 
-1. Open `RALPH: UI Design Notes`.
-2. Use `Prepare Reusable Notes` to generate shared project, screen, or module guidance from screenshots, Figma, or both.
-3. Use `Match One Story` to apply those reusable notes to a specific story.
-4. If the story has special visuals, import story-level screenshots or Figma from the same entry.
-5. Let runtime synthesis fill in the gap when a design-sensitive story only has shared context available.
+- `autoInjectProjectConstraints`
+- `autoInjectDesignContext`
+- `autoRecallTaskMemory`
+- `autoCommitGit`
 
-This approach keeps prompts concise while preserving reusable visual decisions.
+默认关闭：
 
-Choose visual import when the source of truth is a mockup, screenshot set, or Figma file. Choose lightweight review when the story mostly inherits an existing shell and only needs confirmation or a small override.
+- `requireProjectConstraintsBeforeRun`
+- `requireDesignContextForTaggedStories`
+- `policyGates.enabled`
 
-## Maintaining Project Constraints
+说明：`policyGates` schema 内虽然默认包含若干 completion 规则，但只要 `policyGates.enabled` 仍为 `false`，这些规则就不会实际生效。
 
-Treat `.ralph/project-constraints.generated.json` as generated output and `.github/ralph/project-constraints.md` as the document your team owns.
+## 测试覆盖与验证建议
 
-Recommended maintenance pattern:
+当前测试重点覆盖以下路径：
 
-1. Re-run `RALPH: Initialize Project Constraints` after meaningful changes to tooling, scripts, architecture, or folder layout.
-2. Review `.github/ralph/project-constraints.md` and replace generic placeholders with real team rules.
-3. Keep the editable file focused on durable guidance such as path restrictions, reuse expectations, coding standards, and delivery checklist items.
-4. Avoid copying large raw docs into the editable file. Convert them into short, enforceable rules so prompt injection stays concise.
+- 提示词完成契约必须要求任务记忆、检查点和证据包
+- 提示词段落顺序固定，源码上下文、检查点、策略门禁的位置可验证
+- 策略门禁能阻止危险路径改动，并能要求相关测试命令通过
+- 证据包可合成、可读写、可校验，并能驱动 `pendingReview` / `pendingRelease`
+- 人工审批流的批准、拒绝、补充说明会产生可审计状态流转和审批历史
+- 旧版 evidence 工件即使没有审批字段，也能在升级后被兼容归一化
 
-## How Execution Works
+推荐在本地至少执行：
 
-1. RALPH reads pending stories from `prd.json`.
-2. It checks `.ralph/story-status.json`, `progress.txt`, and active lock files to determine what can run.
-3. It loads merged project constraints, optional design context, and optional recalled task memory.
-4. It composes a bounded prompt and sends it to Copilot Chat.
-5. It waits for both a valid task memory artifact and the exact `completed` completion signal.
-6. It updates progress and durable story state, then continues until the loop limit is reached.
+1. `npm run compile`
+2. `npm run compile-tests`
+3. `npm test`
 
-## Local Development
+## 迁移指南
 
-1. Run `npm install`.
-2. Run `npm run compile` to validate types, lint, and bundle output.
-3. Run `npm test` to execute the VS Code extension test suite.
-4. Run `npm run package` to build a production bundle.
-5. Run `npm run package:vsix` to produce a local VSIX package.
+### 从旧工作区升级到当前版本
 
-If the repository does not include a LICENSE file, package with `npx @vscode/vsce package --skip-license` to avoid the interactive packaging prompt.
+旧工作区不需要一次性补齐所有新工件。RALPH 会按需逐步生成：
 
-## Known Constraints
+- 任务记忆：在故事完成时写入 `.ralph/memory/US-xxx.json`
+- 执行检查点：在故事完成、失败或中断时写入 `.ralph/checkpoints/US-xxx.checkpoint.json`
+- 源码上下文索引：首次手动刷新或每次自动执行前生成 `.ralph/source-context-index.json`
+- 策略基线：只在启用 `policyGates.enabled` 后，故事开始时写入 `.ralph/policy-baselines/US-xxx.policy-baseline.json`
+- 证据包：故事完成时写入 `.ralph/evidence/US-xxx.evidence.json`
 
-- Completion still depends on Copilot writing the expected `completed` file signal.
-- Prompt delivery falls back to clipboard if direct chat dispatch fails.
-- The extension currently assumes a single workspace folder.
+### 哪些能力会默认生效
 
-## Release Notes
+升级后会自然生效但兼容旧工作区的能力：
+
+- 检查点注入与新会话执行
+- 源码上下文索引与 recall
+- 任务记忆与证据包的自动读写
+- 高风险故事的待评审 / 待发布状态
+
+升级后不会默认强制开启的能力：
+
+- 运行前必须先初始化项目约束
+- 设计敏感故事必须先补设计上下文
+- 机器策略门禁
+
+### 旧工件兼容说明
+
+- 没有 `.ralph/story-status.json` 的旧工作区仍可运行，RALPH 会在后续执行中补写
+- 没有 `.ralph/source-context-index.json` 的旧工作区仍可运行，缺失时只是不注入该段上下文
+- 旧版 evidence 工件即使没有审批字段，也会在读取时自动归一化为默认审批状态
+- 旧版任务锁文件 `.ralph/task-<id>-status` 仍只作为执行锁和完成信号，不再被视为故事完成事实来源
+
+## 失败路径与降级行为
+
+- 如果 Copilot 没有写出合法的任务记忆、检查点或证据包，RALPH 会合成 fallback 工件而不是直接卡死
+- 如果没有足够强的源码上下文匹配，RALPH 会省略该段并继续执行
+- 如果没有有效检查点，`Recent Checkpoint` 段会被省略
+- 如果 Git 历史不可用，源码上下文索引会跳过热点路径分析，但仍输出合法索引
+- 如果 `policyGates.enabled=false`，所有机器策略门禁都保持关闭，旧工作流继续可用
+- 如果高风险故事尚未审批，它会停在 `pendingReview` 或 `pendingRelease`，而低风险故事不会被额外打断
+- 如果审批被拒绝，故事状态会退回 `pendingReview`，并在 evidence 与 progress 中留下可追溯记录
+- 如果自动发送到 Copilot Chat 失败，RALPH 会回退为复制提示词到剪贴板并打开会话
+
+## 项目约束维护建议
+
+把 `.ralph/project-constraints.generated.json` 当作生成产物，把 `.github/ralph/project-constraints.md` 当作团队真正维护的规则文档。
+
+建议流程：
+
+1. 当脚本、工具链、目录结构或架构有明显变化时，重新执行 `RALPH: 初始化项目约束`
+2. 审阅 `.github/ralph/project-constraints.md`，把占位说明替换成真实团队规则
+3. 保持该 Markdown 聚焦于长期有效的规则，例如路径限制、复用要求、编码规范和交付检查
+4. 不要把大段原始文档直接塞进去，尽量改写成短而可执行的规则
+
+## 执行机制概览
+
+1. RALPH 从 `prd.json` 读取待执行故事
+2. 通过 `.ralph/story-status.json`、`progress.txt` 和运行锁判断哪些故事可运行
+3. 加载项目约束、设计上下文、任务记忆、源码上下文和最近检查点
+4. 构建有界提示词并发送给 Copilot Chat
+5. 等待合法工件和精确的 `completed` 完成信号
+6. 回写进度、持久状态与审计工件，再进入下一个故事
+
+## 本地开发
+
+1. 执行 `npm install`
+2. 执行 `npm run compile` 完成类型检查、Lint 和打包
+3. 执行 `npm test` 运行 VS Code 扩展测试套件
+4. 执行 `npm run package` 生成生产构建产物
+5. 执行 `npm run package:vsix` 生成本地 VSIX 安装包
+
+如果仓库里没有 LICENSE 文件，使用 `npx @vscode/vsce package --skip-license` 打包，以避免交互式提示。
+
+## 已知限制
+
+- 故事完成仍依赖 Copilot 写出预期的 `completed` 文件信号
+- 扩展当前默认按单工作区目录运行
+- 审批流当前默认把审批人记录为 `user`，尚未区分更细粒度身份来源
+
+## 发布说明
+
+### 0.0.7
+
+- 增加执行检查点、源码上下文索引与源码上下文 recall
+- 增加机器可执行的策略门禁与故事级基线比较
+- 增加结构化 evidence 工件、风险评估与可审计状态流转
+- 增加高风险故事人工审批流，并把审批历史持久化到 evidence
 
 ### 0.0.6
 
-- Added layered shared design context for project, screen, module, and story scopes.
-- Added visual design draft generation from Figma and screenshots.
-- Added story-level suggestion flow that writes only deltas beyond inherited shared context.
-- Added execution-time lazy design synthesis for design-sensitive stories.
-- Reworked the design-context UX around review-first drafts with advanced manual entry as a fallback.
+- 增加项目级、页面级、模块级和故事级的分层设计上下文
+- 增加基于 Figma 和截图的设计稿生成能力
+- 增加只写差异项的故事级设计建议流程
+- 增加执行时懒加载设计合成
+- 重构设计上下文交互流程，默认以 review-first 的方式组织体验
