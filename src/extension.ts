@@ -45,6 +45,7 @@ import {
 	writeExecutionCheckpoint,
 } from './executionCheckpoint';
 import {
+	applyStoryApprovalDecision,
 	createSynthesizedStoryEvidence,
 	hasStoryEvidenceArtifact,
 	readStoryEvidence,
@@ -83,6 +84,7 @@ import {
 } from './policyGate';
 import {
 	DesignContextScope,
+	StoryApprovalAction,
 	ExecutionCheckpointArtifact,
 	ExecutionCheckpointStatus,
 	GeneratedProjectConstraints,
@@ -616,6 +618,7 @@ export function activate(context: vscode.ExtensionContext) {
 		vscode.commands.registerCommand('ralph-runner.start', () => startRalph()),
 		vscode.commands.registerCommand('ralph-runner.stop', () => stopRalph()),
 		vscode.commands.registerCommand('ralph-runner.status', () => showStatus()),
+		vscode.commands.registerCommand('ralph-runner.reviewStoryApproval', () => reviewStoryApproval()),
 		vscode.commands.registerCommand('ralph-runner.resetStep', () => resetStory()),
 		vscode.commands.registerCommand('ralph-runner.initProjectConstraints', () => initializeProjectConstraints()),
 		vscode.commands.registerCommand('ralph-runner.refreshSourceContextIndex', () => refreshSourceContextIndexCommand()),
@@ -798,6 +801,7 @@ async function startRalph(): Promise<void> {
 			);
 
 			log(`✅ Story ${nextStory.id} finalized as ${executionResult.evidence.artifact.status} with task memory (${executionResult.taskMemory.source}), checkpoint (${executionResult.checkpoint.source}), and evidence (${executionResult.evidence.source}).`);
+			await maybePromptForManualApproval(workspaceRoot, nextStory, executionResult.evidence.artifact);
 		} catch (err: unknown) {
 			const errMsg = err instanceof Error ? err.message : String(err);
 			if (errMsg === 'Cancelled by user') {
@@ -1930,6 +1934,13 @@ function buildStoryCompletionNote(executionResult: {
 	return `Finalized as ${executionResult.evidence.artifact.status}; task memory persisted (${executionResult.taskMemory.source}); checkpoint persisted (${executionResult.checkpoint.source}); evidence persisted (${executionResult.evidence.source})${evidenceSummary ? `; ${evidenceSummary}` : ''}`;
 }
 
+function buildApprovalProgressNote(evidence: StoryEvidenceArtifact, action: StoryApprovalAction): string {
+	const evidenceSummary = summarizeStoryEvidenceForStatus(evidence).join('; ');
+	const latestRecord = evidence.approvalHistory[evidence.approvalHistory.length - 1];
+	const latestNote = latestRecord?.note ? `; note=${latestRecord.note}` : '';
+	return `Approval ${action}; status=${evidence.status}; updatedAt=${evidence.approvalUpdatedAt ?? evidence.generatedAt}${latestNote}${evidenceSummary ? `; ${evidenceSummary}` : ''}`;
+}
+
 function deriveChangedModules(changedFiles: string[]): string[] {
 	const modules = changedFiles
 		.filter(filePath => !filePath.startsWith('('))
@@ -2087,6 +2098,80 @@ async function showStatus(): Promise<void> {
 	vscode.window.showInformationMessage(languagePack.status.summary(completed, total, nextPending ? nextPending.id : null));
 }
 
+async function reviewStoryApproval(targetStoryId?: string): Promise<void> {
+	const languagePack = getLanguagePack();
+	const workspaceRoot = getWorkspaceRoot();
+	if (!workspaceRoot) {
+		vscode.window.showErrorMessage(languagePack.common.noWorkspaceFolder);
+		return;
+	}
+
+	const prd = parsePrd(workspaceRoot);
+	if (!prd) {
+		vscode.window.showErrorMessage(languagePack.runtime.prdNotFoundRoot);
+		return;
+	}
+
+	const candidates = prd.userStories
+		.map(story => ({
+			story,
+			evidence: readStoryEvidence(workspaceRoot, story.id),
+			status: RalphStateManager.getStoryExecutionStatus(workspaceRoot, story.id),
+		}))
+		.filter((item): item is { story: UserStory; evidence: StoryEvidenceArtifact; status: ReturnType<typeof RalphStateManager.getStoryExecutionStatus>; } =>
+			item.evidence !== null && isStoryAwaitingApproval(item.evidence)
+		);
+
+	if (candidates.length === 0) {
+		vscode.window.showInformationMessage(languagePack.approval.noReviewableStories);
+		return;
+	}
+
+	const selectedCandidate = targetStoryId
+		? candidates.find(candidate => candidate.story.id === targetStoryId)
+		: undefined;
+	const candidate = selectedCandidate ?? await pickApprovalCandidate(candidates);
+	if (!candidate) {
+		return;
+	}
+
+	logApprovalReviewSummary(candidate.story, candidate.evidence);
+
+	const action = await pickApprovalAction(candidate.story.id, candidate.evidence);
+	if (!action) {
+		return;
+	}
+
+	const note = await promptForApprovalNote(candidate.story.id, action, action === 'rejected');
+	if (note === undefined) {
+		return;
+	}
+
+	const updatedEvidence = applyStoryApprovalDecision(candidate.evidence, {
+		action,
+		note,
+	});
+	writeStoryEvidence(workspaceRoot, candidate.story.id, updatedEvidence);
+	RalphStateManager.setCompleted(workspaceRoot, candidate.story.id);
+	RalphStateManager.setStoryExecutionStatus(workspaceRoot, candidate.story.id, updatedEvidence.status);
+	writeProgressEntry(
+		workspaceRoot,
+		candidate.story.id,
+		mapStoryStatusToProgressStatus(updatedEvidence.status),
+		buildApprovalProgressNote(updatedEvidence, action)
+	);
+
+	log(`Approval updated for ${candidate.story.id}: action=${action}; status=${updatedEvidence.status}; approval=${updatedEvidence.approvalState}.`);
+	const message = languagePack.approval.updated(
+		candidate.story.id,
+		getLocalizedStoryStatus(updatedEvidence.status, getConfig().LANGUAGE)
+	);
+	const response = await vscode.window.showInformationMessage(message, languagePack.approval.openEvidence);
+	if (response === languagePack.approval.openEvidence) {
+		await openStoryEvidenceArtifact(workspaceRoot, candidate.story.id);
+	}
+}
+
 async function resetStory(): Promise<void> {
 	const languagePack = getLanguagePack();
 	const workspaceRoot = getWorkspaceRoot();
@@ -2136,6 +2221,149 @@ async function resetStory(): Promise<void> {
 		vscode.window.showInformationMessage(languagePack.reset.storyReset(selection.storyId));
 		log(`Story ${selection.storyId} reset by user.`);
 	}
+}
+
+async function maybePromptForManualApproval(
+	workspaceRoot: string,
+	story: UserStory,
+	evidence: StoryEvidenceArtifact,
+): Promise<void> {
+	if (!isStoryAwaitingApproval(evidence)) {
+		return;
+	}
+
+	const languagePack = getLanguagePack();
+	const localizedStatus = getLocalizedStoryStatus(evidence.status, getConfig().LANGUAGE);
+	const choice = await vscode.window.showInformationMessage(
+		languagePack.approval.required(story.id, localizedStatus),
+		languagePack.approval.openFlow,
+		languagePack.approval.openEvidence
+	);
+
+	if (choice === languagePack.approval.openFlow) {
+		await reviewStoryApproval(story.id);
+		return;
+	}
+	if (choice === languagePack.approval.openEvidence) {
+		await openStoryEvidenceArtifact(workspaceRoot, story.id);
+	}
+}
+
+function isStoryAwaitingApproval(evidence: StoryEvidenceArtifact): boolean {
+	return evidence.status === 'pendingReview' || evidence.status === 'pendingRelease';
+}
+
+async function pickApprovalCandidate(candidates: Array<{ story: UserStory; evidence: StoryEvidenceArtifact; status: ReturnType<typeof RalphStateManager.getStoryExecutionStatus>; }>) {
+	const languagePack = getLanguagePack();
+	const items = candidates.map(candidate => ({
+		label: languagePack.common.storyFormat(candidate.story.id, candidate.story.title),
+		description: `[${getLocalizedStoryStatus(candidate.evidence.status, getConfig().LANGUAGE)}] ${languagePack.approval.riskLabel(candidate.evidence.riskLevel)} · ${languagePack.approval.approvalLabel(formatApprovalState(candidate.evidence.approvalState))}`,
+		detail: candidate.evidence.summary,
+		candidate,
+	}));
+
+	const selected = await vscode.window.showQuickPick(items, {
+		placeHolder: languagePack.approval.storyPlaceholder,
+	});
+
+	return selected?.candidate;
+}
+
+async function pickApprovalAction(storyId: string, evidence: StoryEvidenceArtifact): Promise<StoryApprovalAction | undefined> {
+	const languagePack = getLanguagePack();
+	const items: Array<vscode.QuickPickItem & { action: StoryApprovalAction; }> = [
+		{
+			label: evidence.status === 'pendingRelease' ? languagePack.approval.approveReleaseLabel : languagePack.approval.approveReviewLabel,
+			description: evidence.status === 'pendingRelease' ? languagePack.approval.approveReleaseDescription : languagePack.approval.approveReviewDescription,
+			action: 'approved',
+		},
+		{
+			label: languagePack.approval.rejectLabel,
+			description: languagePack.approval.rejectDescription,
+			action: 'rejected',
+		},
+		{
+			label: languagePack.approval.addNoteLabel,
+			description: languagePack.approval.addNoteDescription,
+			action: 'note',
+		},
+	];
+
+	const selected = await vscode.window.showQuickPick(items, {
+		placeHolder: languagePack.approval.actionPlaceholder(storyId),
+	});
+
+	return selected?.action;
+}
+
+async function promptForApprovalNote(storyId: string, action: StoryApprovalAction, required: boolean): Promise<string | undefined> {
+	const languagePack = getLanguagePack();
+	const input = await vscode.window.showInputBox({
+		title: languagePack.approval.noteTitle(storyId),
+		prompt: languagePack.approval.notePrompt(describeApprovalAction(action)),
+		placeHolder: languagePack.approval.notePlaceholder,
+		ignoreFocusOut: true,
+	});
+
+	if (input === undefined) {
+		return undefined;
+	}
+
+	const normalized = input.trim();
+	if (required && normalized.length === 0) {
+		vscode.window.showWarningMessage(languagePack.approval.rejectNoteRequired);
+		return undefined;
+	}
+
+	return normalized;
+}
+
+function logApprovalReviewSummary(story: UserStory, evidence: StoryEvidenceArtifact): void {
+	const languagePack = getLanguagePack();
+	outputChannel.show(true);
+	log(`Approval review for ${story.id}: ${story.title}`);
+	log(`  Status: ${evidence.status}`);
+	log(`  Risk: ${evidence.riskLevel}`);
+	log(`  Approval: ${evidence.approvalState}`);
+	log(`  Summary: ${evidence.summary}`);
+	if (evidence.riskReasons.length > 0) {
+		log(`  Risk reasons: ${evidence.riskReasons.join('; ')}`);
+	}
+	if (evidence.evidenceGaps.length > 0) {
+		log(`  Evidence gaps: ${evidence.evidenceGaps.join('; ')}`);
+	}
+	if (evidence.approvalHistory.length === 0) {
+		log(`  ${languagePack.approval.noHistory}`);
+		return;
+	}
+	log(`  ${languagePack.approval.historyHeading}`);
+	for (const entry of evidence.approvalHistory) {
+		log(`    - ${entry.createdAt} | ${entry.action} | ${entry.fromStatus ?? 'unknown'} -> ${entry.toStatus ?? evidence.status}${entry.note ? ` | ${entry.note}` : ''}`);
+	}
+}
+
+function describeApprovalAction(action: StoryApprovalAction): string {
+	const languagePack = getLanguagePack();
+	if (action === 'approved') {
+		return languagePack.approval.approveReviewLabel;
+	}
+	if (action === 'rejected') {
+		return languagePack.approval.rejectLabel;
+	}
+	return languagePack.approval.addNoteLabel;
+}
+
+function formatApprovalState(state: StoryEvidenceArtifact['approvalState']): string {
+	if (state === 'notRequired') {
+		return 'not-required';
+	}
+	return state;
+}
+
+async function openStoryEvidenceArtifact(workspaceRoot: string, storyId: string): Promise<void> {
+	const filePath = resolveStoryEvidencePath(workspaceRoot, storyId);
+	const document = await vscode.workspace.openTextDocument(filePath);
+	await vscode.window.showTextDocument(document, { preview: false });
 }
 
 async function initializeProjectConstraints(): Promise<void> {

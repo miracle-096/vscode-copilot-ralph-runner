@@ -1,6 +1,9 @@
 import * as fs from 'fs';
 import {
 	ExecutionCheckpointArtifact,
+	StoryApprovalAction,
+	StoryApprovalRecord,
+	StoryApprovalState,
 	StoryEvidenceArtifact,
 	StoryEvidenceTestResult,
 	StoryExecutionStatus,
@@ -28,6 +31,12 @@ export interface SynthesizedStoryEvidenceOptions {
 	source?: 'copilot' | 'synthesized';
 }
 
+export interface ApplyStoryApprovalDecisionOptions {
+	action: StoryApprovalAction;
+	note?: string;
+	createdAt?: string;
+}
+
 export function createEmptyStoryEvidence(
 	storyId: string,
 	title = '',
@@ -48,6 +57,8 @@ export function createEmptyStoryEvidence(
 		followUps: [],
 		recommendFeatureFlag: false,
 		evidenceGaps: [],
+		approvalState: status === 'completed' ? 'notRequired' : 'pending',
+		approvalHistory: [],
 		generatedAt: new Date().toISOString(),
 	};
 }
@@ -111,6 +122,15 @@ export function validateStoryEvidence(
 	if (artifact.riskLevel === 'high' && artifact.status === 'completed') {
 		errors.push('high-risk evidence must end in pendingReview or pendingRelease');
 	}
+	if (artifact.status !== 'completed' && artifact.approvalState === 'notRequired') {
+		errors.push('approvalState cannot be notRequired when evidence is pending review or release');
+	}
+	if (artifact.status === 'completed' && artifact.approvalState === 'pending') {
+		errors.push('approvalState cannot remain pending after a story is completed');
+	}
+	if (artifact.status === 'completed' && artifact.approvalState === 'rejected') {
+		errors.push('approvalState cannot be rejected after a story is completed');
+	}
 
 	return {
 		artifact,
@@ -146,9 +166,47 @@ export function normalizeStoryEvidence(
 		followUps: toStringArray(value?.followUps),
 		recommendFeatureFlag: value?.recommendFeatureFlag === true,
 		evidenceGaps: toStringArray(value?.evidenceGaps),
+		approvalState: normalizeApprovalState(value?.approvalState, status),
+		approvalUpdatedAt: typeof value?.approvalUpdatedAt === 'string' && value.approvalUpdatedAt.trim().length > 0
+			? value.approvalUpdatedAt.trim()
+			: undefined,
+		approvalSummary: typeof value?.approvalSummary === 'string' && value.approvalSummary.trim().length > 0
+			? value.approvalSummary.trim()
+			: undefined,
+		approvalHistory: normalizeApprovalHistory(value?.approvalHistory),
 		generatedAt: typeof value?.generatedAt === 'string' && value.generatedAt.trim().length > 0 ? value.generatedAt : fallback.generatedAt,
 		source: value?.source === 'copilot' ? 'copilot' : value?.source === 'synthesized' ? 'synthesized' : undefined,
 	};
+}
+
+export function applyStoryApprovalDecision(
+	evidence: StoryEvidenceArtifact,
+	options: ApplyStoryApprovalDecisionOptions,
+): StoryEvidenceArtifact {
+	const normalizedEvidence = normalizeStoryEvidence(evidence, evidence.storyId);
+	const timestamp = typeof options.createdAt === 'string' && options.createdAt.trim().length > 0
+		? options.createdAt.trim()
+		: new Date().toISOString();
+	const note = typeof options.note === 'string' && options.note.trim().length > 0 ? options.note.trim() : undefined;
+	const nextStatus = deriveApprovalStatus(normalizedEvidence, options.action);
+	const nextApprovalState = deriveApprovalStateAfterDecision(normalizedEvidence, options.action, nextStatus);
+	const historyEntry: StoryApprovalRecord = {
+		action: options.action,
+		createdAt: timestamp,
+		actor: 'user',
+		note,
+		fromStatus: normalizedEvidence.status,
+		toStatus: nextStatus,
+	};
+
+	return normalizeStoryEvidence({
+		...normalizedEvidence,
+		status: nextStatus,
+		approvalState: nextApprovalState,
+		approvalUpdatedAt: timestamp,
+		approvalSummary: buildApprovalSummary(options.action, timestamp, note, nextStatus),
+		approvalHistory: [...normalizedEvidence.approvalHistory, historyEntry],
+	}, evidence.storyId);
 }
 
 export function createSynthesizedStoryEvidence(
@@ -213,6 +271,8 @@ export function createSynthesizedStoryEvidence(
 		followUps: options.taskMemory?.followUps?.length ? options.taskMemory.followUps : ['Review the synthesized evidence artifact before using it in approvals.'],
 		recommendFeatureFlag,
 		evidenceGaps,
+		approvalState: status === 'completed' ? 'notRequired' : 'pending',
+		approvalHistory: [],
 		generatedAt: new Date().toISOString(),
 		source: options.source ?? 'synthesized',
 	}, story.id);
@@ -227,8 +287,51 @@ export function summarizeStoryEvidenceForStatus(evidence: StoryEvidenceArtifact 
 		`status=${evidence.status}`,
 		`risk=${evidence.riskLevel}`,
 		`featureFlag=${evidence.recommendFeatureFlag ? 'yes' : 'no'}`,
+		`approval=${evidence.approvalState}`,
 		...(evidence.evidenceGaps.length > 0 ? [`gaps=${evidence.evidenceGaps.join('; ')}`] : []),
 	];
+}
+
+function deriveApprovalStatus(
+	evidence: StoryEvidenceArtifact,
+	action: StoryApprovalAction,
+): Extract<StoryExecutionStatus, 'completed' | 'pendingReview' | 'pendingRelease'> {
+	if (action === 'note') {
+		return evidence.status;
+	}
+	if (action === 'rejected') {
+		return 'pendingReview';
+	}
+	if (evidence.status === 'pendingReview') {
+		return evidence.riskLevel === 'high' || evidence.recommendFeatureFlag ? 'pendingRelease' : 'completed';
+	}
+	return 'completed';
+}
+
+function deriveApprovalStateAfterDecision(
+	evidence: StoryEvidenceArtifact,
+	action: StoryApprovalAction,
+	status: Extract<StoryExecutionStatus, 'completed' | 'pendingReview' | 'pendingRelease'>,
+): StoryApprovalState {
+	if (action === 'note') {
+		return evidence.approvalState;
+	}
+	if (action === 'rejected') {
+		return 'rejected';
+	}
+	if (status === 'completed' && evidence.riskLevel !== 'high' && !evidence.recommendFeatureFlag && evidence.evidenceGaps.length === 0) {
+		return 'notRequired';
+	}
+	return 'approved';
+}
+
+function buildApprovalSummary(
+	action: StoryApprovalAction,
+	timestamp: string,
+	note: string | undefined,
+	status: Extract<StoryExecutionStatus, 'completed' | 'pendingReview' | 'pendingRelease'>,
+): string {
+	return `${action} at ${timestamp}; status=${status}${note ? `; note=${note}` : ''}`;
 }
 
 function normalizeTestResults(value: unknown): StoryEvidenceTestResult[] {
@@ -254,6 +357,56 @@ function normalizeTestResults(value: unknown): StoryEvidenceTestResult[] {
 		});
 	}
 	return normalized;
+}
+
+function normalizeApprovalState(
+	value: unknown,
+	status: Extract<StoryExecutionStatus, 'completed' | 'pendingReview' | 'pendingRelease'>,
+): StoryApprovalState {
+	if (value === 'notRequired' || value === 'pending' || value === 'approved' || value === 'rejected') {
+		return value;
+	}
+	return status === 'completed' ? 'notRequired' : 'pending';
+}
+
+function normalizeApprovalHistory(value: unknown): StoryApprovalRecord[] {
+	if (!Array.isArray(value)) {
+		return [];
+	}
+
+	const history: StoryApprovalRecord[] = [];
+	for (const item of value) {
+		if (!item || typeof item !== 'object') {
+			continue;
+		}
+		const action = (item as { action?: unknown; }).action;
+		const createdAt = typeof (item as { createdAt?: unknown; }).createdAt === 'string'
+			? (item as { createdAt: string; }).createdAt.trim()
+			: '';
+		if ((action !== 'approved' && action !== 'rejected' && action !== 'note') || createdAt.length === 0) {
+			continue;
+		}
+		const fromStatus = normalizeApprovalRecordStatus((item as { fromStatus?: unknown; }).fromStatus);
+		const toStatus = normalizeApprovalRecordStatus((item as { toStatus?: unknown; }).toStatus);
+		history.push({
+			action,
+			createdAt,
+			actor: 'user',
+			note: typeof (item as { note?: unknown; }).note === 'string'
+				? (item as { note: string; }).note.trim() || undefined
+				: undefined,
+			fromStatus,
+			toStatus,
+		});
+	}
+
+	return history;
+}
+
+function normalizeApprovalRecordStatus(value: unknown): Extract<StoryExecutionStatus, 'completed' | 'pendingReview' | 'pendingRelease'> | undefined {
+	return value === 'completed' || value === 'pendingReview' || value === 'pendingRelease'
+		? value
+		: undefined;
 }
 
 function toStringArray(value: unknown): string[] {

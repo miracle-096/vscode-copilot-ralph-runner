@@ -58,6 +58,31 @@ export interface RalphLanguagePack {
 		placeholder: string;
 		storyReset: (storyId: string) => string;
 	};
+	approval: {
+		noReviewableStories: string;
+		storyPlaceholder: string;
+		actionPlaceholder: (storyId: string) => string;
+		approveReviewLabel: string;
+		approveReleaseLabel: string;
+		rejectLabel: string;
+		addNoteLabel: string;
+		approveReviewDescription: string;
+		approveReleaseDescription: string;
+		rejectDescription: string;
+		addNoteDescription: string;
+		noteTitle: (storyId: string) => string;
+		notePrompt: (actionLabel: string) => string;
+		notePlaceholder: string;
+		rejectNoteRequired: string;
+		updated: (storyId: string, status: string) => string;
+		openEvidence: string;
+		openFlow: string;
+		required: (storyId: string, status: string) => string;
+		historyHeading: string;
+		noHistory: string;
+		riskLabel: (risk: string) => string;
+		approvalLabel: (approval: string) => string;
+	};
 	initProjectConstraints: {
 		success: string;
 		copiedPrompt: string;
@@ -378,6 +403,31 @@ const CHINESE_PACK: RalphLanguagePack = {
 		placeholder: '选择要重置的用户故事',
 		storyReset: storyId => `故事 ${storyId} 已重置。`,
 	},
+	approval: {
+		noReviewableStories: '当前没有需要人工审批的高风险故事。',
+		storyPlaceholder: '选择要审批的故事',
+		actionPlaceholder: storyId => `选择对 ${storyId} 执行的审批操作`,
+		approveReviewLabel: '批准评审',
+		approveReleaseLabel: '批准发布',
+		rejectLabel: '拒绝并退回评审',
+		addNoteLabel: '补充审批说明',
+		approveReviewDescription: '确认当前评审结果，并推进到下一审批阶段',
+		approveReleaseDescription: '确认可以结束人工审批并完成故事',
+		rejectDescription: '把故事退回待评审，并记录拒绝原因',
+		addNoteDescription: '只补充审批备注，不改变当前状态',
+		noteTitle: storyId => `审批说明 — ${storyId}`,
+		notePrompt: actionLabel => `可选：输入“${actionLabel}”的审批说明；拒绝时建议写清原因`,
+		notePlaceholder: '例如：已核对风险、需要补测试、允许灰度发布……',
+		rejectNoteRequired: '拒绝时必须填写审批说明。',
+		updated: (storyId, status) => `RALPH：${storyId} 的审批结果已更新，当前状态：${status}。`,
+		openEvidence: '打开证据包',
+		openFlow: '打开审批流',
+		required: (storyId, status) => `RALPH：${storyId} 当前为“${status}”，需要人工审批。`,
+		historyHeading: '审批记录：',
+		noHistory: '暂无审批记录。',
+		riskLabel: risk => `风险：${risk}`,
+		approvalLabel: approval => `审批：${approval}`,
+	},
 	initProjectConstraints: {
 		success: 'RALPH：项目约束已初始化。',
 		copiedPrompt: 'RALPH：项目约束整理提示词已复制到剪贴板，请粘贴到 Copilot Chat。',
@@ -615,6 +665,7 @@ const CHINESE_PACK: RalphLanguagePack = {
 			{ command: 'ralph-runner.start', label: '$(play)  开始执行', description: '开始或继续自动任务循环' },
 			{ command: 'ralph-runner.stop', label: '$(debug-stop)  停止执行', description: '取消当前运行' },
 			{ command: 'ralph-runner.status', label: '$(info)  查看状态', description: '显示用户故事进度摘要' },
+			{ command: 'ralph-runner.reviewStoryApproval', label: '$(pass-filled)  审批高风险故事', description: '对待人工审批的高风险故事执行批准、拒绝或补充说明' },
 			{ command: 'ralph-runner.resetStep', label: '$(debug-restart)  重置故事', description: '重置某个已完成的用户故事' },
 			{ command: 'ralph-runner.openSettings', label: '$(gear)  打开设置', description: '配置 RALPH Runner 选项' },
 		],
@@ -713,6 +764,31 @@ const ENGLISH_PACK: RalphLanguagePack = {
 		noTrackedStories: 'There are no completed or failed stories to reset.',
 		placeholder: 'Select the user story to reset',
 		storyReset: storyId => `Story ${storyId} has been reset.`,
+	},
+	approval: {
+		noReviewableStories: 'There are currently no high-risk stories waiting for manual approval.',
+		storyPlaceholder: 'Choose a story to review',
+		actionPlaceholder: storyId => `Choose the approval action for ${storyId}`,
+		approveReviewLabel: 'Approve Review',
+		approveReleaseLabel: 'Approve Release',
+		rejectLabel: 'Reject Back To Review',
+		addNoteLabel: 'Add Approval Note',
+		approveReviewDescription: 'Confirm the review outcome and advance to the next approval stage',
+		approveReleaseDescription: 'Confirm the story can exit manual approval and be marked complete',
+		rejectDescription: 'Send the story back to pending review and record why it was rejected',
+		addNoteDescription: 'Record an approval note without changing the current status',
+		noteTitle: storyId => `Approval Note — ${storyId}`,
+		notePrompt: actionLabel => `Optional: add context for "${actionLabel}". Rejections should explain what blocked approval.`,
+		notePlaceholder: 'For example: verified risk controls, need more tests, release behind a flag…',
+		rejectNoteRequired: 'A rejection note is required.',
+		updated: (storyId, status) => `RALPH: Updated approval for ${storyId}. Current status: ${status}.`,
+		openEvidence: 'Open Evidence',
+		openFlow: 'Open Approval Flow',
+		required: (storyId, status) => `RALPH: ${storyId} is currently ${status} and requires manual approval.`,
+		historyHeading: 'Approval history:',
+		noHistory: 'No approval history yet.',
+		riskLabel: risk => `Risk: ${risk}`,
+		approvalLabel: approval => `Approval: ${approval}`,
 	},
 	initProjectConstraints: {
 		success: 'RALPH: Project constraints initialized.',
@@ -951,6 +1027,7 @@ const ENGLISH_PACK: RalphLanguagePack = {
 			{ command: 'ralph-runner.start', label: '$(play)  Start', description: 'Start or resume the automated task loop' },
 			{ command: 'ralph-runner.stop', label: '$(debug-stop)  Stop', description: 'Cancel the current run' },
 			{ command: 'ralph-runner.status', label: '$(info)  Show Status', description: 'Show a summary of user story progress' },
+			{ command: 'ralph-runner.reviewStoryApproval', label: '$(pass-filled)  Review Approval', description: 'Approve, reject, or annotate high-risk stories waiting for manual review' },
 			{ command: 'ralph-runner.resetStep', label: '$(debug-restart)  Reset Story', description: 'Reset a completed or failed user story' },
 			{ command: 'ralph-runner.openSettings', label: '$(gear)  Open Settings', description: 'Configure Ralph Runner options' },
 		],

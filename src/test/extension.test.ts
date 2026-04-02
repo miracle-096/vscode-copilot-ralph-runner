@@ -74,6 +74,7 @@ import {
 	writeExecutionCheckpoint,
 } from '../executionCheckpoint';
 import {
+	applyStoryApprovalDecision,
 	createSynthesizedStoryEvidence,
 	validateStoryEvidence,
 	writeStoryEvidence,
@@ -133,6 +134,7 @@ suite('Extension Test Suite', () => {
 		assert.strictEqual(designCommands[0]?.title, 'RALPH: 界面设计描述');
 		assert.strictEqual(contributedCommands.some(command => command.command === 'ralph-runner.recallTaskMemory'), false);
 		assert.strictEqual(contributedCommands.some(command => command.command === 'ralph-runner.previewSourceContextRecall'), true);
+		assert.strictEqual(contributedCommands.some(command => command.command === 'ralph-runner.reviewStoryApproval'), true);
 		assert.strictEqual(typeof packageJson.contributes?.configuration?.properties?.['ralph-runner.policyGates'], 'object');
 		const policyGateDefault = packageJson.contributes?.configuration?.properties?.['ralph-runner.policyGates'] as {
 			default?: { completionRules?: Array<{ id?: string; }>; };
@@ -1363,9 +1365,92 @@ suite('Extension Test Suite', () => {
 			const evidencePath = writeStoryEvidence(workspaceRoot, 'US-402A', evidence);
 			assert.ok(fs.existsSync(evidencePath));
 			assert.strictEqual(readStoryEvidence(workspaceRoot, 'US-402A')?.riskLevel, 'high');
+			assert.deepStrictEqual(readStoryEvidence(workspaceRoot, 'US-402A')?.approvalHistory, []);
 		} finally {
 			fs.rmSync(workspaceRoot, { recursive: true, force: true });
 		}
+	});
+
+	test('Story evidence approval decisions persist review history and auditable status changes', () => {
+		const baseEvidence = validateStoryEvidence({
+			storyId: 'US-037',
+			title: 'High risk approval flow',
+			status: 'pendingReview',
+			summary: 'High-risk story awaiting manual approval.',
+			changedFiles: ['src/extension.ts'],
+			changedModules: ['src'],
+			tests: [{ command: 'npm test', success: true }],
+			riskLevel: 'high',
+			riskReasons: ['Touches core execution surfaces.'],
+			releaseNotes: ['Add manual approval workflow for high-risk stories.'],
+			rollbackHints: ['Revert the approval-flow changes as a single unit if needed.'],
+			followUps: [],
+			recommendFeatureFlag: true,
+			evidenceGaps: ['Release should still be verified manually.'],
+			approvalState: 'pending',
+			approvalHistory: [],
+		}, 'US-037').artifact;
+
+		const afterReviewApproval = applyStoryApprovalDecision(baseEvidence, {
+			action: 'approved',
+			note: 'Reviewed with rollback plan confirmed.',
+			createdAt: '2025-02-01T10:00:00.000Z',
+		});
+		assert.strictEqual(afterReviewApproval.status, 'pendingRelease');
+		assert.strictEqual(afterReviewApproval.approvalState, 'approved');
+		assert.strictEqual(afterReviewApproval.approvalHistory.length, 1);
+		assert.strictEqual(afterReviewApproval.approvalHistory[0].toStatus, 'pendingRelease');
+
+		const afterReleaseApproval = applyStoryApprovalDecision(afterReviewApproval, {
+			action: 'approved',
+			note: 'Release approved for rollout.',
+			createdAt: '2025-02-01T11:00:00.000Z',
+		});
+		assert.strictEqual(afterReleaseApproval.status, 'completed');
+		assert.strictEqual(afterReleaseApproval.approvalState, 'approved');
+		assert.strictEqual(afterReleaseApproval.approvalHistory.length, 2);
+
+		const afterRejection = applyStoryApprovalDecision(afterReviewApproval, {
+			action: 'rejected',
+			note: 'Need more release validation evidence.',
+			createdAt: '2025-02-01T12:00:00.000Z',
+		});
+		assert.strictEqual(afterRejection.status, 'pendingReview');
+		assert.strictEqual(afterRejection.approvalState, 'rejected');
+
+		const afterNote = applyStoryApprovalDecision(afterRejection, {
+			action: 'note',
+			note: 'Waiting for updated test report.',
+			createdAt: '2025-02-01T12:30:00.000Z',
+		});
+		assert.strictEqual(afterNote.status, 'pendingReview');
+		assert.strictEqual(afterNote.approvalState, 'rejected');
+		assert.strictEqual(afterNote.approvalHistory.length, 3);
+		assert.strictEqual(afterNote.approvalHistory[2].action, 'note');
+	});
+
+	test('Story evidence validation rejects unresolved approval state for completed stories', () => {
+		const validation = validateStoryEvidence({
+			storyId: 'US-038',
+			title: 'Completed story with invalid approval state',
+			status: 'completed',
+			summary: 'Completed story should not keep pending approval.',
+			changedFiles: ['src/storyEvidence.ts'],
+			changedModules: ['src'],
+			tests: [{ command: 'npm test', success: true }],
+			riskLevel: 'medium',
+			riskReasons: ['Touches approval persistence logic.'],
+			releaseNotes: ['No-op test fixture.'],
+			rollbackHints: ['Revert the fixture changes.'],
+			followUps: [],
+			recommendFeatureFlag: false,
+			evidenceGaps: [],
+			approvalState: 'pending',
+			approvalHistory: [],
+		}, 'US-038');
+
+		assert.strictEqual(validation.isValid, false);
+		assert.ok(validation.errors.includes('approvalState cannot remain pending after a story is completed'));
 	});
 
 	test('Story evidence validation rejects silent low-risk completion when tests or critical evidence are missing', () => {
@@ -1384,6 +1469,7 @@ suite('Extension Test Suite', () => {
 			followUps: ['Add missing tests.'],
 			recommendFeatureFlag: false,
 			evidenceGaps: [],
+			approvalHistory: [],
 			generatedAt: new Date().toISOString(),
 		}, 'US-402B');
 

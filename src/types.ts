@@ -110,6 +110,19 @@ export interface ExecutionCheckpointArtifact {
 
 export type StoryRiskLevel = 'low' | 'medium' | 'high';
 
+export type StoryApprovalAction = 'approved' | 'rejected' | 'note';
+
+export type StoryApprovalState = 'notRequired' | 'pending' | 'approved' | 'rejected';
+
+export interface StoryApprovalRecord {
+	action: StoryApprovalAction;
+	createdAt: string;
+	actor: 'user';
+	note?: string;
+	fromStatus?: Extract<StoryExecutionStatus, 'completed' | 'pendingReview' | 'pendingRelease'>;
+	toStatus?: Extract<StoryExecutionStatus, 'completed' | 'pendingReview' | 'pendingRelease'>;
+}
+
 export interface StoryEvidenceTestResult {
 	command: string;
 	success: boolean;
@@ -131,6 +144,10 @@ export interface StoryEvidenceArtifact {
 	followUps: string[];
 	recommendFeatureFlag: boolean;
 	evidenceGaps: string[];
+	approvalState: StoryApprovalState;
+	approvalUpdatedAt?: string;
+	approvalSummary?: string;
+	approvalHistory: StoryApprovalRecord[];
 	generatedAt: string;
 	source?: 'copilot' | 'synthesized';
 }

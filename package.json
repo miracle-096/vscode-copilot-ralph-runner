@@ -34,6 +34,10 @@
         "title": "RALPH: 查看状态"
       },
       {
+        "command": "ralph-runner.reviewStoryApproval",
+        "title": "RALPH: 审批高风险故事"
+      },
+      {
         "command": "ralph-runner.resetStep",
         "title": "RALPH: 重置故事"
       },

@@ -292,9 +292,12 @@ RALPH now also persists a structured evidence bundle to `.ralph/evidence/US-xxx.
 - release notes and rollback hints
 - follow-up items and evidence gaps
 - whether a feature flag is recommended
+- manual approval state, approval timestamps, reviewer notes, and approval history
 - a final auditable story status: `completed`, `pendingReview`, or `pendingRelease`
 
 When key evidence is missing, especially passing tests or critical changed-file scope, the story is not silently treated as a normal completion. Instead, the synthesized evidence is marked high risk and the final status moves into `pendingReview` or `pendingRelease` so downstream review or release workflows can consume it directly.
+
+High-risk stories now stay inside a lightweight in-IDE approval loop. Use `RALPH: 审批高风险故事` / `RALPH: Review Approval` to approve review-stage evidence, approve release-stage evidence, reject a story back to `pendingReview`, or add approval notes without changing status. Each action updates the evidence artifact, `.ralph/story-status.json`, and `progress.txt` together so the approval trail remains auditable.
 
 The built-in status panel now consumes these evidence artifacts to show additional operational signals such as awaiting-review count, awaiting-release count, and how many stories are currently high risk.
 
@@ -305,6 +308,7 @@ The built-in status panel now consumes these evidence artifacts to show addition
 | `RALPH: Start` | Begin or resume the autonomous execution loop |
 | `RALPH: Stop` | Cancel the current loop immediately |
 | `RALPH: Show Status` | Show counts, next pending story, and current progress |
+| `RALPH: Review Approval` | Approve, reject, or annotate high-risk stories that are waiting for manual review |
 | `RALPH: Reset Story` | Reset a completed or failed story for re-execution |
 | `RALPH: Generate PRD` | Generate a new `prd.json` from an existing file or prompt |
 | `RALPH: Append User Stories` | Ask Copilot to append new user stories into the existing `prd.json` |
