@@ -34,6 +34,13 @@ import {
 	validateTaskMemory,
 	writeTaskMemory,
 } from './taskMemory';
+import {
+	createSynthesizedExecutionCheckpoint,
+	hasExecutionCheckpointArtifact,
+	readExecutionCheckpoint,
+	validateExecutionCheckpoint,
+	writeExecutionCheckpoint,
+} from './executionCheckpoint';
 import { parseTaskSignalStatus } from './taskStatus';
 import {
 	buildProjectConstraintChatAdvicePrompt,
@@ -48,6 +55,8 @@ import {
 } from './projectConstraints';
 import {
 	DesignContextScope,
+	ExecutionCheckpointArtifact,
+	ExecutionCheckpointStatus,
 	PrdFile,
 	STORY_STATUSES,
 	StoryExecutionStatus,
@@ -67,6 +76,7 @@ import {
 	getPrdDirectoryPath as resolvePrdDirectoryPath,
 	getPrdPath as resolvePrdPath,
 	getEditableProjectConstraintsPath as resolveEditableProjectConstraintsPath,
+	getExecutionCheckpointPath as resolveExecutionCheckpointPath,
 	getGeneratedProjectConstraintsPath as resolveGeneratedProjectConstraintsPath,
 	getProjectDesignContextPath as resolveProjectDesignContextPath,
 	getRalphDir as resolveRalphDir,
@@ -450,7 +460,7 @@ function readProgress(workspaceRoot: string): ProgressEntry[] {
 			const trimmed = line.trim();
 			if (!trimmed || trimmed.startsWith('#')) { continue; }
 
-			const parts = trimmed.split('|').map(p => p.trim());
+			const parts = trimmed.split('|').map((part: string) => part.trim());
 			if (parts.length >= 2) {
 				entries.push({
 					id: parts[0],
@@ -477,8 +487,8 @@ function writeProgressEntry(workspaceRoot: string, id: string, status: 'done' | 
 		content = fs.readFileSync(progressPath, 'utf-8');
 
 		// Remove any existing entry for this id so we don't duplicate
-		const lines = content.split('\n').filter(l => {
-			const trimmed = l.trim();
+		const lines = content.split('\n').filter((lineText: string) => {
+			const trimmed = lineText.trim();
 			if (!trimmed || trimmed.startsWith('#')) { return true; }
 			const entryId = trimmed.split('|')[0].trim();
 			return entryId !== id;
@@ -499,8 +509,8 @@ function removeProgressEntry(workspaceRoot: string, id: string): void {
 	if (!fs.existsSync(progressPath)) { return; }
 
 	const content = fs.readFileSync(progressPath, 'utf-8');
-	const lines = content.split('\n').filter(l => {
-		const trimmed = l.trim();
+	const lines = content.split('\n').filter((lineText: string) => {
+		const trimmed = lineText.trim();
 		if (!trimmed || trimmed.startsWith('#')) { return true; }
 		const entryId = trimmed.split('|')[0].trim();
 		return entryId !== id;
@@ -604,6 +614,8 @@ async function startRalph(): Promise<void> {
 
 	const stalledTaskId = RalphStateManager.getInProgressTaskId(workspaceRoot);
 	if (stalledTaskId !== null) {
+		const stalledStory = getStoriesFromPrd(workspaceRoot).find(story => story.id === stalledTaskId)
+			?? createCheckpointFallbackStory(stalledTaskId);
 		const action = await vscode.window.showWarningMessage(
 			languagePack.runtime.stalledTaskWarning(stalledTaskId),
 			languagePack.runtime.clearAndRetry, languagePack.runtime.cancel
@@ -612,9 +624,13 @@ async function startRalph(): Promise<void> {
 			log(`Startup aborted — stalled task ${stalledTaskId} left untouched.`);
 			return;
 		}
+		const recoveryCheckpoint = ensureExecutionCheckpointPersistence(stalledStory, workspaceRoot, {
+			status: 'interrupted',
+			failureMessage: 'RALPH detected and cleared a stale in-progress lock during startup recovery.',
+		});
 		RalphStateManager.clearStalledTask(workspaceRoot, stalledTaskId);
 		RalphStateManager.clearStoryExecutionStatus(workspaceRoot, stalledTaskId);
-		log(`Cleared stalled inprogress state for task ${stalledTaskId}.`);
+		log(`Cleared stalled inprogress state for task ${stalledTaskId}; checkpoint persisted (${recoveryCheckpoint.source}).`);
 	}
 
 	const config = getConfig();
@@ -688,32 +704,46 @@ async function startRalph(): Promise<void> {
 		try {
 			// executeStory returns only after Copilot has written "completed"
 			// to .ralph/task-<id>-status (or after a timeout).
-			const taskMemoryResult = await executeStory(nextStory, workspaceRoot);
+			const executionResult = await executeStory(nextStory, workspaceRoot);
 
 			// Safety net: ensure the lock is always cleared on success
 			RalphStateManager.setCompleted(workspaceRoot, nextStory.id);
 			RalphStateManager.setStoryExecutionStatus(workspaceRoot, nextStory.id, 'completed');
 
 			// Write completion to progress.txt (prd.json is never modified)
-			writeProgressEntry(workspaceRoot, nextStory.id, 'done', `Completed successfully; task memory persisted (${taskMemoryResult.source})`);
+			writeProgressEntry(
+				workspaceRoot,
+				nextStory.id,
+				'done',
+				`Completed successfully; task memory persisted (${executionResult.taskMemory.source}) and checkpoint persisted (${executionResult.checkpoint.source})`
+			);
 
-			log(`✅ Story ${nextStory.id} completed with task memory (${taskMemoryResult.source}).`);
+			log(`✅ Story ${nextStory.id} completed with task memory (${executionResult.taskMemory.source}) and checkpoint (${executionResult.checkpoint.source}).`);
 		} catch (err: unknown) {
 			const errMsg = err instanceof Error ? err.message : String(err);
 			if (errMsg === 'Cancelled by user') {
+				const interruptedCheckpoint = ensureExecutionCheckpointPersistence(nextStory, workspaceRoot, {
+					status: 'interrupted',
+					failureMessage: 'Execution stopped after user cancellation.',
+				});
 				log(`⏹ Story ${nextStory.id} cancelled by user.`);
+				log(`  Checkpoint persisted for interrupted story ${nextStory.id} (${interruptedCheckpoint.source}).`);
 				RalphStateManager.clearStalledTask(workspaceRoot, nextStory.id);
 				RalphStateManager.clearStoryExecutionStatus(workspaceRoot, nextStory.id);
 				break;
 			}
 			log(`❌ Story ${nextStory.id} failed: ${errMsg}`);
+			const failedCheckpoint = ensureExecutionCheckpointPersistence(nextStory, workspaceRoot, {
+				status: 'failed',
+				failureMessage: errMsg,
+			});
 
 			// Always release the inprogress lock so the loop can advance
 			RalphStateManager.setCompleted(workspaceRoot, nextStory.id);
 			RalphStateManager.setStoryExecutionStatus(workspaceRoot, nextStory.id, 'failed');
 
 			// Write failure to progress.txt (prd.json is never modified)
-			writeProgressEntry(workspaceRoot, nextStory.id, 'failed', errMsg);
+			writeProgressEntry(workspaceRoot, nextStory.id, 'failed', `${errMsg}; checkpoint persisted (${failedCheckpoint.source})`);
 		}
 
 		loopsExecuted++;
@@ -848,13 +878,36 @@ function writeRalphSpecFinalRequestTempFile(
 
 // ── Story Execution ─────────────────────────────────────────────────────────
 
-async function executeStory(story: UserStory, workspaceRoot: string): Promise<{ filePath: string; source: 'copilot' | 'synthesized' }> {
+interface TaskMemoryPersistenceResult {
+	filePath: string;
+	source: 'copilot' | 'synthesized';
+	artifact: TaskMemoryArtifact;
+}
+
+interface ExecutionCheckpointPersistenceResult {
+	filePath: string;
+	source: 'copilot' | 'synthesized';
+	artifact: ExecutionCheckpointArtifact;
+}
+
+async function executeStory(story: UserStory, workspaceRoot: string): Promise<{
+	taskMemory: TaskMemoryPersistenceResult;
+	checkpoint: ExecutionCheckpointPersistenceResult;
+}> {
 	const prompt = buildCopilotPromptForStory(story, workspaceRoot);
 	log('  Delegating user story to Copilot...');
 	await sendToCopilot(prompt, story.id, workspaceRoot);
 	const taskMemoryResult = ensureTaskMemoryPersistence(story, workspaceRoot);
+	const checkpointResult = ensureExecutionCheckpointPersistence(story, workspaceRoot, {
+		status: 'completed',
+		taskMemory: taskMemoryResult.artifact,
+	});
 	log(`  Task memory ready for ${story.id}: ${taskMemoryResult.filePath} (${taskMemoryResult.source})`);
-	return taskMemoryResult;
+	log(`  Execution checkpoint ready for ${story.id}: ${checkpointResult.filePath} (${checkpointResult.source})`);
+	return {
+		taskMemory: taskMemoryResult,
+		checkpoint: checkpointResult,
+	};
 }
 
 // ── Copilot Integration ─────────────────────────────────────────────────────
@@ -878,6 +931,7 @@ function buildCopilotPromptForStory(story: UserStory, workspaceRoot: string): st
 		designContextLines,
 		priorWorkLines,
 		taskMemoryPath: resolveTaskMemoryPath(workspaceRoot, story.id).replace(/\\/g, '/'),
+		executionCheckpointPath: resolveExecutionCheckpointPath(workspaceRoot, story.id).replace(/\\/g, '/'),
 		completionSignalPath: resolveTaskStatusPath(workspaceRoot, story.id).replace(/\\/g, '/'),
 		additionalExecutionRules,
 	});
@@ -1113,25 +1167,50 @@ async function sendToCopilot(prompt: string, taskId: string, workspaceRoot: stri
 	await waitForCopilotCompletion(taskId, workspaceRoot);
 }
 
+export function shouldAbortCopilotWait(
+	isCancellationRequested: boolean,
+	requireRunnerActive: boolean,
+	runnerIsActive: boolean,
+): boolean {
+	if (isCancellationRequested) {
+		return true;
+	}
+
+	if (requireRunnerActive && !runnerIsActive) {
+		return true;
+	}
+
+	return false;
+}
+
+interface CopilotCompletionWaitOptions {
+	requireRunnerActive?: boolean;
+}
+
 /**
  * Polls .ralph/task-<id>-status until Copilot writes "completed" to it.
  * Enforces a minimum wait (copilotMinWaitMs) before checking so that Copilot
  * has time to begin working before the first read.
  * Throws if the timeout is exceeded without seeing "completed".
  */
-async function waitForCopilotCompletion(taskId: string, workspaceRoot: string): Promise<void> {
+async function waitForCopilotCompletion(
+	taskId: string,
+	workspaceRoot: string,
+	options?: CopilotCompletionWaitOptions,
+): Promise<void> {
 	const config = getConfig();
+	const requireRunnerActive = options?.requireRunnerActive ?? true;
 	log(`  Waiting for Copilot to write "completed" to .ralph/task-${taskId}-status...`);
 
 	const startTime = Date.now();
 
 	while (Date.now() - startTime < config.COPILOT_TIMEOUT_MS) {
-		if (cancelToken?.token.isCancellationRequested) {
+		if (shouldAbortCopilotWait(Boolean(cancelToken?.token.isCancellationRequested), requireRunnerActive, isRunning)) {
 			throw new Error('Cancelled by user');
 		}
 
 		await sleep(config.COPILOT_RESPONSE_POLL_MS);
-		if (cancelToken?.token.isCancellationRequested || !isRunning) {
+		if (shouldAbortCopilotWait(Boolean(cancelToken?.token.isCancellationRequested), requireRunnerActive, isRunning)) {
 			throw new Error('Cancelled by user');
 		}
 		const elapsed = Date.now() - startTime;
@@ -1155,7 +1234,7 @@ async function waitForCopilotCompletion(taskId: string, workspaceRoot: string): 
 	throw new Error(`Copilot timed out on task ${taskId}`);
 }
 
-function ensureTaskMemoryPersistence(story: UserStory, workspaceRoot: string): { filePath: string; source: 'copilot' | 'synthesized' } {
+function ensureTaskMemoryPersistence(story: UserStory, workspaceRoot: string): TaskMemoryPersistenceResult {
 	const existingMemory = hasTaskMemoryArtifact(workspaceRoot, story.id) ? readTaskMemory(workspaceRoot, story.id) : null;
 	const validation = existingMemory ? validateTaskMemory(existingMemory, story.id) : null;
 
@@ -1164,9 +1243,13 @@ function ensureTaskMemoryPersistence(story: UserStory, workspaceRoot: string): {
 			...validation.artifact,
 			source: validation.artifact.source ?? 'copilot',
 		});
-		upsertTaskMemoryIndexEntry(workspaceRoot, validation.artifact, story.id);
+		const persistedArtifact: TaskMemoryArtifact = {
+			...validation.artifact,
+			source: validation.artifact.source ?? 'copilot',
+		};
+		upsertTaskMemoryIndexEntry(workspaceRoot, persistedArtifact, story.id);
 		log(`  Valid task memory artifact accepted for ${story.id}.`);
-		return { filePath, source: validation.artifact.source ?? 'copilot' };
+		return { filePath, source: persistedArtifact.source ?? 'copilot', artifact: persistedArtifact };
 	}
 
 	if (validation && !validation.isValid) {
@@ -1179,7 +1262,55 @@ function ensureTaskMemoryPersistence(story: UserStory, workspaceRoot: string): {
 	const fallbackPath = writeTaskMemory(workspaceRoot, story.id, fallbackMemory);
 	upsertTaskMemoryIndexEntry(workspaceRoot, fallbackMemory, story.id);
 	log(`  Synthesized fallback task memory for ${story.id} at ${fallbackPath}.`);
-	return { filePath: fallbackPath, source: 'synthesized' };
+	return { filePath: fallbackPath, source: 'synthesized', artifact: fallbackMemory };
+}
+
+function ensureExecutionCheckpointPersistence(
+	story: UserStory,
+	workspaceRoot: string,
+	options: {
+		status: ExecutionCheckpointStatus;
+		taskMemory?: TaskMemoryArtifact;
+		failureMessage?: string;
+	},
+): ExecutionCheckpointPersistenceResult {
+	const checkpointExists = hasExecutionCheckpointArtifact(workspaceRoot, story.id);
+	const existingCheckpoint = checkpointExists ? readExecutionCheckpoint(workspaceRoot, story.id) : null;
+	const validation = existingCheckpoint ? validateExecutionCheckpoint(existingCheckpoint, story.id, options.status) : null;
+
+	if (validation?.isValid) {
+		const filePath = writeExecutionCheckpoint(workspaceRoot, story.id, {
+			...validation.artifact,
+			source: validation.artifact.source ?? 'copilot',
+		}, options.status);
+		const persistedArtifact: ExecutionCheckpointArtifact = {
+			...validation.artifact,
+			source: validation.artifact.source ?? 'copilot',
+		};
+		log(`  Valid execution checkpoint accepted for ${story.id}.`);
+		return {
+			filePath,
+			source: persistedArtifact.source ?? 'copilot',
+			artifact: persistedArtifact,
+		};
+	}
+
+	if (checkpointExists && !existingCheckpoint) {
+		log(`  WARNING: Execution checkpoint for ${story.id} was unreadable or invalid JSON; synthesizing a fresh checkpoint.`);
+	} else if (validation && !validation.isValid) {
+		log(`  WARNING: Execution checkpoint for ${story.id} failed validation: ${validation.errors.join(' | ')}`);
+	} else {
+		log(`  WARNING: Execution checkpoint missing for ${story.id}; synthesizing fallback checkpoint.`);
+	}
+
+	const fallbackCheckpoint = synthesizeExecutionCheckpointForStory(story, workspaceRoot, options);
+	const fallbackPath = writeExecutionCheckpoint(workspaceRoot, story.id, fallbackCheckpoint, options.status);
+	log(`  Synthesized fallback execution checkpoint for ${story.id} at ${fallbackPath}.`);
+	return {
+		filePath: fallbackPath,
+		source: 'synthesized',
+		artifact: fallbackCheckpoint,
+	};
 }
 
 function synthesizeTaskMemoryForStory(story: UserStory, workspaceRoot: string, validationErrors: string[]): TaskMemoryArtifact {
@@ -1206,6 +1337,88 @@ function synthesizeTaskMemoryForStory(story: UserStory, workspaceRoot: string, v
 	});
 }
 
+function synthesizeExecutionCheckpointForStory(
+	story: UserStory,
+	workspaceRoot: string,
+	options: {
+		status: ExecutionCheckpointStatus;
+		taskMemory?: TaskMemoryArtifact;
+		failureMessage?: string;
+	},
+): ExecutionCheckpointArtifact {
+	const taskMemory = options.taskMemory;
+	const changedFiles = detectChangedFilesForTaskMemory(workspaceRoot, story.id);
+	const changedModules = deriveChangedModules(changedFiles);
+	const inferredImpact = changedModules.length > 0 ? changedModules.join(', ') : 'the current workspace changes';
+	const confirmedConstraints = Array.from(new Set([
+		...(taskMemory?.constraintsConfirmed ?? []),
+		'prd.json remained read-only during task execution.',
+	]));
+
+	if (options.status === 'completed') {
+		return createSynthesizedExecutionCheckpoint(
+			story.id,
+			story.title,
+			'completed',
+			taskMemory?.summary || `Completed ${story.id}: ${story.title}.`,
+			{
+				stageGoal: story.description || story.title,
+				keyDecisions: taskMemory?.keyDecisions?.length
+					? taskMemory.keyDecisions
+					: ['Persist the latest execution checkpoint after successful completion to preserve a durable resume point.'],
+				confirmedConstraints,
+				unresolvedRisks: taskMemory?.risks?.length
+					? taskMemory.risks
+					: ['No unresolved risks were recorded at checkpoint time.'],
+				nextStoryPrerequisites: taskMemory?.followUps?.length
+					? taskMemory.followUps
+					: [`Review ${inferredImpact} before starting the next related story.`],
+				resumeRecommendation: `Resume from the next pending story after reviewing the persisted task memory and checkpoint for ${story.id}.`,
+			}
+		);
+	}
+
+	const interruptionReason = options.failureMessage?.trim().length
+		? options.failureMessage.trim()
+		: options.status === 'failed'
+			? 'Execution ended with an unrecovered runtime failure.'
+			: 'Execution stopped before the story reached completion.';
+
+	return createSynthesizedExecutionCheckpoint(
+		story.id,
+		story.title,
+		options.status,
+		`${options.status === 'failed' ? 'Execution failed' : 'Execution was interrupted'} for ${story.id}: ${story.title}. ${interruptionReason}`,
+		{
+			stageGoal: story.description || story.title,
+			keyDecisions: [
+				'Preserve the latest execution state in a synthesized checkpoint instead of relying on transient chat context.',
+				'Keep partial changes that already passed locally rather than reverting workspace state automatically.',
+			],
+			confirmedConstraints,
+			unresolvedRisks: [
+				`Latest blocker: ${interruptionReason}`,
+				`Affected areas may include ${inferredImpact}.`,
+			],
+			nextStoryPrerequisites: [
+				'Review the current working tree and confirm which partial changes are intentional.',
+				'Resolve the blocking issue before rerunning this story or starting the dependent next story.',
+			],
+			resumeRecommendation: `Resume ${story.id} by inspecting the current workspace changes, validating the last stable edits, and then rerunning the story once the blocker is cleared.`,
+		}
+	);
+}
+
+function createCheckpointFallbackStory(storyId: string): UserStory {
+	return {
+		id: storyId,
+		title: storyId,
+		description: `Recovered story context placeholder for ${storyId}.`,
+		acceptanceCriteria: [],
+		priority: 0,
+	};
+}
+
 function detectChangedFilesForTaskMemory(workspaceRoot: string, storyId: string): string[] {
 	try {
 		const output = execSync('git status --short --untracked-files=all', {
@@ -1216,11 +1429,11 @@ function detectChangedFilesForTaskMemory(workspaceRoot: string, storyId: string)
 
 		const changedFiles = output
 			.split(/\r?\n/)
-			.map(line => line.trim())
-			.filter(line => line.length > 0)
-			.map(line => line.slice(3).split(' -> ').pop() ?? '')
-			.map(filePath => filePath.replace(/\\/g, '/'))
-			.filter(filePath => filePath.length > 0 && !filePath.startsWith('.prd/') && filePath !== 'prd.json');
+			.map((line: string) => line.trim())
+			.filter((line: string) => line.length > 0)
+			.map((line: string) => line.slice(3).split(' -> ').pop() ?? '')
+			.map((filePath: string) => filePath.replace(/\\/g, '/'))
+			.filter((filePath: string) => filePath.length > 0 && !filePath.startsWith('.prd/') && filePath !== 'prd.json');
 
 		if (changedFiles.length > 0) {
 			return Array.from(new Set(changedFiles));
@@ -1455,7 +1668,7 @@ async function initializeProjectConstraints(): Promise<void> {
 		vscode.window.showInformationMessage(languagePack.initProjectConstraints.started);
 
 		try {
-			await waitForCopilotCompletion(taskId, workspaceRoot);
+			await waitForCopilotCompletion(taskId, workspaceRoot, { requireRunnerActive: false });
 		} catch (error: unknown) {
 			const message = error instanceof Error ? error.message : String(error);
 			log(`ERROR: Failed to initialize project constraints: ${message}`);
@@ -2833,7 +3046,9 @@ function log(message: string): void {
 }
 
 function sleep(ms: number): Promise<void> {
-	return new Promise(resolve => setTimeout(resolve, ms));
+	return new Promise<void>(resolve => {
+		setTimeout(resolve, ms);
+	});
 }
 
 function updateStatusBar(state: 'idle' | 'running'): void {

@@ -16,6 +16,8 @@ export const DESIGN_CONTEXT_FILE_SUFFIX = '.design.json';
 export const DESIGN_CONTEXT_SUGGESTION_DIR = 'design-context-suggestions';
 export const TASK_MEMORY_DIR = 'memory';
 export const TASK_MEMORY_INDEX_FILENAME = 'memory-index.json';
+export const EXECUTION_CHECKPOINT_DIR = 'checkpoints';
+export const EXECUTION_CHECKPOINT_FILE_SUFFIX = '.checkpoint.json';
 
 export function ensureDirectoryExists(dirPath: string): string {
 	if (!fs.existsSync(dirPath)) {
@@ -46,6 +48,14 @@ export function getTaskMemoryPath(workspaceRoot: string, storyId: string): strin
 
 export function getTaskMemoryIndexPath(workspaceRoot: string): string {
 	return path.join(getRalphDir(workspaceRoot), TASK_MEMORY_INDEX_FILENAME);
+}
+
+export function getExecutionCheckpointDirectoryPath(workspaceRoot: string): string {
+	return path.join(getRalphDir(workspaceRoot), EXECUTION_CHECKPOINT_DIR);
+}
+
+export function getExecutionCheckpointPath(workspaceRoot: string, storyId: string): string {
+	return path.join(getExecutionCheckpointDirectoryPath(workspaceRoot), `${storyId}${EXECUTION_CHECKPOINT_FILE_SUFFIX}`);
 }
 
 export function getDesignContextSuggestionDirectoryPath(workspaceRoot: string): string {
@@ -125,6 +135,11 @@ export function ensureProjectConstraintDirectories(workspaceRoot: string): { git
 export function ensureTaskMemoryDirectory(workspaceRoot: string): string {
 	ensureDirectoryExists(getRalphDir(workspaceRoot));
 	return ensureDirectoryExists(getTaskMemoryDirectoryPath(workspaceRoot));
+}
+
+export function ensureExecutionCheckpointDirectory(workspaceRoot: string): string {
+	ensureDirectoryExists(getRalphDir(workspaceRoot));
+	return ensureDirectoryExists(getExecutionCheckpointDirectoryPath(workspaceRoot));
 }
 
 export function ensureDesignContextSuggestionDirectory(workspaceRoot: string): string {

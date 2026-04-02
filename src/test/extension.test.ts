@@ -63,7 +63,15 @@ import {
 	validateTaskMemory,
 	writeTaskMemory,
 } from '../taskMemory';
+import {
+	createSynthesizedExecutionCheckpoint,
+	hasExecutionCheckpointArtifact,
+	readExecutionCheckpoint,
+	validateExecutionCheckpoint,
+	writeExecutionCheckpoint,
+} from '../executionCheckpoint';
 import { parseTaskSignalStatus } from '../taskStatus';
+import { shouldAbortCopilotWait } from '../extension';
 // import * as myExtension from '../../extension';
 
 suite('Extension Test Suite', () => {
@@ -132,6 +140,12 @@ suite('Extension Test Suite', () => {
 		assert.strictEqual(parseTaskSignalStatus('completed in product'), 'completed');
 		assert.strictEqual(parseTaskSignalStatus('---inprogress---'), 'inprogress');
 		assert.strictEqual(parseTaskSignalStatus('unknown'), 'none');
+	});
+
+	test('Standalone Copilot waits do not abort just because the runner is idle', () => {
+		assert.strictEqual(shouldAbortCopilotWait(false, true, false), true);
+		assert.strictEqual(shouldAbortCopilotWait(false, false, false), false);
+		assert.strictEqual(shouldAbortCopilotWait(true, false, true), true);
 	});
 
 	test('Editable project constraints round-trip preserves sections', () => {
@@ -1051,7 +1065,7 @@ suite('Extension Test Suite', () => {
 		}
 	});
 
-	test('Story prompt completion contract requires task memory before completed signal', () => {
+	test('Story prompt completion contract requires task memory and checkpoint before completed signal', () => {
 		const prompt = composeStoryExecutionPrompt({
 			story: {
 				id: 'US-301',
@@ -1062,12 +1076,15 @@ suite('Extension Test Suite', () => {
 			},
 			workspaceRoot: 'd:/workspace/vscode-copilot-ralph-runner',
 			taskMemoryPath: 'd:/workspace/vscode-copilot-ralph-runner/.ralph/memory/US-301.json',
+			executionCheckpointPath: 'd:/workspace/vscode-copilot-ralph-runner/.ralph/checkpoints/US-301.checkpoint.json',
 			completionSignalPath: 'd:/workspace/vscode-copilot-ralph-runner/.ralph/task-US-301-status',
 		});
 
 		assert.ok(prompt.includes('Before writing the completion signal, write a structured task memory artifact as valid JSON to:'));
 		assert.ok(prompt.includes('d:/workspace/vscode-copilot-ralph-runner/.ralph/memory/US-301.json'));
-		assert.ok(prompt.includes('Only write the completion signal after the task memory artifact exists and is complete.'));
+		assert.ok(prompt.includes('Also write a structured execution checkpoint artifact as valid JSON to:'));
+		assert.ok(prompt.includes('d:/workspace/vscode-copilot-ralph-runner/.ralph/checkpoints/US-301.checkpoint.json'));
+		assert.ok(prompt.includes('Only write the completion signal after both the task memory artifact and execution checkpoint exist and are complete.'));
 	});
 
 	test('Story prompt composition uses deterministic ordered sections and bounds long context', () => {
@@ -1084,6 +1101,7 @@ suite('Extension Test Suite', () => {
 			designContextLines: ['Design note 1', 'Design note 2'],
 			priorWorkLines: Array.from({ length: 16 }, (_, index) => `Prior work ${index + 1}`),
 			taskMemoryPath: 'd:/workspace/vscode-copilot-ralph-runner/.ralph/memory/US-302.json',
+			executionCheckpointPath: 'd:/workspace/vscode-copilot-ralph-runner/.ralph/checkpoints/US-302.checkpoint.json',
 			completionSignalPath: 'd:/workspace/vscode-copilot-ralph-runner/.ralph/task-US-302-status',
 			additionalExecutionRules: ['Do not ask questions.', 'Execute directly.'],
 		});
@@ -1116,6 +1134,7 @@ suite('Extension Test Suite', () => {
 			},
 			workspaceRoot: 'd:/workspace/vscode-copilot-ralph-runner',
 			taskMemoryPath: 'd:/workspace/vscode-copilot-ralph-runner/.ralph/memory/US-303.json',
+			executionCheckpointPath: 'd:/workspace/vscode-copilot-ralph-runner/.ralph/checkpoints/US-303.checkpoint.json',
 			completionSignalPath: 'd:/workspace/vscode-copilot-ralph-runner/.ralph/task-US-303-status',
 		});
 
@@ -1233,6 +1252,68 @@ suite('Extension Test Suite', () => {
 		assert.strictEqual(validation.isValid, true);
 		assert.strictEqual(validation.artifact.source, 'synthesized');
 		assert.deepStrictEqual(validation.artifact.changedFiles, ['src/extension.ts']);
+	});
+
+	test('Execution checkpoint artifact can be written, overwritten, and recovered per story', () => {
+		const workspaceRoot = fs.mkdtempSync(path.join(os.tmpdir(), 'ralph-execution-checkpoint-'));
+		try {
+			const storyId = 'US-205';
+			const firstPath = writeExecutionCheckpoint(workspaceRoot, storyId, {
+				title: 'Persist checkpoint state',
+				status: 'completed',
+				stageGoal: 'Persist the latest execution handoff',
+				summary: 'Stored a completion checkpoint after execution finished.',
+				keyDecisions: ['Use one latest-only checkpoint path per story'],
+				confirmedConstraints: ['Do not edit prd.json'],
+				unresolvedRisks: ['None at handoff time'],
+				nextStoryPrerequisites: ['Review the persisted checkpoint before starting the next related story'],
+				resumeRecommendation: 'Continue with the next pending story.',
+				source: 'copilot',
+			}, 'completed');
+
+			assert.strictEqual(hasExecutionCheckpointArtifact(workspaceRoot, storyId), true);
+			assert.ok(fs.existsSync(firstPath));
+
+			const overwrittenPath = writeExecutionCheckpoint(workspaceRoot, storyId, {
+				title: 'Persist checkpoint state',
+				status: 'failed',
+				stageGoal: 'Recover after a failed rerun',
+				summary: 'Stored the latest failed checkpoint for recovery.',
+				keyDecisions: ['Overwrite the prior checkpoint instead of creating conflicting siblings'],
+				confirmedConstraints: ['Keep checkpoint path deterministic'],
+				unresolvedRisks: ['The rerun failure still needs investigation'],
+				nextStoryPrerequisites: ['Resolve the blocking failure before rerunning the story'],
+				resumeRecommendation: 'Inspect the workspace and retry once the failure is fixed.',
+				source: 'copilot',
+			}, 'failed');
+
+			assert.strictEqual(overwrittenPath, firstPath);
+
+			const checkpoint = readExecutionCheckpoint(workspaceRoot, storyId);
+			assert.ok(checkpoint);
+			assert.strictEqual(checkpoint?.status, 'failed');
+			assert.strictEqual(checkpoint?.summary, 'Stored the latest failed checkpoint for recovery.');
+
+			const damagedPath = path.join(workspaceRoot, '.ralph', 'checkpoints', 'US-206.checkpoint.json');
+			fs.mkdirSync(path.dirname(damagedPath), { recursive: true });
+			fs.writeFileSync(damagedPath, '{not-valid-json', 'utf-8');
+
+			assert.strictEqual(readExecutionCheckpoint(workspaceRoot, 'US-206'), null);
+			const fallback = createSynthesizedExecutionCheckpoint(
+				'US-206',
+				'Recover damaged checkpoint',
+				'interrupted',
+				'Synthesized a recoverable checkpoint after corrupted JSON was detected.',
+				{
+					stageGoal: 'Recover the interrupted story state',
+					unresolvedRisks: ['The previous checkpoint artifact was corrupted and replaced.'],
+				}
+			);
+			const validation = validateExecutionCheckpoint(fallback, 'US-206', 'interrupted');
+			assert.strictEqual(validation.isValid, true);
+		} finally {
+			fs.rmSync(workspaceRoot, { recursive: true, force: true });
+		}
 	});
 
 	test('Task memory recall ranks related memories and summarizes bounded prior work', () => {
@@ -1381,6 +1462,7 @@ suite('Extension Test Suite', () => {
 				designContextLines,
 				priorWorkLines,
 				taskMemoryPath: path.join(workspaceRoot, '.ralph', 'memory', 'US-501.json'),
+				executionCheckpointPath: path.join(workspaceRoot, '.ralph', 'checkpoints', 'US-501.checkpoint.json'),
 				completionSignalPath: path.join(workspaceRoot, '.ralph', 'task-US-501-status'),
 			});
 

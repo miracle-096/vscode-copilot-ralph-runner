@@ -20,6 +20,10 @@ export type StoryExecutionStatus = '未开始' | 'inprogress' | 'completed' | 'f
 
 export const STORY_STATUSES: StoryExecutionStatus[] = ['未开始', 'inprogress', 'completed', 'failed'];
 
+export type ExecutionCheckpointStatus = 'completed' | 'failed' | 'interrupted';
+
+export const EXECUTION_CHECKPOINT_STATUSES: ExecutionCheckpointStatus[] = ['completed', 'failed', 'interrupted'];
+
 export interface GeneratedProjectConstraints {
 	version: number;
 	generatedAt: string;
@@ -89,6 +93,21 @@ export interface TaskMemoryArtifact {
 	source?: 'copilot' | 'synthesized';
 }
 
+export interface ExecutionCheckpointArtifact {
+	storyId: string;
+	title: string;
+	status: ExecutionCheckpointStatus;
+	stageGoal: string;
+	summary: string;
+	keyDecisions: string[];
+	confirmedConstraints: string[];
+	unresolvedRisks: string[];
+	nextStoryPrerequisites: string[];
+	resumeRecommendation: string;
+	updatedAt: string;
+	source?: 'copilot' | 'synthesized';
+}
+
 export interface TaskMemoryIndexEntry {
 	storyId: string;
 	title: string;
@@ -119,6 +138,7 @@ export interface StoryPromptContext {
 	designContextLines?: string[];
 	priorWorkLines?: string[];
 	taskMemoryPath: string;
+	executionCheckpointPath: string;
 	completionSignalPath: string;
 	additionalExecutionRules?: string[];
 }

@@ -72,6 +72,7 @@ RALPH creates and maintains these files during the workflow:
 | `.ralph/project-constraints.generated.json` | Machine-generated summary of stack, scripts, architecture, allowed paths, and delivery checks |
 | `.ralph/memory/US-xxx.json` | Structured task memory for one completed story |
 | `.ralph/memory-index.json` | Compact recall index built from all persisted task memories |
+| `.ralph/checkpoints/US-xxx.checkpoint.json` | Latest execution checkpoint for one completed, failed, or interrupted story |
 | `.github/ralph/project-constraints.md` | Team-maintained editable constraint document layered over generated constraints |
 | `.prd/design-context/US-xxx.design.json` | Story-specific design context override or review draft |
 | `.prd/design-context/shared/project.design.json` | Shared project-wide design defaults |
@@ -186,7 +187,7 @@ When you run `RALPH: Start`, RALPH composes a prompt in this fixed order:
 
 The prompt remains bounded so optional context does not overwhelm the current task.
 
-### 7. Require task memory before completion
+### 7. Require task memory and execution checkpoint before completion
 
 RALPH no longer treats the completion signal as sufficient by itself. Before a story is finalized, Copilot must persist a structured task memory artifact to `.ralph/memory/US-xxx.json` with fields such as:
 
@@ -201,6 +202,12 @@ RALPH no longer treats the completion signal as sufficient by itself. Before a s
 - `searchKeywords`
 
 If Copilot fails to write a valid artifact, RALPH synthesizes a fallback memory entry and updates `.ralph/memory-index.json` so later stories can still recall useful context.
+
+RALPH also persists a separate latest-only execution checkpoint to `.ralph/checkpoints/US-xxx.checkpoint.json`. The checkpoint captures the current story summary, stage goal, key decisions, confirmed constraints, unresolved risks, next-story prerequisites, and a recommended resume point.
+
+Checkpoint retention is deterministic: each story owns one fixed checkpoint path, and the newest completed, failed, or interrupted run overwrites that story's previous checkpoint. Resetting a story does not delete the checkpoint; the next execution simply replaces it with the latest state.
+
+If Copilot fails to write a valid task memory or checkpoint artifact, or if an existing checkpoint is missing or corrupted, RALPH synthesizes a recoverable fallback artifact and continues instead of blocking on broken session context.
 
 ## Commands
 
