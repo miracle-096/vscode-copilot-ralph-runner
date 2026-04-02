@@ -232,6 +232,15 @@
                 "artifact": "execution-checkpoint",
                 "enabled": true,
                 "when": "always"
+              },
+              {
+                "id": "require-story-evidence-artifact",
+                "title": "Require story evidence artifact before completion",
+                "phase": "completion",
+                "type": "required-artifact",
+                "artifact": "story-evidence",
+                "enabled": true,
+                "when": "always"
               }
             ]
           },

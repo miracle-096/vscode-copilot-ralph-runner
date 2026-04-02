@@ -40,6 +40,9 @@ export interface RalphLanguagePack {
 		title: (project: string) => string;
 		completed: (completed: number, total: number) => string;
 		failed: (failed: number) => string;
+		awaitingReview: (count: number) => string;
+		awaitingRelease: (count: number) => string;
+		highRisk: (count: number) => string;
 		pending: (pending: number) => string;
 		inProgress: (storyId: string | null) => string;
 		next: (nextLabel: string) => string;
@@ -357,6 +360,9 @@ const CHINESE_PACK: RalphLanguagePack = {
 		title: project => `RALPH 状态 — ${project}`,
 		completed: (completed, total) => `已完成: ${completed}/${total}`,
 		failed: failed => `失败: ${failed}`,
+		awaitingReview: count => `待评审: ${count}`,
+		awaitingRelease: count => `待发布: ${count}`,
+		highRisk: count => `高风险: ${count}`,
 		pending: pending => `待处理: ${pending}`,
 		inProgress: storyId => `进行中: ${storyId || '无'}`,
 		next: nextLabel => `下一个: ${nextLabel}`,
@@ -690,6 +696,9 @@ const ENGLISH_PACK: RalphLanguagePack = {
 		title: project => `RALPH Status — ${project}`,
 		completed: (completed, total) => `Completed: ${completed}/${total}`,
 		failed: failed => `Failed: ${failed}`,
+		awaitingReview: count => `Awaiting Review: ${count}`,
+		awaitingRelease: count => `Awaiting Release: ${count}`,
+		highRisk: count => `High Risk: ${count}`,
 		pending: pending => `Pending: ${pending}`,
 		inProgress: storyId => `In Progress: ${storyId || 'None'}`,
 		next: nextLabel => `Next: ${nextLabel}`,
@@ -1008,6 +1017,10 @@ export function getLocalizedStoryStatus(status: StoryExecutionStatus | 'none', l
 				return 'Not Started';
 			case 'inprogress':
 				return 'In Progress';
+				case 'pendingReview':
+					return 'Pending Review';
+				case 'pendingRelease':
+					return 'Pending Release';
 			case 'completed':
 				return 'Completed';
 			case 'failed':
@@ -1019,6 +1032,12 @@ export function getLocalizedStoryStatus(status: StoryExecutionStatus | 'none', l
 
 	if (status === 'none') {
 		return '无';
+	}
+	if (status === 'pendingReview') {
+		return '待评审';
+	}
+	if (status === 'pendingRelease') {
+		return '待发布';
 	}
 	return status;
 }

@@ -16,9 +16,9 @@ export interface UserStory {
 	[key: string]: unknown;
 }
 
-export type StoryExecutionStatus = '未开始' | 'inprogress' | 'completed' | 'failed';
+export type StoryExecutionStatus = '未开始' | 'inprogress' | 'pendingReview' | 'pendingRelease' | 'completed' | 'failed';
 
-export const STORY_STATUSES: StoryExecutionStatus[] = ['未开始', 'inprogress', 'completed', 'failed'];
+export const STORY_STATUSES: StoryExecutionStatus[] = ['未开始', 'inprogress', 'pendingReview', 'pendingRelease', 'completed', 'failed'];
 
 export type ExecutionCheckpointStatus = 'completed' | 'failed' | 'interrupted';
 
@@ -108,6 +108,33 @@ export interface ExecutionCheckpointArtifact {
 	source?: 'copilot' | 'synthesized';
 }
 
+export type StoryRiskLevel = 'low' | 'medium' | 'high';
+
+export interface StoryEvidenceTestResult {
+	command: string;
+	success: boolean;
+	outputSummary?: string;
+}
+
+export interface StoryEvidenceArtifact {
+	storyId: string;
+	title: string;
+	status: Extract<StoryExecutionStatus, 'completed' | 'pendingReview' | 'pendingRelease'>;
+	summary: string;
+	changedFiles: string[];
+	changedModules: string[];
+	tests: StoryEvidenceTestResult[];
+	riskLevel: StoryRiskLevel;
+	riskReasons: string[];
+	releaseNotes: string[];
+	rollbackHints: string[];
+	followUps: string[];
+	recommendFeatureFlag: boolean;
+	evidenceGaps: string[];
+	generatedAt: string;
+	source?: 'copilot' | 'synthesized';
+}
+
 export interface SourceContextIndexArtifact {
 	version: number;
 	generatedAt: string;
@@ -167,6 +194,7 @@ export interface StoryPromptContext {
 	policyLines?: string[];
 	taskMemoryPath: string;
 	executionCheckpointPath: string;
+	evidencePath: string;
 	completionSignalPath: string;
 	additionalExecutionRules?: string[];
 }
@@ -178,6 +206,7 @@ export type PolicyArtifactKind =
 	| 'design-context'
 	| 'task-memory'
 	| 'execution-checkpoint'
+	| 'story-evidence'
 	| 'source-context-index';
 
 export type PolicyRuleCondition = 'always' | 'story.designSensitive';
@@ -248,6 +277,9 @@ export interface PolicyBaselineArtifact {
 
 export function normalizeStoryExecutionStatus(value: unknown): StoryExecutionStatus | undefined {
 	if (value === 'completed' || value === 'inprogress' || value === 'failed' || value === '未开始') {
+		return value;
+	}
+	if (value === 'pendingReview' || value === 'pendingRelease') {
 		return value;
 	}
 	if (value === 'not-started') {

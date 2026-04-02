@@ -111,6 +111,15 @@ export function createDefaultPolicyConfig(): RalphPolicyConfig {
 				enabled: true,
 				when: 'always',
 			},
+			{
+				id: 'require-story-evidence-artifact',
+				title: 'Require story evidence artifact before completion',
+				phase: 'completion',
+				type: 'required-artifact',
+				artifact: 'story-evidence',
+				enabled: true,
+				when: 'always',
+			},
 		],
 	};
 }
@@ -344,6 +353,7 @@ function normalizePolicyArtifact(value: unknown): PolicyArtifactKind | undefined
 		|| value === 'design-context'
 		|| value === 'task-memory'
 		|| value === 'execution-checkpoint'
+		|| value === 'story-evidence'
 		|| value === 'source-context-index'
 	) {
 		return value;
@@ -555,6 +565,9 @@ function getArtifactNextSteps(artifact: PolicyArtifactKind): string[] {
 	}
 	if (artifact === 'execution-checkpoint') {
 		return ['Persist a valid execution checkpoint artifact before writing the completion signal.'];
+	}
+	if (artifact === 'story-evidence') {
+		return ['Persist a valid evidence artifact before writing the completion signal.'];
 	}
 	return ['Generate the missing artifact before continuing.'];
 }

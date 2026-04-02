@@ -18,6 +18,8 @@ export const TASK_MEMORY_DIR = 'memory';
 export const TASK_MEMORY_INDEX_FILENAME = 'memory-index.json';
 export const EXECUTION_CHECKPOINT_DIR = 'checkpoints';
 export const EXECUTION_CHECKPOINT_FILE_SUFFIX = '.checkpoint.json';
+export const STORY_EVIDENCE_DIR = 'evidence';
+export const STORY_EVIDENCE_FILE_SUFFIX = '.evidence.json';
 export const SOURCE_CONTEXT_INDEX_FILENAME = 'source-context-index.json';
 export const POLICY_BASELINE_DIR = 'policy-baselines';
 export const POLICY_BASELINE_FILE_SUFFIX = '.policy-baseline.json';
@@ -59,6 +61,14 @@ export function getExecutionCheckpointDirectoryPath(workspaceRoot: string): stri
 
 export function getExecutionCheckpointPath(workspaceRoot: string, storyId: string): string {
 	return path.join(getExecutionCheckpointDirectoryPath(workspaceRoot), `${storyId}${EXECUTION_CHECKPOINT_FILE_SUFFIX}`);
+}
+
+export function getStoryEvidenceDirectoryPath(workspaceRoot: string): string {
+	return path.join(getRalphDir(workspaceRoot), STORY_EVIDENCE_DIR);
+}
+
+export function getStoryEvidencePath(workspaceRoot: string, storyId: string): string {
+	return path.join(getStoryEvidenceDirectoryPath(workspaceRoot), `${storyId}${STORY_EVIDENCE_FILE_SUFFIX}`);
 }
 
 export function getDesignContextSuggestionDirectoryPath(workspaceRoot: string): string {
@@ -155,6 +165,11 @@ export function ensureTaskMemoryDirectory(workspaceRoot: string): string {
 export function ensureExecutionCheckpointDirectory(workspaceRoot: string): string {
 	ensureDirectoryExists(getRalphDir(workspaceRoot));
 	return ensureDirectoryExists(getExecutionCheckpointDirectoryPath(workspaceRoot));
+}
+
+export function ensureStoryEvidenceDirectory(workspaceRoot: string): string {
+	ensureDirectoryExists(getRalphDir(workspaceRoot));
+	return ensureDirectoryExists(getStoryEvidenceDirectoryPath(workspaceRoot));
 }
 
 export function ensurePolicyBaselineDirectory(workspaceRoot: string): string {

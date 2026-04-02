@@ -74,6 +74,12 @@ import {
 	writeExecutionCheckpoint,
 } from '../executionCheckpoint';
 import {
+	createSynthesizedStoryEvidence,
+	validateStoryEvidence,
+	writeStoryEvidence,
+	readStoryEvidence,
+} from '../storyEvidence';
+import {
 	getSourceContextIndex,
 	recallRelevantSourceContext,
 	refreshSourceContextIndex,
@@ -128,6 +134,10 @@ suite('Extension Test Suite', () => {
 		assert.strictEqual(contributedCommands.some(command => command.command === 'ralph-runner.recallTaskMemory'), false);
 		assert.strictEqual(contributedCommands.some(command => command.command === 'ralph-runner.previewSourceContextRecall'), true);
 		assert.strictEqual(typeof packageJson.contributes?.configuration?.properties?.['ralph-runner.policyGates'], 'object');
+		const policyGateDefault = packageJson.contributes?.configuration?.properties?.['ralph-runner.policyGates'] as {
+			default?: { completionRules?: Array<{ id?: string; }>; };
+		};
+		assert.strictEqual(policyGateDefault.default?.completionRules?.some(rule => rule.id === 'require-story-evidence-artifact'), true);
 
 		const contributedParticipants = packageJson.contributes?.chatParticipants ?? [];
 		assert.strictEqual(contributedParticipants.some(participant => participant.id === 'recent-graduates.ralph-runner'), true);
@@ -1086,7 +1096,7 @@ suite('Extension Test Suite', () => {
 		}
 	});
 
-	test('Story prompt completion contract requires task memory and checkpoint before completed signal', () => {
+	test('Story prompt completion contract requires task memory, checkpoint, and evidence before completed signal', () => {
 		const prompt = composeStoryExecutionPrompt({
 			story: {
 				id: 'US-301',
@@ -1098,6 +1108,7 @@ suite('Extension Test Suite', () => {
 			workspaceRoot: 'd:/workspace/vscode-copilot-ralph-runner',
 			taskMemoryPath: 'd:/workspace/vscode-copilot-ralph-runner/.ralph/memory/US-301.json',
 			executionCheckpointPath: 'd:/workspace/vscode-copilot-ralph-runner/.ralph/checkpoints/US-301.checkpoint.json',
+			evidencePath: 'd:/workspace/vscode-copilot-ralph-runner/.ralph/evidence/US-301.evidence.json',
 			completionSignalPath: 'd:/workspace/vscode-copilot-ralph-runner/.ralph/task-US-301-status',
 		});
 
@@ -1105,7 +1116,9 @@ suite('Extension Test Suite', () => {
 		assert.ok(prompt.includes('d:/workspace/vscode-copilot-ralph-runner/.ralph/memory/US-301.json'));
 		assert.ok(prompt.includes('Also write a structured execution checkpoint artifact as valid JSON to:'));
 		assert.ok(prompt.includes('d:/workspace/vscode-copilot-ralph-runner/.ralph/checkpoints/US-301.checkpoint.json'));
-		assert.ok(prompt.includes('Only write the completion signal after both the task memory artifact and execution checkpoint exist and are complete.'));
+		assert.ok(prompt.includes('Also write a structured evidence artifact as valid JSON to:'));
+		assert.ok(prompt.includes('d:/workspace/vscode-copilot-ralph-runner/.ralph/evidence/US-301.evidence.json'));
+		assert.ok(prompt.includes('Only write the completion signal after the task memory artifact, execution checkpoint, and evidence artifact all exist and are complete.'));
 	});
 
 	test('Story prompt composition uses deterministic ordered sections and bounds long context', () => {
@@ -1125,6 +1138,7 @@ suite('Extension Test Suite', () => {
 			recentCheckpointLines: Array.from({ length: 15 }, (_, index) => `Recent checkpoint ${index + 1}`),
 			taskMemoryPath: 'd:/workspace/vscode-copilot-ralph-runner/.ralph/memory/US-302.json',
 			executionCheckpointPath: 'd:/workspace/vscode-copilot-ralph-runner/.ralph/checkpoints/US-302.checkpoint.json',
+			evidencePath: 'd:/workspace/vscode-copilot-ralph-runner/.ralph/evidence/US-302.evidence.json',
 			completionSignalPath: 'd:/workspace/vscode-copilot-ralph-runner/.ralph/task-US-302-status',
 			additionalExecutionRules: ['Do not ask questions.', 'Execute directly.'],
 		});
@@ -1164,6 +1178,7 @@ suite('Extension Test Suite', () => {
 			policyLines: ['Completion Gates', '- Block dangerous path edits'],
 			taskMemoryPath: 'd:/workspace/vscode-copilot-ralph-runner/.ralph/memory/US-302A.json',
 			executionCheckpointPath: 'd:/workspace/vscode-copilot-ralph-runner/.ralph/checkpoints/US-302A.checkpoint.json',
+			evidencePath: 'd:/workspace/vscode-copilot-ralph-runner/.ralph/evidence/US-302A.evidence.json',
 			completionSignalPath: 'd:/workspace/vscode-copilot-ralph-runner/.ralph/task-US-302A-status',
 		});
 
@@ -1184,6 +1199,7 @@ suite('Extension Test Suite', () => {
 			workspaceRoot: 'd:/workspace/vscode-copilot-ralph-runner',
 			taskMemoryPath: 'd:/workspace/vscode-copilot-ralph-runner/.ralph/memory/US-303.json',
 			executionCheckpointPath: 'd:/workspace/vscode-copilot-ralph-runner/.ralph/checkpoints/US-303.checkpoint.json',
+				evidencePath: 'd:/workspace/vscode-copilot-ralph-runner/.ralph/evidence/US-303.evidence.json',
 			completionSignalPath: 'd:/workspace/vscode-copilot-ralph-runner/.ralph/task-US-303-status',
 		});
 
@@ -1305,6 +1321,75 @@ suite('Extension Test Suite', () => {
 
 		assert.strictEqual(result.ok, true);
 		assert.deepStrictEqual(result.executedCommands.map(command => command.command), ['npm test']);
+	});
+
+	test('Story evidence artifact can be synthesized, written, and validated for auditable completion', () => {
+		const workspaceRoot = fs.mkdtempSync(path.join(os.tmpdir(), 'ralph-story-evidence-'));
+		try {
+			const evidence = createSynthesizedStoryEvidence({
+				id: 'US-402A',
+				title: 'Generate evidence bundle',
+				description: 'Summarize the completion evidence for a story.',
+				acceptanceCriteria: ['Evidence is auditable'],
+				priority: 1,
+			}, {
+				changedFiles: ['src/extension.ts', 'package.json'],
+				changedModules: ['extension'],
+				tests: [{ command: 'npm test', success: true, outputSummary: '51 passing' }],
+				taskMemory: {
+					storyId: 'US-402A',
+					title: 'Generate evidence bundle',
+					summary: 'Added a structured evidence artifact to completion flow.',
+					changedFiles: ['src/extension.ts', 'package.json'],
+					changedModules: ['extension'],
+					keyDecisions: ['Make completion auditable'],
+					patternsUsed: [],
+					constraintsConfirmed: ['Do not edit prd.json'],
+					testsRun: ['npm test'],
+					risks: [],
+					followUps: ['Review risk classification'],
+					searchKeywords: ['evidence', 'audit'],
+					relatedStories: [],
+					createdAt: new Date().toISOString(),
+				},
+				source: 'synthesized',
+			});
+
+			const validation = validateStoryEvidence(evidence, 'US-402A');
+			assert.strictEqual(validation.isValid, true);
+			assert.strictEqual(validation.artifact.status, 'pendingRelease');
+			assert.strictEqual(validation.artifact.recommendFeatureFlag, true);
+
+			const evidencePath = writeStoryEvidence(workspaceRoot, 'US-402A', evidence);
+			assert.ok(fs.existsSync(evidencePath));
+			assert.strictEqual(readStoryEvidence(workspaceRoot, 'US-402A')?.riskLevel, 'high');
+		} finally {
+			fs.rmSync(workspaceRoot, { recursive: true, force: true });
+		}
+	});
+
+	test('Story evidence validation rejects silent low-risk completion when tests or critical evidence are missing', () => {
+		const validation = validateStoryEvidence({
+			storyId: 'US-402B',
+			title: 'Incomplete evidence',
+			status: 'completed',
+			summary: 'Evidence exists but is incomplete.',
+			changedFiles: ['src/extension.ts'],
+			changedModules: ['extension'],
+			tests: [],
+			riskLevel: 'low',
+			riskReasons: ['A change was made.'],
+			releaseNotes: ['Updated extension flow.'],
+			rollbackHints: ['Revert the story commit.'],
+			followUps: ['Add missing tests.'],
+			recommendFeatureFlag: false,
+			evidenceGaps: [],
+			generatedAt: new Date().toISOString(),
+		}, 'US-402B');
+
+		assert.strictEqual(validation.isValid, false);
+		assert.ok(validation.errors.some(error => error.includes('evidenceGaps')));
+		assert.ok(validation.errors.some(error => error.includes('riskLevel cannot stay low')));
 	});
 
 	test('Task memory artifact can be written, read, and indexed per story', () => {
@@ -1828,6 +1913,7 @@ suite('Extension Test Suite', () => {
 				priorWorkLines,
 				sourceContextLines,
 				recentCheckpointLines,
+				evidencePath: path.join(workspaceRoot, '.ralph', 'evidence', 'US-501.evidence.json'),
 				taskMemoryPath: path.join(workspaceRoot, '.ralph', 'memory', 'US-501.json'),
 				executionCheckpointPath: path.join(workspaceRoot, '.ralph', 'checkpoints', 'US-501.checkpoint.json'),
 				completionSignalPath: path.join(workspaceRoot, '.ralph', 'task-US-501-status'),

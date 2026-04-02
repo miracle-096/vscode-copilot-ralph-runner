@@ -44,6 +44,14 @@ import {
 	validateExecutionCheckpoint,
 	writeExecutionCheckpoint,
 } from './executionCheckpoint';
+import {
+	createSynthesizedStoryEvidence,
+	hasStoryEvidenceArtifact,
+	readStoryEvidence,
+	summarizeStoryEvidenceForStatus,
+	validateStoryEvidence,
+	writeStoryEvidence,
+} from './storyEvidence';
 import { parseTaskSignalStatus } from './taskStatus';
 import {
 	buildProjectConstraintChatAdvicePrompt,
@@ -79,6 +87,7 @@ import {
 	ExecutionCheckpointStatus,
 	GeneratedProjectConstraints,
 	PrdFile,
+	StoryEvidenceArtifact,
 	STORY_STATUSES,
 	StoryExecutionStatus,
 	TaskMemoryArtifact,
@@ -102,6 +111,7 @@ import {
 	getProjectDesignContextPath as resolveProjectDesignContextPath,
 	getRalphDir as resolveRalphDir,
 	getScreenDesignContextPath as resolveScreenDesignContextPath,
+	getStoryEvidencePath as resolveStoryEvidencePath,
 	getStoryStatusRegistryPath as resolveStoryStatusRegistryPath,
 	getSourceContextIndexPath as resolveSourceContextIndexPath,
 	getTaskMemoryPath as resolveTaskMemoryPath,
@@ -320,6 +330,12 @@ class RalphStateManager {
 		if (progressEntry?.status === 'done') {
 			return 'completed';
 		}
+		if (progressEntry?.status === 'pending-review') {
+			return 'pendingReview';
+		}
+		if (progressEntry?.status === 'pending-release') {
+			return 'pendingRelease';
+		}
 		if (progressEntry?.status === 'failed') {
 			return 'failed';
 		}
@@ -463,7 +479,7 @@ function getNextUserStoryIdFromPrd(stories: UserStory[]): string {
 
 interface ProgressEntry {
 	id: string;
-	status: 'done' | 'failed';
+	status: 'done' | 'failed' | 'pending-review' | 'pending-release';
 	timestamp: string;
 	notes: string;
 }
@@ -486,9 +502,13 @@ function readProgress(workspaceRoot: string): ProgressEntry[] {
 
 			const parts = trimmed.split('|').map((part: string) => part.trim());
 			if (parts.length >= 2) {
+				const normalizedStatus = normalizeProgressStatus(parts[1]);
+				if (!normalizedStatus) {
+					continue;
+				}
 				entries.push({
 					id: parts[0],
-					status: parts[1] as 'done' | 'failed',
+					status: normalizedStatus,
 					timestamp: parts[2] || '',
 					notes: parts[3] || '',
 				});
@@ -501,7 +521,7 @@ function readProgress(workspaceRoot: string): ProgressEntry[] {
 	}
 }
 
-function writeProgressEntry(workspaceRoot: string, id: string, status: 'done' | 'failed', notes: string): void {
+function writeProgressEntry(workspaceRoot: string, id: string, status: 'done' | 'failed' | 'pending-review' | 'pending-release', notes: string): void {
 	const progressPath = getProgressPath(workspaceRoot);
 	const timestamp = new Date().toISOString().replace('T', ' ').slice(0, 19);
 	const line = `${id} | ${status} | ${timestamp} | ${notes}`;
@@ -548,12 +568,19 @@ function getStoryProgress(workspaceRoot: string, storyId: string): ProgressEntry
 }
 
 function findNextPendingStory(prd: PrdFile, workspaceRoot: string): UserStory | null {
-	const progress = readProgress(workspaceRoot);
-	const doneIds = new Set(progress.filter(e => e.status === 'done').map(e => e.id));
-
 	// Sort by priority (ascending — lower number = higher priority)
 	const sorted = [...prd.userStories].sort((a, b) => a.priority - b.priority);
-	return sorted.find(s => !doneIds.has(s.id)) || null;
+	return sorted.find(story => {
+		const status = RalphStateManager.getStoryExecutionStatus(workspaceRoot, story.id);
+		return status === 'none' || status === '未开始';
+	}) || null;
+}
+
+function normalizeProgressStatus(value: string): ProgressEntry['status'] | undefined {
+	if (value === 'done' || value === 'failed' || value === 'pending-review' || value === 'pending-release') {
+		return value;
+	}
+	return undefined;
 }
 
 // ── Globals ─────────────────────────────────────────────────────────────────
@@ -760,17 +787,17 @@ async function startRalph(): Promise<void> {
 
 			// Safety net: ensure the lock is always cleared on success
 			RalphStateManager.setCompleted(workspaceRoot, nextStory.id);
-			RalphStateManager.setStoryExecutionStatus(workspaceRoot, nextStory.id, 'completed');
+			RalphStateManager.setStoryExecutionStatus(workspaceRoot, nextStory.id, executionResult.evidence.artifact.status);
 
 			// Write completion to progress.txt (prd.json is never modified)
 			writeProgressEntry(
 				workspaceRoot,
 				nextStory.id,
-				'done',
-				`Completed successfully; task memory persisted (${executionResult.taskMemory.source}) and checkpoint persisted (${executionResult.checkpoint.source})`
+				mapStoryStatusToProgressStatus(executionResult.evidence.artifact.status),
+				buildStoryCompletionNote(executionResult)
 			);
 
-			log(`✅ Story ${nextStory.id} completed with task memory (${executionResult.taskMemory.source}) and checkpoint (${executionResult.checkpoint.source}).`);
+			log(`✅ Story ${nextStory.id} finalized as ${executionResult.evidence.artifact.status} with task memory (${executionResult.taskMemory.source}), checkpoint (${executionResult.checkpoint.source}), and evidence (${executionResult.evidence.source}).`);
 		} catch (err: unknown) {
 			const errMsg = err instanceof Error ? err.message : String(err);
 			if (errMsg === 'Cancelled by user') {
@@ -1051,9 +1078,16 @@ interface ExecutionCheckpointPersistenceResult {
 	artifact: ExecutionCheckpointArtifact;
 }
 
+interface StoryEvidencePersistenceResult {
+	filePath: string;
+	source: 'copilot' | 'synthesized';
+	artifact: StoryEvidenceArtifact;
+}
+
 async function executeStory(story: UserStory, workspaceRoot: string): Promise<{
 	taskMemory: TaskMemoryPersistenceResult;
 	checkpoint: ExecutionCheckpointPersistenceResult;
+	evidence: StoryEvidencePersistenceResult;
 }> {
 	const prompt = buildCopilotPromptForStory(story, workspaceRoot);
 	log('  Delegating user story to Copilot...');
@@ -1063,15 +1097,21 @@ async function executeStory(story: UserStory, workspaceRoot: string): Promise<{
 		status: 'completed',
 		taskMemory: taskMemoryResult.artifact,
 	});
+	const evidenceResult = ensureStoryEvidencePersistence(story, workspaceRoot, {
+		taskMemory: taskMemoryResult.artifact,
+		checkpoint: checkpointResult.artifact,
+	});
 	const completionPolicyResult = evaluateCompletionPolicyGates(workspaceRoot, story);
 	if (!completionPolicyResult.ok) {
 		throw new Error(`Policy gates blocked completion for ${story.id}`);
 	}
 	log(`  Task memory ready for ${story.id}: ${taskMemoryResult.filePath} (${taskMemoryResult.source})`);
 	log(`  Execution checkpoint ready for ${story.id}: ${checkpointResult.filePath} (${checkpointResult.source})`);
+	log(`  Story evidence ready for ${story.id}: ${evidenceResult.filePath} (${evidenceResult.source})`);
 	return {
 		taskMemory: taskMemoryResult,
 		checkpoint: checkpointResult,
+		evidence: evidenceResult,
 	};
 }
 
@@ -1106,6 +1146,7 @@ function buildCopilotPromptForStory(story: UserStory, workspaceRoot: string): st
 		policyLines,
 		taskMemoryPath: resolveTaskMemoryPath(workspaceRoot, story.id).replace(/\\/g, '/'),
 		executionCheckpointPath: resolveExecutionCheckpointPath(workspaceRoot, story.id).replace(/\\/g, '/'),
+		evidencePath: resolveStoryEvidencePath(workspaceRoot, story.id).replace(/\\/g, '/'),
 		completionSignalPath: resolveTaskStatusPath(workspaceRoot, story.id).replace(/\\/g, '/'),
 		additionalExecutionRules,
 	});
@@ -1720,7 +1761,7 @@ function getMergedProjectConstraintsSafe(workspaceRoot: string): GeneratedProjec
 	}
 }
 
-function hasPolicyArtifact(workspaceRoot: string, story: UserStory, artifact: 'project-constraints' | 'design-context' | 'task-memory' | 'execution-checkpoint' | 'source-context-index'): boolean {
+function hasPolicyArtifact(workspaceRoot: string, story: UserStory, artifact: 'project-constraints' | 'design-context' | 'task-memory' | 'execution-checkpoint' | 'story-evidence' | 'source-context-index'): boolean {
 	if (artifact === 'project-constraints') {
 		return hasProjectConstraintsArtifacts(workspaceRoot);
 	}
@@ -1733,6 +1774,9 @@ function hasPolicyArtifact(workspaceRoot: string, story: UserStory, artifact: 'p
 	if (artifact === 'execution-checkpoint') {
 		return hasExecutionCheckpointArtifact(workspaceRoot, story.id);
 	}
+	if (artifact === 'story-evidence') {
+		return hasStoryEvidenceArtifact(workspaceRoot, story.id);
+	}
 	return Boolean(getSourceContextIndex(workspaceRoot));
 }
 
@@ -1742,6 +1786,7 @@ function getPolicyArtifactPaths(workspaceRoot: string, story: UserStory) {
 		'design-context': resolveDesignContextPath(workspaceRoot, story.id).replace(/\\/g, '/'),
 		'task-memory': resolveTaskMemoryPath(workspaceRoot, story.id).replace(/\\/g, '/'),
 		'execution-checkpoint': resolveExecutionCheckpointPath(workspaceRoot, story.id).replace(/\\/g, '/'),
+		'story-evidence': resolveStoryEvidencePath(workspaceRoot, story.id).replace(/\\/g, '/'),
 		'source-context-index': resolveSourceContextIndexPath(workspaceRoot).replace(/\\/g, '/'),
 	};
 }
@@ -1774,6 +1819,115 @@ function evaluateCompletionPolicyGates(workspaceRoot: string, story: UserStory) 
 	}
 
 	return result;
+}
+
+function ensureStoryEvidencePersistence(
+	story: UserStory,
+	workspaceRoot: string,
+	options: {
+		taskMemory: TaskMemoryArtifact;
+		checkpoint: ExecutionCheckpointArtifact;
+	},
+): StoryEvidencePersistenceResult {
+	const existingEvidence = hasStoryEvidenceArtifact(workspaceRoot, story.id) ? readStoryEvidence(workspaceRoot, story.id) : null;
+	const validation = existingEvidence ? validateStoryEvidence(existingEvidence, story.id) : null;
+
+	if (validation?.isValid) {
+		const filePath = writeStoryEvidence(workspaceRoot, story.id, {
+			...validation.artifact,
+			source: validation.artifact.source ?? 'copilot',
+		});
+		const persistedArtifact: StoryEvidenceArtifact = {
+			...validation.artifact,
+			source: validation.artifact.source ?? 'copilot',
+		};
+		log(`  Valid story evidence artifact accepted for ${story.id}.`);
+		return { filePath, source: persistedArtifact.source ?? 'copilot', artifact: persistedArtifact };
+	}
+
+	if (validation && !validation.isValid) {
+		log(`  WARNING: Story evidence for ${story.id} failed validation: ${validation.errors.join(' | ')}`);
+	} else {
+		log(`  WARNING: Story evidence artifact missing for ${story.id}; synthesizing fallback evidence.`);
+	}
+
+	const fallbackEvidence = synthesizeStoryEvidenceForStory(story, workspaceRoot, options);
+	const fallbackPath = writeStoryEvidence(workspaceRoot, story.id, fallbackEvidence);
+	log(`  Synthesized fallback story evidence for ${story.id} at ${fallbackPath}.`);
+	return { filePath: fallbackPath, source: 'synthesized', artifact: fallbackEvidence };
+}
+
+function synthesizeStoryEvidenceForStory(
+	story: UserStory,
+	workspaceRoot: string,
+	options: {
+		taskMemory: TaskMemoryArtifact;
+		checkpoint: ExecutionCheckpointArtifact;
+	},
+): StoryEvidenceArtifact {
+	const changedFiles = detectChangedFilesForTaskMemory(workspaceRoot, story.id);
+	const changedModules = deriveChangedModules(changedFiles);
+	const executedTestCommands = getCompletionPolicyExecutedTestCommands(workspaceRoot, story);
+	const testEvidence = executedTestCommands.length > 0
+		? executedTestCommands
+		: options.taskMemory.testsRun.map(command => ({
+			command,
+			success: true,
+			outputSummary: 'Recorded in task memory.',
+		}));
+	return createSynthesizedStoryEvidence(story, {
+		changedFiles,
+		changedModules,
+		tests: testEvidence,
+		taskMemory: options.taskMemory,
+		checkpoint: options.checkpoint,
+		source: 'synthesized',
+	});
+}
+
+function getCompletionPolicyExecutedTestCommands(workspaceRoot: string, story: UserStory) {
+	const policyConfig = getEffectivePolicyConfig();
+	if (!policyConfig.enabled) {
+		return [];
+	}
+
+	const result = evaluatePolicyGates(policyConfig, {
+		workspaceRoot,
+		story,
+		phase: 'completion',
+		changedFiles: getStoryChangedFiles(workspaceRoot, story.id),
+		projectConstraints: getMergedProjectConstraintsSafe(workspaceRoot),
+		isDesignSensitiveStory: isDesignSensitiveStory(story),
+		hasExecutionTimeDesignFallback: synthesizeExecutionDesignContextPromptLines(story, null).length > 0,
+		hasArtifact: artifact => artifact === 'story-evidence' ? true : hasPolicyArtifact(workspaceRoot, story, artifact),
+		commandTimeoutMs: getConfig().POLICY_GATE_COMMAND_TIMEOUT_MS,
+		artifactPaths: getPolicyArtifactPaths(workspaceRoot, story),
+	});
+
+	return result.executedCommands.map(command => ({
+		command: command.command,
+		success: command.success,
+		outputSummary: command.output,
+	}));
+}
+
+function mapStoryStatusToProgressStatus(status: Extract<StoryExecutionStatus, 'completed' | 'pendingReview' | 'pendingRelease'>): ProgressEntry['status'] {
+	if (status === 'pendingReview') {
+		return 'pending-review';
+	}
+	if (status === 'pendingRelease') {
+		return 'pending-release';
+	}
+	return 'done';
+}
+
+function buildStoryCompletionNote(executionResult: {
+	taskMemory: TaskMemoryPersistenceResult;
+	checkpoint: ExecutionCheckpointPersistenceResult;
+	evidence: StoryEvidencePersistenceResult;
+}): string {
+	const evidenceSummary = summarizeStoryEvidenceForStatus(executionResult.evidence.artifact).join('; ');
+	return `Finalized as ${executionResult.evidence.artifact.status}; task memory persisted (${executionResult.taskMemory.source}); checkpoint persisted (${executionResult.checkpoint.source}); evidence persisted (${executionResult.evidence.source})${evidenceSummary ? `; ${evidenceSummary}` : ''}`;
 }
 
 function deriveChangedModules(changedFiles: string[]): string[] {
@@ -1885,14 +2039,31 @@ async function showStatus(): Promise<void> {
 		return;
 	}
 
-	const progress = readProgress(workspaceRoot);
-	const doneIds = new Set(progress.filter(e => e.status === 'done').map(e => e.id));
-	const failedIds = new Set(progress.filter(e => e.status === 'failed').map(e => e.id));
-
 	const total = prd.userStories.length;
-	const completed = prd.userStories.filter(s => doneIds.has(s.id)).length;
-	const failed = prd.userStories.filter(s => failedIds.has(s.id)).length;
-	const pending = total - completed;
+	let completed = 0;
+	let failed = 0;
+	let awaitingReview = 0;
+	let awaitingRelease = 0;
+	let pending = 0;
+	let highRisk = 0;
+	for (const story of prd.userStories) {
+		const status = RalphStateManager.getStoryExecutionStatus(workspaceRoot, story.id);
+		if (status === 'completed') {
+			completed += 1;
+		} else if (status === 'failed') {
+			failed += 1;
+		} else if (status === 'pendingReview') {
+			awaitingReview += 1;
+		} else if (status === 'pendingRelease') {
+			awaitingRelease += 1;
+		} else if (status === 'none' || status === '未开始') {
+			pending += 1;
+		}
+
+		if (readStoryEvidence(workspaceRoot, story.id)?.riskLevel === 'high') {
+			highRisk += 1;
+		}
+	}
 	const inProgress = RalphStateManager.getInProgressTaskId(workspaceRoot);
 	const nextPending = findNextPendingStory(prd, workspaceRoot);
 
@@ -1901,6 +2072,9 @@ async function showStatus(): Promise<void> {
 		``,
 		`✅ ${languagePack.status.completed(completed, total)}`,
 		`❌ ${languagePack.status.failed(failed)}`,
+		`🟠 ${languagePack.status.awaitingReview(awaitingReview)}`,
+		`🟣 ${languagePack.status.awaitingRelease(awaitingRelease)}`,
+		`⚠️ ${languagePack.status.highRisk(highRisk)}`,
 		`⏳ ${languagePack.status.pending(pending)}`,
 		`🔄 ${languagePack.status.inProgress(inProgress)}`,
 		`📍 ${languagePack.status.next(nextPending ? `${nextPending.id} — ${nextPending.title}` : languagePack.status.allDone)}`,
@@ -1951,6 +2125,14 @@ async function resetStory(): Promise<void> {
 		// Also clear the .ralph status file if present
 		RalphStateManager.clearStalledTask(workspaceRoot, selection.storyId);
 		RalphStateManager.clearStoryExecutionStatus(workspaceRoot, selection.storyId);
+		try {
+			const evidencePath = resolveStoryEvidencePath(workspaceRoot, selection.storyId);
+			if (fs.existsSync(evidencePath)) {
+				fs.unlinkSync(evidencePath);
+			}
+		} catch {
+			// ignore evidence cleanup failures during reset
+		}
 		vscode.window.showInformationMessage(languagePack.reset.storyReset(selection.storyId));
 		log(`Story ${selection.storyId} reset by user.`);
 	}

@@ -14,6 +14,7 @@ RALPH also contributes a Copilot Chat participant command for constraint-aware p
 - Scans the workspace to generate machine-readable and editable project constraints
 - Stores layered design context in `.prd/design-context/` with reusable shared artifacts and story-level overrides
 - Requires a structured task memory artifact before accepting completion
+- Generates a structured evidence artifact with risk classification before accepting completion
 - Recalls relevant prior task memories and injects them into later prompts
 - Evaluates optional machine-executable policy gates before a story starts and before it can be accepted as complete
 - Builds prompts in a fixed order: system rules, project constraints, design context, prior work, source context, checkpoint, machine policy gates, current story, completion contract
@@ -76,6 +77,7 @@ RALPH creates and maintains these files during the workflow:
 | `.ralph/memory/US-xxx.json` | Structured task memory for one completed story |
 | `.ralph/memory-index.json` | Compact recall index built from all persisted task memories |
 | `.ralph/checkpoints/US-xxx.checkpoint.json` | Latest execution checkpoint for one completed, failed, or interrupted story |
+| `.ralph/evidence/US-xxx.evidence.json` | Auditable story evidence bundle with test results, risk level, release notes, rollback hints, and final auditable status |
 | `.github/ralph/project-constraints.md` | Team-maintained editable constraint document layered over generated constraints |
 | `.prd/design-context/US-xxx.design.json` | Story-specific design context override or review draft |
 | `.prd/design-context/shared/project.design.json` | Shared project-wide design defaults |
@@ -281,6 +283,20 @@ RALPH also persists a separate latest-only execution checkpoint to `.ralph/check
 Checkpoint retention is deterministic: each story owns one fixed checkpoint path, and the newest completed, failed, or interrupted run overwrites that story's previous checkpoint. Resetting a story does not delete the checkpoint; the next execution simply replaces it with the latest state.
 
 If Copilot fails to write a valid task memory or checkpoint artifact, or if an existing checkpoint is missing or corrupted, RALPH synthesizes a recoverable fallback artifact and continues instead of blocking on broken session context.
+
+RALPH now also persists a structured evidence bundle to `.ralph/evidence/US-xxx.evidence.json` when a story reaches its completion checkpoint. The evidence artifact captures:
+
+- changed file scope and changed modules
+- test execution evidence
+- risk level and readable risk reasons
+- release notes and rollback hints
+- follow-up items and evidence gaps
+- whether a feature flag is recommended
+- a final auditable story status: `completed`, `pendingReview`, or `pendingRelease`
+
+When key evidence is missing, especially passing tests or critical changed-file scope, the story is not silently treated as a normal completion. Instead, the synthesized evidence is marked high risk and the final status moves into `pendingReview` or `pendingRelease` so downstream review or release workflows can consume it directly.
+
+The built-in status panel now consumes these evidence artifacts to show additional operational signals such as awaiting-review count, awaiting-release count, and how many stories are currently high risk.
 
 ## Commands
 
