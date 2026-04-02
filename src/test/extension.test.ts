@@ -75,8 +75,10 @@ import {
 } from '../executionCheckpoint';
 import {
 	getSourceContextIndex,
+	recallRelevantSourceContext,
 	refreshSourceContextIndex,
 	scanWorkspaceForSourceContextIndex,
+	summarizeRecalledSourceContextForPrompt,
 	summarizeSourceContextIndexForPrompt,
 } from '../sourceContext';
 import { parseTaskSignalStatus } from '../taskStatus';
@@ -116,6 +118,7 @@ suite('Extension Test Suite', () => {
 		assert.deepStrictEqual(designCommands.map(command => command.command), ['ralph-runner.recordDesignContext']);
 		assert.strictEqual(designCommands[0]?.title, 'RALPH: 界面设计描述');
 		assert.strictEqual(contributedCommands.some(command => command.command === 'ralph-runner.recallTaskMemory'), false);
+		assert.strictEqual(contributedCommands.some(command => command.command === 'ralph-runner.previewSourceContextRecall'), true);
 
 		const contributedParticipants = packageJson.contributes?.chatParticipants ?? [];
 		assert.strictEqual(contributedParticipants.some(participant => participant.id === 'recent-graduates.ralph-runner'), true);
@@ -1109,6 +1112,7 @@ suite('Extension Test Suite', () => {
 			projectConstraintsLines: Array.from({ length: 15 }, (_, index) => `Project constraint ${index + 1}`),
 			designContextLines: ['Design note 1', 'Design note 2'],
 			priorWorkLines: Array.from({ length: 16 }, (_, index) => `Prior work ${index + 1}`),
+			sourceContextLines: Array.from({ length: 15 }, (_, index) => `Source context ${index + 1}`),
 			recentCheckpointLines: Array.from({ length: 15 }, (_, index) => `Recent checkpoint ${index + 1}`),
 			taskMemoryPath: 'd:/workspace/vscode-copilot-ralph-runner/.ralph/memory/US-302.json',
 			executionCheckpointPath: 'd:/workspace/vscode-copilot-ralph-runner/.ralph/checkpoints/US-302.checkpoint.json',
@@ -1120,6 +1124,7 @@ suite('Extension Test Suite', () => {
 		const projectIndex = prompt.indexOf('Project Constraints:');
 		const designIndex = prompt.indexOf('Design Context:');
 		const priorWorkIndex = prompt.indexOf('Relevant Prior Work:');
+		const sourceContextIndex = prompt.indexOf('Relevant Source Context:');
 		const checkpointIndex = prompt.indexOf('Recent Checkpoint:');
 		const currentStoryIndex = prompt.indexOf('Current Story:');
 		const completionIndex = prompt.indexOf('Completion Contract:');
@@ -1128,7 +1133,8 @@ suite('Extension Test Suite', () => {
 		assert.ok(projectIndex > systemIndex);
 		assert.ok(designIndex > projectIndex);
 		assert.ok(priorWorkIndex > designIndex);
-		assert.ok(checkpointIndex > priorWorkIndex);
+		assert.ok(sourceContextIndex > priorWorkIndex);
+		assert.ok(checkpointIndex > sourceContextIndex);
 		assert.ok(currentStoryIndex > checkpointIndex);
 		assert.ok(completionIndex > currentStoryIndex);
 		assert.ok(prompt.includes('... 3 more lines omitted for brevity.'));
@@ -1156,6 +1162,7 @@ suite('Extension Test Suite', () => {
 		assert.strictEqual(prompt.includes('Project Constraints:'), false);
 		assert.strictEqual(prompt.includes('Design Context:'), false);
 		assert.strictEqual(prompt.includes('Relevant Prior Work:'), false);
+		assert.strictEqual(prompt.includes('Relevant Source Context:'), false);
 		assert.strictEqual(prompt.includes('Recent Checkpoint:'), false);
 	});
 
@@ -1396,6 +1403,59 @@ suite('Extension Test Suite', () => {
 		}
 	});
 
+	test('Source context recall scores keywords, modules, files, and task-memory hints together', () => {
+		const workspaceRoot = fs.mkdtempSync(path.join(os.tmpdir(), 'ralph-source-context-recall-'));
+		try {
+			fs.mkdirSync(path.join(workspaceRoot, 'src', 'test'), { recursive: true });
+			fs.writeFileSync(path.join(workspaceRoot, 'package.json'), JSON.stringify({
+				name: 'source-context-recall',
+				scripts: { compile: 'tsc --noEmit', test: 'vscode-test' },
+			}, null, 2));
+			fs.writeFileSync(path.join(workspaceRoot, 'src', 'extension.ts'), 'export function activate() {}\n');
+			fs.writeFileSync(path.join(workspaceRoot, 'src', 'taskMemory.ts'), 'export interface StoryMemory {}\n');
+			fs.writeFileSync(path.join(workspaceRoot, 'src', 'promptContext.ts'), 'export type PromptSection = { title: string; };\n');
+
+			const index = scanWorkspaceForSourceContextIndex(workspaceRoot);
+			const matches = recallRelevantSourceContext(index, {
+				id: 'US-700',
+				title: 'Refine prompt context recall',
+				description: 'Improve source context recall for prompt building and task memory handoff.',
+				acceptanceCriteria: ['Use promptContext.ts and taskMemory.ts hints'],
+				priority: 1,
+				moduleHints: ['promptContext'],
+				fileHints: ['src/taskMemory.ts'],
+			}, {
+				limit: 3,
+				memoryHints: [{
+					storyId: 'US-650',
+					title: 'Prior prompt memory',
+					summary: 'Touched prompt context and task memory.',
+					changedFiles: ['src/promptContext.ts', 'src/taskMemory.ts'],
+					changedModules: ['promptContext', 'taskMemory'],
+					keyDecisions: ['Keep source context bounded'],
+					patternsUsed: [],
+					constraintsConfirmed: ['Do not edit prd.json'],
+					testsRun: ['npm run compile'],
+					risks: [],
+					followUps: [],
+					searchKeywords: ['prompt', 'task', 'memory'],
+					relatedStories: [],
+					createdAt: '2026-04-02T12:00:00.000Z',
+				}],
+			});
+
+			assert.strictEqual(matches.length > 0, true);
+			assert.ok(matches.some(match => match.label.includes('src/taskMemory.ts')));
+			assert.ok(matches[0].reasons.length > 0);
+
+			const promptLines = summarizeRecalledSourceContextForPrompt(matches, 2);
+			assert.ok(promptLines.some(line => line.includes('Why it matters:')));
+			assert.ok(promptLines.some(line => line.includes('Category:')));
+		} finally {
+			fs.rmSync(workspaceRoot, { recursive: true, force: true });
+		}
+	});
+
 	test('Recent checkpoint selection prefers the current story and otherwise falls back to the latest valid checkpoint', () => {
 		const workspaceRoot = fs.mkdtempSync(path.join(os.tmpdir(), 'ralph-recent-checkpoint-'));
 		try {
@@ -1588,6 +1648,18 @@ suite('Extension Test Suite', () => {
 				fileHints: ['src/promptContext.ts'],
 			}, { limit: 2 });
 			const priorWorkLines = summarizeRecalledTaskMemoriesForPrompt(matches, 2);
+			const sourceContextLines = summarizeRecalledSourceContextForPrompt(recallRelevantSourceContext(scanWorkspaceForSourceContextIndex(workspaceRoot), {
+				id: 'US-501',
+				title: 'Refresh dashboard cards',
+				description: 'Refresh dashboard summary cards while preserving prompt quality constraints.',
+				acceptanceCriteria: ['Dashboard cards stay aligned', 'Reuse SummaryCard'],
+				priority: 1,
+				moduleHints: ['promptContext'],
+				fileHints: ['src/promptContext.ts'],
+			}, {
+				limit: 2,
+				memoryHints: matches.map(match => match.memory),
+			}), 2);
 			writeExecutionCheckpoint(workspaceRoot, 'US-500', {
 				title: 'Dashboard checkpoint',
 				status: 'completed',
@@ -1613,6 +1685,7 @@ suite('Extension Test Suite', () => {
 				projectConstraintsLines,
 				designContextLines,
 				priorWorkLines,
+				sourceContextLines,
 				recentCheckpointLines,
 				taskMemoryPath: path.join(workspaceRoot, '.ralph', 'memory', 'US-501.json'),
 				executionCheckpointPath: path.join(workspaceRoot, '.ralph', 'checkpoints', 'US-501.checkpoint.json'),
@@ -1622,15 +1695,18 @@ suite('Extension Test Suite', () => {
 			assert.ok(prompt.includes('Project Constraints:'));
 			assert.ok(prompt.includes('Design Context:'));
 			assert.ok(prompt.includes('Relevant Prior Work:'));
+			assert.ok(prompt.includes('Relevant Source Context:'));
 			assert.ok(prompt.includes('Recent Checkpoint:'));
 			assert.ok(prompt.includes('Technology Summary'));
 			assert.ok(prompt.includes('Build Commands'));
 			assert.ok(prompt.includes('Component Reuse Requirements:'));
 			assert.ok(prompt.includes('US-490 — Dashboard cards refactor'));
+			assert.ok(prompt.includes('src/promptContext.ts'));
 			assert.ok(prompt.includes('US-500 — Dashboard checkpoint [completed]'));
 			assert.ok(prompt.indexOf('Project Constraints:') < prompt.indexOf('Design Context:'));
 			assert.ok(prompt.indexOf('Design Context:') < prompt.indexOf('Relevant Prior Work:'));
-			assert.ok(prompt.indexOf('Relevant Prior Work:') < prompt.indexOf('Recent Checkpoint:'));
+			assert.ok(prompt.indexOf('Relevant Prior Work:') < prompt.indexOf('Relevant Source Context:'));
+			assert.ok(prompt.indexOf('Relevant Source Context:') < prompt.indexOf('Recent Checkpoint:'));
 		} finally {
 			fs.rmSync(workspaceRoot, { recursive: true, force: true });
 		}

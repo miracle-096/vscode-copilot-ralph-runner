@@ -122,6 +122,17 @@ export interface SourceContextIndexArtifact {
 	metadata?: Record<string, unknown>;
 }
 
+export interface SourceContextRecallMatch {
+	label: string;
+	category: 'source-directory' | 'test-directory' | 'build-script' | 'entry-file' | 'module-hint' | 'type-hint' | 'hotspot';
+	value: string;
+	score: number;
+	reasons: string[];
+	keywordOverlap: string[];
+	moduleOverlap: string[];
+	fileOverlap: string[];
+}
+
 export interface TaskMemoryIndexEntry {
 	storyId: string;
 	title: string;
@@ -151,6 +162,7 @@ export interface StoryPromptContext {
 	projectConstraintsLines?: string[];
 	designContextLines?: string[];
 	priorWorkLines?: string[];
+	sourceContextLines?: string[];
 	recentCheckpointLines?: string[];
 	taskMemoryPath: string;
 	executionCheckpointPath: string;

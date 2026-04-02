@@ -80,6 +80,14 @@ export interface RalphLanguagePack {
 		success: (filePath: string) => string;
 		openIndex: string;
 		failed: (message: string) => string;
+		previewPlaceholder: string;
+		previewTitle: string;
+		previewStory: (storyId: string, title: string) => string;
+		previewScore: (score: number) => string;
+		previewReasons: (reasons: string[]) => string;
+		previewValue: (value: string) => string;
+		previewReady: (storyId: string, matchCount: number) => string;
+		noMatches: (storyId: string) => string;
 	};
 	chatSpec: {
 		participantDescription: string;
@@ -387,6 +395,14 @@ const CHINESE_PACK: RalphLanguagePack = {
 		success: filePath => `RALPH：源码上下文索引已刷新：${filePath}`,
 		openIndex: '打开索引',
 		failed: message => `RALPH：刷新源码上下文索引失败：${message}`,
+		previewPlaceholder: '选择一个故事以预览相关仓库源上下文',
+		previewTitle: '相关仓库源上下文预览',
+		previewStory: (storyId, title) => `故事：${storyId} — ${title}`,
+		previewScore: score => `分数：${score}`,
+		previewReasons: reasons => `原因：${reasons.join('; ')}`,
+		previewValue: value => `线索：${value}`,
+		previewReady: (storyId, matchCount) => `RALPH：已为 ${storyId} 预览 ${matchCount} 条相关仓库源上下文。`,
+		noMatches: storyId => `RALPH：${storyId} 当前没有命中足够的仓库源上下文，将回退到现有提示构建流程。`,
 	},
 	chatSpec: {
 		participantDescription: '根据 RALPH 合并后的项目规范，整理最终需求描述，并自动转交给 Copilot Chat 执行。',
@@ -582,6 +598,7 @@ const CHINESE_PACK: RalphLanguagePack = {
 		items: [
 			{ command: 'ralph-runner.initProjectConstraints', label: '$(symbol-key)  初始化项目约束', description: '扫描仓库并生成可编辑和机器可读的项目规则' },
 			{ command: 'ralph-runner.refreshSourceContextIndex', label: '$(repo)  刷新源码上下文索引', description: '扫描仓库并更新轻量 source context 索引工件' },
+			{ command: 'ralph-runner.previewSourceContextRecall', label: '$(search)  预览故事源上下文', description: '为选中的故事预览最相关的模块、文件和工程线索' },
 			{ command: 'ralph-runner.recordDesignContext', label: '$(device-camera-video)  界面设计描述', description: '一个入口处理当前故事和批量复用，支持自动整理、单独匹配和批量匹配' },
 			{ command: 'ralph-runner.quickStart', label: '$(zap)  生成 PRD', description: '通过 Copilot 生成 prd.json' },
 			{ command: 'ralph-runner.appendUserStories', label: '$(diff-added)  追加用户故事', description: '通过 Copilot 基于现有 prd.json 追加新的用户故事' },
@@ -709,6 +726,14 @@ const ENGLISH_PACK: RalphLanguagePack = {
 		success: filePath => `RALPH: Source context index refreshed at ${filePath}`,
 		openIndex: 'Open Index',
 		failed: message => `RALPH: Failed to refresh the source context index: ${message}`,
+		previewPlaceholder: 'Choose a story to preview relevant repository source context',
+		previewTitle: 'Relevant Source Context Preview',
+		previewStory: (storyId, title) => `Story: ${storyId} — ${title}`,
+		previewScore: score => `Score: ${score}`,
+		previewReasons: reasons => `Reasons: ${reasons.join('; ')}`,
+		previewValue: value => `Hint: ${value}`,
+		previewReady: (storyId, matchCount) => `RALPH: Previewed ${matchCount} relevant source-context matches for ${storyId}.`,
+		noMatches: storyId => `RALPH: No strong repository source-context matches were found for ${storyId}. Falling back to the existing prompt flow.`,
 	},
 	chatSpec: {
 		participantDescription: 'Refine a request with the merged RALPH project constraints, then auto-send the final version to Copilot Chat.',
@@ -904,6 +929,7 @@ const ENGLISH_PACK: RalphLanguagePack = {
 		items: [
 			{ command: 'ralph-runner.initProjectConstraints', label: '$(symbol-key)  Initialize Project Constraints', description: 'Scan the repository and generate editable and machine-readable project rules' },
 			{ command: 'ralph-runner.refreshSourceContextIndex', label: '$(repo)  Refresh Source Context Index', description: 'Scan the repository and update the lightweight source-context index artifact' },
+			{ command: 'ralph-runner.previewSourceContextRecall', label: '$(search)  Preview Story Source Context', description: 'Preview the most relevant modules, files, and engineering hints for a selected story' },
 			{ command: 'ralph-runner.recordDesignContext', label: '$(device-camera-video)  UI Design Notes', description: 'One entry for story-only work and reusable batch matching, with simpler plain-language prompts' },
 			{ command: 'ralph-runner.quickStart', label: '$(zap)  Generate PRD', description: 'Use Copilot to generate prd.json' },
 			{ command: 'ralph-runner.appendUserStories', label: '$(diff-added)  Append User Stories', description: 'Use Copilot to append new user stories to the existing prd.json' },

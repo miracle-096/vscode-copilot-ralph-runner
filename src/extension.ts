@@ -58,6 +58,9 @@ import {
 } from './projectConstraints';
 import {
 	refreshSourceContextIndex,
+	getSourceContextIndex,
+	recallRelevantSourceContext,
+	summarizeRecalledSourceContextForPrompt,
 	writeSourceContextIndex,
 } from './sourceContext';
 import {
@@ -576,6 +579,7 @@ export function activate(context: vscode.ExtensionContext) {
 		vscode.commands.registerCommand('ralph-runner.resetStep', () => resetStory()),
 		vscode.commands.registerCommand('ralph-runner.initProjectConstraints', () => initializeProjectConstraints()),
 		vscode.commands.registerCommand('ralph-runner.refreshSourceContextIndex', () => refreshSourceContextIndexCommand()),
+		vscode.commands.registerCommand('ralph-runner.previewSourceContextRecall', () => previewSourceContextRecall()),
 		vscode.commands.registerCommand('ralph-runner.recordDesignContext', () => recordDesignContext()),
 		vscode.commands.registerCommand('ralph-runner.generateDesignContextDraft', () => generateVisualDesignContextDraft()),
 		vscode.commands.registerCommand('ralph-runner.suggestStoryDesignContext', () => suggestStoryDesignContext()),
@@ -809,6 +813,67 @@ async function refreshSourceContextIndexCommand(): Promise<void> {
 	}
 }
 
+async function previewSourceContextRecall(): Promise<void> {
+	const languagePack = getLanguagePack();
+	const workspaceRoot = getWorkspaceRoot();
+	if (!workspaceRoot) {
+		vscode.window.showErrorMessage(languagePack.common.noWorkspaceFolder);
+		return;
+	}
+
+	const stories = getStoriesFromPrd(workspaceRoot);
+	if (stories.length === 0) {
+		vscode.window.showWarningMessage(languagePack.designContext.noStories);
+		return;
+	}
+
+	const selection = await vscode.window.showQuickPick(
+		stories.map(story => ({
+			label: `${story.id} — ${story.title}`,
+			description: languagePack.common.statusPriority(getLocalizedStoryStatus(normalizeStoryExecutionStatus(story.status) || 'none', languagePack.language), story.priority),
+			story,
+		})),
+		{ placeHolder: languagePack.sourceContext.previewPlaceholder }
+	);
+
+	if (!selection) {
+		return;
+	}
+
+	const refreshResult = refreshSourceContextIndexArtifact(workspaceRoot, `preview ${selection.story.id}`);
+	if (!refreshResult.ok) {
+		vscode.window.showErrorMessage(languagePack.sourceContext.failed(refreshResult.message));
+		return;
+	}
+
+	const index = getSourceContextIndex(workspaceRoot);
+	const memoryHints = recallRelatedTaskMemories(workspaceRoot, selection.story, {
+		limit: Math.min(getConfig().RECALLED_TASK_MEMORY_LIMIT, 2),
+	}).map(match => match.memory);
+	const matches = recallRelevantSourceContext(index, selection.story, {
+		limit: 5,
+		memoryHints,
+	});
+
+	outputChannel.show(true);
+	log('');
+	log(languagePack.sourceContext.previewTitle);
+	log(languagePack.sourceContext.previewStory(selection.story.id, selection.story.title));
+	if (matches.length === 0) {
+		log(`  ${languagePack.sourceContext.noMatches(selection.story.id)}`);
+		vscode.window.showInformationMessage(languagePack.sourceContext.noMatches(selection.story.id));
+		return;
+	}
+
+	for (const match of matches) {
+		log(`  ${languagePack.sourceContext.previewScore(match.score)}`);
+		log(`  ${languagePack.sourceContext.previewReasons(match.reasons)}`);
+		log(`  ${languagePack.sourceContext.previewValue(match.label)}`);
+	}
+
+	vscode.window.showInformationMessage(languagePack.sourceContext.previewReady(selection.story.id, matches.length));
+}
+
 function refreshSourceContextIndexArtifact(
 	workspaceRoot: string,
 	reason: string,
@@ -972,6 +1037,7 @@ function buildCopilotPromptForStory(story: UserStory, workspaceRoot: string): st
 	const projectConstraintsLines = getProjectConstraintsPromptLines(workspaceRoot, story.id);
 	const designContextLines = getDesignContextPromptLines(workspaceRoot, story);
 	const priorWorkLines = getPriorWorkPromptLines(workspaceRoot, story);
+	const sourceContextLines = getSourceContextPromptLines(workspaceRoot, story);
 	const recentCheckpointLines = getRecentCheckpointPromptLines(workspaceRoot, story);
 	const additionalExecutionRules = [
 		'Greedily execute as many sub-tasks as possible in a single pass.',
@@ -990,6 +1056,7 @@ function buildCopilotPromptForStory(story: UserStory, workspaceRoot: string): st
 		projectConstraintsLines,
 		designContextLines,
 		priorWorkLines,
+		sourceContextLines,
 		recentCheckpointLines,
 		taskMemoryPath: resolveTaskMemoryPath(workspaceRoot, story.id).replace(/\\/g, '/'),
 		executionCheckpointPath: resolveExecutionCheckpointPath(workspaceRoot, story.id).replace(/\\/g, '/'),
@@ -1112,6 +1179,30 @@ function getPriorWorkPromptLines(workspaceRoot: string, story: UserStory): strin
 
 	const promptLines = summarizeRecalledTaskMemoriesForPrompt(matches, config.RECALLED_TASK_MEMORY_LIMIT);
 	log(`  Injecting ${matches.length} recalled task memories for story ${story.id}.`);
+	return promptLines;
+}
+
+function getSourceContextPromptLines(workspaceRoot: string, story: UserStory): string[] {
+	const index = getSourceContextIndex(workspaceRoot);
+	if (!index) {
+		log(`  Source context index missing for story ${story.id}; continuing without source context recall.`);
+		return [];
+	}
+
+	const memoryHints = recallRelatedTaskMemories(workspaceRoot, story, {
+		limit: Math.min(getConfig().RECALLED_TASK_MEMORY_LIMIT, 2),
+	}).map(match => match.memory);
+	const matches = recallRelevantSourceContext(index, story, {
+		limit: 4,
+		memoryHints,
+	});
+	if (matches.length === 0) {
+		log(`  No source context recall matches found for story ${story.id}; continuing without source context prompt lines.`);
+		return [];
+	}
+
+	const promptLines = summarizeRecalledSourceContextForPrompt(matches, 4);
+	log(`  Injecting ${matches.length} recalled source context matches for story ${story.id}.`);
 	return promptLines;
 }
 

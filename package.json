@@ -46,6 +46,10 @@
         "title": "RALPH: 刷新源码上下文索引"
       },
       {
+        "command": "ralph-runner.previewSourceContextRecall",
+        "title": "RALPH: 预览故事源上下文"
+      },
+      {
         "command": "ralph-runner.recordDesignContext",
         "title": "RALPH: 界面设计描述"
       },

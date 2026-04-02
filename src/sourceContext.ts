@@ -2,7 +2,12 @@ import * as fs from 'fs';
 import * as path from 'path';
 import { execSync } from 'child_process';
 import { scanWorkspaceForProjectConstraints } from './projectConstraints';
-import { SourceContextIndexArtifact } from './types';
+import {
+	SourceContextIndexArtifact,
+	SourceContextRecallMatch,
+	TaskMemoryArtifact,
+	UserStory,
+} from './types';
 import { ensureDirectoryExists, getRalphDir, getSourceContextIndexPath } from './workspacePaths';
 
 interface PackageJsonLike {
@@ -104,6 +109,58 @@ export function summarizeSourceContextIndexForPrompt(index: SourceContextIndexAr
 		...prefixLines('Type Definition Hints', index.typeDefinitionHints, 4),
 		...prefixLines('Hotspot Paths', index.hotspotPaths, 4),
 	];
+}
+
+export function recallRelevantSourceContext(
+	index: SourceContextIndexArtifact | null,
+	story: UserStory,
+	options?: {
+		limit?: number;
+		memoryHints?: TaskMemoryArtifact[];
+	},
+): SourceContextRecallMatch[] {
+	if (!index) {
+		return [];
+	}
+
+	const limit = options?.limit ?? 4;
+	const recallContext = buildSourceContextRecallContext(story, options?.memoryHints ?? []);
+	const candidates = buildSourceContextCandidates(index);
+	const matches: SourceContextRecallMatch[] = [];
+
+	for (const candidate of candidates) {
+		const match = scoreSourceContextCandidate(candidate, recallContext);
+		if (match.score <= 0) {
+			continue;
+		}
+		matches.push(match);
+	}
+
+	matches.sort((left, right) => {
+		if (right.score !== left.score) {
+			return right.score - left.score;
+		}
+		return left.label.localeCompare(right.label);
+	});
+
+	return matches.slice(0, limit);
+}
+
+export function summarizeRecalledSourceContextForPrompt(matches: SourceContextRecallMatch[], limit = 4): string[] {
+	if (matches.length === 0) {
+		return [];
+	}
+
+	const lines: string[] = [];
+	for (const match of matches.slice(0, limit)) {
+		lines.push(`${match.label} (score ${match.score})`);
+		lines.push(`Why it matters: ${match.reasons.slice(0, 3).join('; ')}`);
+		lines.push(`- Category: ${match.category}`);
+		lines.push(`- Value: ${match.value}`);
+		lines.push('');
+	}
+
+	return lines.slice(0, lines[lines.length - 1] === '' ? lines.length - 1 : lines.length);
 }
 
 export function normalizeSourceContextIndex(
@@ -316,4 +373,183 @@ function prefixLines(label: string, values: string[], limit: number): string[] {
 	}
 
 	return [label, ...values.slice(0, limit).map(value => `- ${value}`), ''];
+}
+
+interface SourceContextCandidate {
+	label: string;
+	category: SourceContextRecallMatch['category'];
+	value: string;
+	tokens: string[];
+	moduleTokens: string[];
+	fileTokens: string[];
+	weight: number;
+}
+
+interface SourceContextRecallContext {
+	keywords: string[];
+	moduleHints: string[];
+	fileHints: string[];
+}
+
+function buildSourceContextRecallContext(story: UserStory, memoryHints: TaskMemoryArtifact[]): SourceContextRecallContext {
+	const keywords = new Set(extractKeywords([
+		story.id,
+		story.title,
+		story.description,
+		...story.acceptanceCriteria,
+	]));
+	const moduleHints = new Set(extractPathLikeValues(story, ['moduleHints', 'changedModules', 'paths']));
+	const fileHints = new Set(extractPathLikeValues(story, ['fileHints', 'changedFiles', 'paths']));
+
+	for (const memory of memoryHints) {
+		for (const keyword of memory.searchKeywords) {
+			for (const token of extractKeywords([keyword])) {
+				keywords.add(token);
+			}
+		}
+		for (const moduleHint of memory.changedModules) {
+			moduleHints.add(moduleHint);
+		}
+		for (const fileHint of memory.changedFiles) {
+			fileHints.add(fileHint);
+		}
+	}
+
+	return {
+		keywords: Array.from(keywords),
+		moduleHints: Array.from(moduleHints).map(value => value.toLowerCase()),
+		fileHints: Array.from(fileHints).map(value => value.toLowerCase()),
+	};
+}
+
+function buildSourceContextCandidates(index: SourceContextIndexArtifact): SourceContextCandidate[] {
+	const candidates: SourceContextCandidate[] = [];
+	appendSourceContextCandidates(candidates, index.sourceDirectories, 'source-directory', 8);
+	appendSourceContextCandidates(candidates, index.testDirectories, 'test-directory', 6);
+	appendSourceContextCandidates(candidates, index.buildScripts, 'build-script', 5);
+	appendSourceContextCandidates(candidates, index.keyEntryFiles, 'entry-file', 10);
+	appendSourceContextCandidates(candidates, index.reusableModuleHints, 'module-hint', 9);
+	appendSourceContextCandidates(candidates, index.typeDefinitionHints, 'type-hint', 8);
+	appendSourceContextCandidates(candidates, index.hotspotPaths, 'hotspot', 7);
+	return candidates;
+}
+
+function appendSourceContextCandidates(
+	collector: SourceContextCandidate[],
+	values: string[],
+	category: SourceContextRecallMatch['category'],
+	weight: number,
+): void {
+	for (const value of values) {
+		const normalizedValue = value.trim();
+		if (normalizedValue.length === 0) {
+			continue;
+		}
+
+		collector.push({
+			label: normalizedValue,
+			category,
+			value: normalizedValue,
+			tokens: extractKeywords([normalizedValue]),
+			moduleTokens: extractPathTokens(normalizedValue),
+			fileTokens: extractFileTokens(normalizedValue),
+			weight,
+		});
+	}
+}
+
+function scoreSourceContextCandidate(candidate: SourceContextCandidate, context: SourceContextRecallContext): SourceContextRecallMatch {
+	let score = candidate.weight;
+	const reasons: string[] = [];
+	const keywordOverlap = intersect(context.keywords, candidate.tokens);
+	const moduleOverlap = intersect(context.moduleHints, candidate.moduleTokens);
+	const fileOverlap = intersect(context.fileHints, candidate.fileTokens);
+
+	if (keywordOverlap.length > 0) {
+		score += Math.min(30, keywordOverlap.length * 10);
+		reasons.push(`keyword overlap: ${keywordOverlap.slice(0, 4).join(', ')}`);
+	}
+
+	if (moduleOverlap.length > 0) {
+		score += Math.min(28, moduleOverlap.length * 14);
+		reasons.push(`module hint overlap: ${moduleOverlap.slice(0, 3).join(', ')}`);
+	}
+
+	if (fileOverlap.length > 0) {
+		score += Math.min(36, fileOverlap.length * 18);
+		reasons.push(`file hint overlap: ${fileOverlap.slice(0, 3).join(', ')}`);
+	}
+
+	if (candidate.category === 'entry-file') {
+		score += 4;
+		reasons.push('key entry file');
+	}
+
+	if (candidate.category === 'hotspot') {
+		score += 2;
+		reasons.push('recent hotspot');
+	}
+
+	return {
+		label: candidate.label,
+		category: candidate.category,
+		value: candidate.value,
+		score,
+		reasons,
+		keywordOverlap,
+		moduleOverlap,
+		fileOverlap,
+	};
+}
+
+function extractKeywords(values: string[]): string[] {
+	const keywords = new Set<string>();
+	for (const value of values) {
+		if (typeof value !== 'string') {
+			continue;
+		}
+
+		for (const token of value.toLowerCase().split(/[^a-z0-9_./#-]+/)) {
+			if (token.length >= 3) {
+				keywords.add(token);
+			}
+		}
+	}
+
+	return Array.from(keywords);
+}
+
+function extractPathLikeValues(source: UserStory, keys: string[]): string[] {
+	const values = new Set<string>();
+	for (const key of keys) {
+		const rawValue = source[key];
+		if (!Array.isArray(rawValue)) {
+			continue;
+		}
+
+		for (const item of rawValue) {
+			if (typeof item === 'string' && item.trim().length > 0) {
+				values.add(item.trim());
+			}
+		}
+	}
+
+	return Array.from(values);
+}
+
+function extractPathTokens(value: string): string[] {
+	return Array.from(new Set(value.toLowerCase().split(/[\\/]+/).filter(token => token.length >= 2)));
+}
+
+function extractFileTokens(value: string): string[] {
+	const normalized = value.toLowerCase();
+	const fileName = path.basename(normalized.split('#')[0]);
+	const baseName = fileName.replace(/\.[^.]+$/, '');
+	const tokens = [normalized, fileName, baseName].filter(token => token.length >= 2);
+	return Array.from(new Set(tokens));
+}
+
+function intersect(left: string[], right: string[]): string[] {
+	const rightSet = new Set(right);
+	return Array.from(new Set(left.filter(value => rightSet.has(value))));
 }
