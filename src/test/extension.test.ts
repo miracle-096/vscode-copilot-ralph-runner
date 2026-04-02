@@ -73,6 +73,12 @@ import {
 	validateExecutionCheckpoint,
 	writeExecutionCheckpoint,
 } from '../executionCheckpoint';
+import {
+	getSourceContextIndex,
+	refreshSourceContextIndex,
+	scanWorkspaceForSourceContextIndex,
+	summarizeSourceContextIndexForPrompt,
+} from '../sourceContext';
 import { parseTaskSignalStatus } from '../taskStatus';
 import { shouldAbortCopilotWait } from '../extension';
 // import * as myExtension from '../../extension';
@@ -1318,6 +1324,73 @@ suite('Extension Test Suite', () => {
 			);
 			const validation = validateExecutionCheckpoint(fallback, 'US-206', 'interrupted');
 			assert.strictEqual(validation.isValid, true);
+		} finally {
+			fs.rmSync(workspaceRoot, { recursive: true, force: true });
+		}
+	});
+
+	test('Source context index reuses project scan signals and persists a lightweight artifact', () => {
+		const workspaceRoot = fs.mkdtempSync(path.join(os.tmpdir(), 'ralph-source-context-'));
+		try {
+			fs.mkdirSync(path.join(workspaceRoot, 'src', 'test'), { recursive: true });
+			fs.writeFileSync(path.join(workspaceRoot, 'package.json'), JSON.stringify({
+				name: 'source-context-sample',
+				main: 'dist/extension.js',
+				scripts: {
+					compile: 'tsc --noEmit',
+					package: 'vsce package',
+					'vscode:prepublish': 'npm run package',
+					lint: 'eslint src',
+					test: 'vscode-test'
+				},
+			}, null, 2));
+			fs.writeFileSync(path.join(workspaceRoot, 'tsconfig.json'), JSON.stringify({ compilerOptions: { strict: true, rootDir: 'src' } }, null, 2));
+			fs.writeFileSync(path.join(workspaceRoot, 'eslint.config.mjs'), 'export default [];\n');
+			fs.writeFileSync(path.join(workspaceRoot, 'README.md'), '# Sample\n');
+			fs.writeFileSync(path.join(workspaceRoot, 'esbuild.js'), 'console.log("build");\n');
+			fs.writeFileSync(path.join(workspaceRoot, 'src', 'extension.ts'), 'export function activate() {}\n');
+			fs.writeFileSync(path.join(workspaceRoot, 'src', 'types.ts'), 'export interface SampleType { value: string; }\n');
+			fs.writeFileSync(path.join(workspaceRoot, 'src', 'taskMemory.ts'), 'export type TaskMemoryKind = "story";\n');
+
+			const scanned = scanWorkspaceForSourceContextIndex(workspaceRoot);
+			assert.ok(scanned.sourceDirectories.includes('src'));
+			assert.ok(scanned.testDirectories.includes('src/test'));
+			assert.ok(scanned.buildScripts.includes('npm run compile'));
+			assert.ok(scanned.keyEntryFiles.includes('src/extension.ts'));
+			assert.ok(scanned.reusableModuleHints.some(item => item.includes('src/types.ts')));
+			assert.ok(scanned.typeDefinitionHints.some(item => item.includes('src/types.ts#SampleType')));
+			assert.strictEqual(scanned.metadata?.scanSource, 'project-constraints-baseline');
+
+			refreshSourceContextIndex(workspaceRoot);
+			const persisted = getSourceContextIndex(workspaceRoot);
+			assert.ok(persisted);
+			assert.strictEqual(persisted?.workspaceRootName, path.basename(workspaceRoot));
+
+			const promptLines = summarizeSourceContextIndexForPrompt(persisted);
+			assert.ok(promptLines.includes('Source Directories'));
+			assert.ok(promptLines.includes('Key Entry Files'));
+		} finally {
+			fs.rmSync(workspaceRoot, { recursive: true, force: true });
+		}
+	});
+
+	test('Source context index degrades safely when optional files or git history are missing', () => {
+		const workspaceRoot = fs.mkdtempSync(path.join(os.tmpdir(), 'ralph-source-context-degraded-'));
+		try {
+			fs.mkdirSync(path.join(workspaceRoot, 'src'), { recursive: true });
+			fs.writeFileSync(path.join(workspaceRoot, 'package.json'), JSON.stringify({
+				name: 'degraded-source-context',
+				scripts: {
+					compile: 'tsc --noEmit'
+				},
+			}, null, 2));
+			fs.writeFileSync(path.join(workspaceRoot, 'src', 'extension.ts'), 'export function activate() {}\n');
+
+			const scanned = scanWorkspaceForSourceContextIndex(workspaceRoot);
+			assert.deepStrictEqual(scanned.testDirectories, []);
+			assert.ok(scanned.sourceDirectories.includes('src'));
+			assert.ok(scanned.buildScripts.includes('npm run compile'));
+			assert.ok(Array.isArray(scanned.hotspotPaths));
 		} finally {
 			fs.rmSync(workspaceRoot, { recursive: true, force: true });
 		}

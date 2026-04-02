@@ -70,6 +70,7 @@ RALPH creates and maintains these files during the workflow:
 | `.ralph/task-<id>-status` | Execution lock and completion signal for the active story |
 | `.ralph/story-status.json` | Durable per-story workflow status used by split and merge workflows |
 | `.ralph/project-constraints.generated.json` | Machine-generated summary of stack, scripts, architecture, allowed paths, and delivery checks |
+| `.ralph/source-context-index.json` | Lightweight repository source-context index for directories, scripts, entry files, types, and hotspots |
 | `.ralph/memory/US-xxx.json` | Structured task memory for one completed story |
 | `.ralph/memory-index.json` | Compact recall index built from all persisted task memories |
 | `.ralph/checkpoints/US-xxx.checkpoint.json` | Latest execution checkpoint for one completed, failed, or interrupted story |
@@ -108,7 +109,23 @@ It writes two artifacts:
 
 The generated defaults are intentionally generic. They summarize common engineering signals such as scripts, source roots, linting, test locations, reusable-module guidance, likely editable paths, and likely generated output directories. Repo-specific workflow rules should be added manually in the editable constraints file instead of being inferred automatically.
 
-### 3. Build layered design context for UI-sensitive work
+### 3. Refresh the source context index
+
+Run `RALPH: Refresh Source Context Index` to generate `.ralph/source-context-index.json`.
+
+The index stays intentionally lightweight and reuses the existing project-constraints scan as its baseline, then adds compact repo-graph hints for:
+
+- source directories
+- test directories
+- build and validation scripts
+- key entry files
+- reusable module hints
+- exported type-definition hints
+- recent Git hotspot paths when history is available
+
+During normal story execution, RALPH refreshes this index automatically before entering each next story. If the repository is large, Git history is unavailable, or some files are missing, the scan degrades gracefully and still writes a valid artifact.
+
+### 4. Build layered design context for UI-sensitive work
 
 The design workflow is now layered instead of story-only.
 
@@ -148,7 +165,7 @@ Attach or review design context when a story changes any of the following:
 - responsive behavior
 - a designer-approved acceptance target
 
-### 4. Lazy design synthesis during execution
+### 5. Lazy design synthesis during execution
 
 RALPH can now synthesize a bounded Design Context section at execution time for design-sensitive stories when no explicit story-level artifact exists.
 
@@ -162,7 +179,7 @@ The injected synthesis is intentionally compact. It focuses on execution-critica
 
 This means most UI stories no longer need a fully completed story-level design file before execution. Shared context plus story metadata is often enough.
 
-### 5. Execute or preview memory recall
+### 6. Execute or preview memory recall
 
 Run `RALPH: Recall Related Task Memory` to preview which prior stories are likely relevant to the current work. During normal execution, RALPH can also do this automatically and inject a bounded `Relevant Prior Work` section.
 
@@ -174,7 +191,7 @@ Recall scoring uses:
 - changed file overlap
 - recency
 
-### 6. Inject the recent checkpoint and reset chat state
+### 7. Inject the recent checkpoint and reset chat state
 
 Before each story is sent to Copilot, RALPH now starts a fresh Copilot Chat session instead of continuing an unbounded long-running thread.
 
@@ -186,7 +203,7 @@ The runner explicitly reads execution checkpoints from `.ralph/checkpoints/` and
 
 This keeps handoff state explicit: previous session context is discarded, and the checkpoint becomes the short authoritative reminder for plan, execution status, risks, prerequisites, and resume guidance.
 
-### 7. Start autonomous execution
+### 8. Start autonomous execution
 
 When you run `RALPH: Start`, RALPH composes a prompt in this fixed order:
 
@@ -200,7 +217,7 @@ When you run `RALPH: Start`, RALPH composes a prompt in this fixed order:
 
 The prompt remains bounded so optional context does not overwhelm the current task. The `Recent Checkpoint` section comes after older recalled task memory and before the current story so the latest explicit handoff can refine execution without overriding durable repo constraints or design guidance.
 
-### 8. Require task memory and execution checkpoint before completion
+### 9. Require task memory and execution checkpoint before completion
 
 RALPH no longer treats the completion signal as sufficient by itself. Before a story is finalized, Copilot must persist a structured task memory artifact to `.ralph/memory/US-xxx.json` with fields such as:
 
@@ -233,6 +250,7 @@ If Copilot fails to write a valid task memory or checkpoint artifact, or if an e
 | `RALPH: Generate PRD` | Generate a new `prd.json` from an existing file or prompt |
 | `RALPH: Append User Stories` | Ask Copilot to append new user stories into the existing `prd.json` |
 | `RALPH: Initialize Project Constraints` | Scan the workspace and generate project constraint artifacts |
+| `RALPH: Refresh Source Context Index` | Scan the workspace and refresh the lightweight source-context index |
 | `RALPH: UI Design Notes` | Single entry for UI design setup: match one story, import story visuals, or prepare reusable project/screen/module notes |
 | `RALPH: Open Settings` | Open extension settings |
 | `RALPH: Show Menu` | Open the status bar command menu |

@@ -42,6 +42,10 @@
         "title": "RALPH: 初始化项目约束"
       },
       {
+        "command": "ralph-runner.refreshSourceContextIndex",
+        "title": "RALPH: 刷新源码上下文索引"
+      },
+      {
         "command": "ralph-runner.recordDesignContext",
         "title": "RALPH: 界面设计描述"
       },

@@ -18,6 +18,7 @@ export const TASK_MEMORY_DIR = 'memory';
 export const TASK_MEMORY_INDEX_FILENAME = 'memory-index.json';
 export const EXECUTION_CHECKPOINT_DIR = 'checkpoints';
 export const EXECUTION_CHECKPOINT_FILE_SUFFIX = '.checkpoint.json';
+export const SOURCE_CONTEXT_INDEX_FILENAME = 'source-context-index.json';
 
 export function ensureDirectoryExists(dirPath: string): string {
 	if (!fs.existsSync(dirPath)) {
@@ -117,6 +118,10 @@ export function getEditableProjectConstraintsPath(workspaceRoot: string): string
 
 export function getGeneratedProjectConstraintsPath(workspaceRoot: string): string {
 	return path.join(getRalphDir(workspaceRoot), GENERATED_PROJECT_CONSTRAINTS_FILENAME);
+}
+
+export function getSourceContextIndexPath(workspaceRoot: string): string {
+	return path.join(getRalphDir(workspaceRoot), SOURCE_CONTEXT_INDEX_FILENAME);
 }
 
 export function ensurePrdDirectories(workspaceRoot: string): { prdDir: string; designContextDir: string; sharedDesignContextDir: string } {

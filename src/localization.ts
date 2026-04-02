@@ -76,6 +76,11 @@ export interface RalphLanguagePack {
 		additionalNotesPrompt: string;
 		started: string;
 	};
+	sourceContext: {
+		success: (filePath: string) => string;
+		openIndex: string;
+		failed: (message: string) => string;
+	};
 	chatSpec: {
 		participantDescription: string;
 		commandDescription: string;
@@ -378,6 +383,11 @@ const CHINESE_PACK: RalphLanguagePack = {
 		additionalNotesPrompt: '可选：输入这次必须体现的规范、禁区、交付标准或协作要求',
 		started: 'RALPH：Copilot 正在结合仓库扫描结果和你补充的规范，整理项目约束。',
 	},
+	sourceContext: {
+		success: filePath => `RALPH：源码上下文索引已刷新：${filePath}`,
+		openIndex: '打开索引',
+		failed: message => `RALPH：刷新源码上下文索引失败：${message}`,
+	},
 	chatSpec: {
 		participantDescription: '根据 RALPH 合并后的项目规范，整理最终需求描述，并自动转交给 Copilot Chat 执行。',
 		commandDescription: '按当前项目规范完善你的描述，产出最终版本后自动发送到 Copilot Chat。',
@@ -571,6 +581,7 @@ const CHINESE_PACK: RalphLanguagePack = {
 		placeholder: 'RALPH Runner：选择一个命令',
 		items: [
 			{ command: 'ralph-runner.initProjectConstraints', label: '$(symbol-key)  初始化项目约束', description: '扫描仓库并生成可编辑和机器可读的项目规则' },
+			{ command: 'ralph-runner.refreshSourceContextIndex', label: '$(repo)  刷新源码上下文索引', description: '扫描仓库并更新轻量 source context 索引工件' },
 			{ command: 'ralph-runner.recordDesignContext', label: '$(device-camera-video)  界面设计描述', description: '一个入口处理当前故事和批量复用，支持自动整理、单独匹配和批量匹配' },
 			{ command: 'ralph-runner.quickStart', label: '$(zap)  生成 PRD', description: '通过 Copilot 生成 prd.json' },
 			{ command: 'ralph-runner.appendUserStories', label: '$(diff-added)  追加用户故事', description: '通过 Copilot 基于现有 prd.json 追加新的用户故事' },
@@ -693,6 +704,11 @@ const ENGLISH_PACK: RalphLanguagePack = {
 		additionalNotesTitle: 'Initialize Project Constraints — Additional Notes',
 		additionalNotesPrompt: 'Optional: enter must-have rules, forbidden areas, delivery standards, or collaboration expectations',
 		started: 'RALPH: Copilot is consolidating project constraints from the repository scan plus your supplied rules.',
+	},
+	sourceContext: {
+		success: filePath => `RALPH: Source context index refreshed at ${filePath}`,
+		openIndex: 'Open Index',
+		failed: message => `RALPH: Failed to refresh the source context index: ${message}`,
 	},
 	chatSpec: {
 		participantDescription: 'Refine a request with the merged RALPH project constraints, then auto-send the final version to Copilot Chat.',
@@ -887,6 +903,7 @@ const ENGLISH_PACK: RalphLanguagePack = {
 		placeholder: 'RALPH Runner: choose a command',
 		items: [
 			{ command: 'ralph-runner.initProjectConstraints', label: '$(symbol-key)  Initialize Project Constraints', description: 'Scan the repository and generate editable and machine-readable project rules' },
+			{ command: 'ralph-runner.refreshSourceContextIndex', label: '$(repo)  Refresh Source Context Index', description: 'Scan the repository and update the lightweight source-context index artifact' },
 			{ command: 'ralph-runner.recordDesignContext', label: '$(device-camera-video)  UI Design Notes', description: 'One entry for story-only work and reusable batch matching, with simpler plain-language prompts' },
 			{ command: 'ralph-runner.quickStart', label: '$(zap)  Generate PRD', description: 'Use Copilot to generate prd.json' },
 			{ command: 'ralph-runner.appendUserStories', label: '$(diff-added)  Append User Stories', description: 'Use Copilot to append new user stories to the existing prd.json' },

@@ -108,6 +108,20 @@ export interface ExecutionCheckpointArtifact {
 	source?: 'copilot' | 'synthesized';
 }
 
+export interface SourceContextIndexArtifact {
+	version: number;
+	generatedAt: string;
+	workspaceRootName: string;
+	sourceDirectories: string[];
+	testDirectories: string[];
+	buildScripts: string[];
+	keyEntryFiles: string[];
+	reusableModuleHints: string[];
+	typeDefinitionHints: string[];
+	hotspotPaths: string[];
+	metadata?: Record<string, unknown>;
+}
+
 export interface TaskMemoryIndexEntry {
 	storyId: string;
 	title: string;

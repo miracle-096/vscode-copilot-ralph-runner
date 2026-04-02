@@ -57,6 +57,10 @@ import {
 	summarizeProjectConstraintsForPrompt,
 } from './projectConstraints';
 import {
+	refreshSourceContextIndex,
+	writeSourceContextIndex,
+} from './sourceContext';
+import {
 	DesignContextScope,
 	ExecutionCheckpointArtifact,
 	ExecutionCheckpointStatus,
@@ -85,6 +89,7 @@ import {
 	getRalphDir as resolveRalphDir,
 	getScreenDesignContextPath as resolveScreenDesignContextPath,
 	getStoryStatusRegistryPath as resolveStoryStatusRegistryPath,
+	getSourceContextIndexPath as resolveSourceContextIndexPath,
 	getTaskMemoryPath as resolveTaskMemoryPath,
 	getTaskStatusPath as resolveTaskStatusPath,
 } from './workspacePaths';
@@ -570,6 +575,7 @@ export function activate(context: vscode.ExtensionContext) {
 		vscode.commands.registerCommand('ralph-runner.status', () => showStatus()),
 		vscode.commands.registerCommand('ralph-runner.resetStep', () => resetStory()),
 		vscode.commands.registerCommand('ralph-runner.initProjectConstraints', () => initializeProjectConstraints()),
+		vscode.commands.registerCommand('ralph-runner.refreshSourceContextIndex', () => refreshSourceContextIndexCommand()),
 		vscode.commands.registerCommand('ralph-runner.recordDesignContext', () => recordDesignContext()),
 		vscode.commands.registerCommand('ralph-runner.generateDesignContextDraft', () => generateVisualDesignContextDraft()),
 		vscode.commands.registerCommand('ralph-runner.suggestStoryDesignContext', () => suggestStoryDesignContext()),
@@ -688,6 +694,7 @@ async function startRalph(): Promise<void> {
 		log(`Story ${nextStory.id}: ${nextStory.title}`);
 		log(`Description: ${nextStory.description}`);
 		log(`Priority: ${nextStory.priority}`);
+		refreshSourceContextIndexArtifact(workspaceRoot, `before ${nextStory.id}`);
 
 		const missingRequiredDesignContext = getMissingRequiredDesignContextReason(workspaceRoot, nextStory);
 		if (missingRequiredDesignContext) {
@@ -776,6 +783,52 @@ function stopRalph(): void {
 	log('RALPH Runner stopped by user.');
 	vscode.window.showInformationMessage(languagePack.runtime.stopped);
 	updateStatusBar('idle');
+}
+
+async function refreshSourceContextIndexCommand(): Promise<void> {
+	const languagePack = getLanguagePack();
+	const workspaceRoot = getWorkspaceRoot();
+	if (!workspaceRoot) {
+		vscode.window.showErrorMessage(languagePack.common.noWorkspaceFolder);
+		return;
+	}
+
+	const result = refreshSourceContextIndexArtifact(workspaceRoot, 'manual refresh');
+	if (!result.ok) {
+		vscode.window.showErrorMessage(languagePack.sourceContext.failed(result.message));
+		return;
+	}
+
+	const action = await vscode.window.showInformationMessage(
+		languagePack.sourceContext.success(result.filePath),
+		languagePack.sourceContext.openIndex,
+	);
+	if (action === languagePack.sourceContext.openIndex) {
+		const document = await vscode.workspace.openTextDocument(result.filePath);
+		await vscode.window.showTextDocument(document);
+	}
+}
+
+function refreshSourceContextIndexArtifact(
+	workspaceRoot: string,
+	reason: string,
+): { ok: true; filePath: string; } | { ok: false; message: string; } {
+	try {
+		const index = refreshSourceContextIndex(workspaceRoot);
+		const filePath = writeSourceContextIndex(workspaceRoot, index);
+		log(`  Source context index refreshed (${reason}): ${filePath.replace(/\\/g, '/')}`);
+		return {
+			ok: true,
+			filePath: resolveSourceContextIndexPath(workspaceRoot),
+		};
+	} catch (error: unknown) {
+		const message = error instanceof Error ? error.message : String(error);
+		log(`  WARNING: Failed to refresh source context index (${reason}): ${message}`);
+		return {
+			ok: false,
+			message,
+		};
+	}
 }
 
 function registerRalphChatParticipant(context: vscode.ExtensionContext): void {
