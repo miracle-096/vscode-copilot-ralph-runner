@@ -5,7 +5,9 @@ import {
 } from './types';
 import {
 	ensureExecutionCheckpointDirectory,
+	getExecutionCheckpointDirectoryPath,
 	getExecutionCheckpointPath,
+	EXECUTION_CHECKPOINT_FILE_SUFFIX,
 } from './workspacePaths';
 
 export interface ExecutionCheckpointValidationResult {
@@ -94,6 +96,79 @@ export function readExecutionCheckpoint(workspaceRoot: string, storyId: string):
 	} catch {
 		return null;
 	}
+}
+
+export function listValidExecutionCheckpoints(workspaceRoot: string): ExecutionCheckpointArtifact[] {
+	const checkpointDirectory = getExecutionCheckpointDirectoryPath(workspaceRoot);
+	if (!fs.existsSync(checkpointDirectory)) {
+		return [];
+	}
+
+	const checkpoints: ExecutionCheckpointArtifact[] = [];
+	for (const entryName of fs.readdirSync(checkpointDirectory)) {
+		if (!entryName.endsWith(EXECUTION_CHECKPOINT_FILE_SUFFIX)) {
+			continue;
+		}
+
+		const storyId = entryName.replace(/\.checkpoint\.json$/i, '');
+		const checkpoint = readExecutionCheckpoint(workspaceRoot, storyId);
+		if (!checkpoint) {
+			continue;
+		}
+
+		const validation = validateExecutionCheckpoint(checkpoint, storyId);
+		if (!validation.isValid) {
+			continue;
+		}
+
+		checkpoints.push(validation.artifact);
+	}
+
+	return checkpoints.sort(compareExecutionCheckpointsByRecency);
+}
+
+export function getRecentExecutionCheckpoint(
+	workspaceRoot: string,
+	options?: { preferredStoryId?: string },
+): ExecutionCheckpointArtifact | null {
+	const preferredStoryId = options?.preferredStoryId;
+	if (preferredStoryId) {
+		const preferredCheckpoint = readExecutionCheckpoint(workspaceRoot, preferredStoryId);
+		if (preferredCheckpoint) {
+			const validation = validateExecutionCheckpoint(preferredCheckpoint, preferredStoryId);
+			if (validation.isValid) {
+				return validation.artifact;
+			}
+		}
+	}
+
+	const checkpoints = listValidExecutionCheckpoints(workspaceRoot);
+	for (const checkpoint of checkpoints) {
+		if (checkpoint.storyId !== preferredStoryId) {
+			return checkpoint;
+		}
+	}
+
+	return null;
+}
+
+export function summarizeExecutionCheckpointForPrompt(checkpoint: ExecutionCheckpointArtifact | null): string[] {
+	if (!checkpoint) {
+		return [];
+	}
+
+	const lines = [
+		`${checkpoint.storyId} — ${checkpoint.title} [${checkpoint.status}]`,
+		`Stage Goal: ${checkpoint.stageGoal}`,
+		`Summary: ${checkpoint.summary}`,
+		`Resume Recommendation: ${checkpoint.resumeRecommendation}`,
+		...prefixLines('Key Decisions', checkpoint.keyDecisions, 2),
+		...prefixLines('Confirmed Constraints', checkpoint.confirmedConstraints, 2),
+		...prefixLines('Unresolved Risks', checkpoint.unresolvedRisks, 2),
+		...prefixLines('Next Story Prerequisites', checkpoint.nextStoryPrerequisites, 2),
+	];
+
+	return lines.slice(0, lines[lines.length - 1] === '' ? lines.length - 1 : lines.length);
 }
 
 export function validateExecutionCheckpoint(
@@ -187,4 +262,21 @@ function normalizeOptionalString(value: unknown): string | undefined {
 
 	const trimmed = value.trim();
 	return trimmed.length > 0 ? trimmed : undefined;
+}
+
+function prefixLines(label: string, values: string[], limit: number): string[] {
+	if (values.length === 0) {
+		return [];
+	}
+
+	return [label, ...values.slice(0, limit).map(value => `- ${value}`), ''];
+}
+
+function compareExecutionCheckpointsByRecency(left: ExecutionCheckpointArtifact, right: ExecutionCheckpointArtifact): number {
+	const updatedComparison = right.updatedAt.localeCompare(left.updatedAt);
+	if (updatedComparison !== 0) {
+		return updatedComparison;
+	}
+
+	return left.storyId.localeCompare(right.storyId);
 }

@@ -36,8 +36,11 @@ import {
 } from './taskMemory';
 import {
 	createSynthesizedExecutionCheckpoint,
+	getRecentExecutionCheckpoint,
 	hasExecutionCheckpointArtifact,
+	listValidExecutionCheckpoints,
 	readExecutionCheckpoint,
+	summarizeExecutionCheckpointForPrompt,
 	validateExecutionCheckpoint,
 	writeExecutionCheckpoint,
 } from './executionCheckpoint';
@@ -916,11 +919,15 @@ function buildCopilotPromptForStory(story: UserStory, workspaceRoot: string): st
 	const projectConstraintsLines = getProjectConstraintsPromptLines(workspaceRoot, story.id);
 	const designContextLines = getDesignContextPromptLines(workspaceRoot, story);
 	const priorWorkLines = getPriorWorkPromptLines(workspaceRoot, story);
+	const recentCheckpointLines = getRecentCheckpointPromptLines(workspaceRoot, story);
 	const additionalExecutionRules = [
 		'Greedily execute as many sub-tasks as possible in a single pass.',
 		'If something partially fails, keep all the parts that passed and do not revert them.',
 		'Do not ask questions — execute directly.',
 		'Make the actual code changes to the files in the workspace.',
+		'Follow an explicit plan -> execute -> checkpoint -> reset workflow for each story handoff.',
+		'Each story execution starts in a fresh Copilot Chat session; do not rely on implicit context from previous chats.',
+		'If a Recent Checkpoint section is present, treat it as the authoritative short handoff from the previous execution state.',
 		...getGitExecutionRules(workspaceRoot),
 	];
 
@@ -930,6 +937,7 @@ function buildCopilotPromptForStory(story: UserStory, workspaceRoot: string): st
 		projectConstraintsLines,
 		designContextLines,
 		priorWorkLines,
+		recentCheckpointLines,
 		taskMemoryPath: resolveTaskMemoryPath(workspaceRoot, story.id).replace(/\\/g, '/'),
 		executionCheckpointPath: resolveExecutionCheckpointPath(workspaceRoot, story.id).replace(/\\/g, '/'),
 		completionSignalPath: resolveTaskStatusPath(workspaceRoot, story.id).replace(/\\/g, '/'),
@@ -1054,6 +1062,29 @@ function getPriorWorkPromptLines(workspaceRoot: string, story: UserStory): strin
 	return promptLines;
 }
 
+function getRecentCheckpointPromptLines(workspaceRoot: string, story: UserStory): string[] {
+	const validCheckpointCount = listValidExecutionCheckpoints(workspaceRoot).length;
+	if (validCheckpointCount === 0) {
+		log(`  No execution checkpoints found for story ${story.id}; continuing with a fresh chat and no checkpoint handoff.`);
+		return [];
+	}
+
+	const checkpoint = getRecentExecutionCheckpoint(workspaceRoot, { preferredStoryId: story.id });
+	if (!checkpoint) {
+		log(`  Execution checkpoints exist, but none were valid for story ${story.id}; skipping checkpoint injection.`);
+		return [];
+	}
+
+	const promptLines = summarizeExecutionCheckpointForPrompt(checkpoint);
+	if (promptLines.length === 0) {
+		log(`  Recent checkpoint for story ${story.id} produced no prompt lines; skipping checkpoint injection.`);
+		return [];
+	}
+
+	log(`  Injecting recent checkpoint from ${checkpoint.storyId} (${checkpoint.status}) for story ${story.id}.`);
+	return promptLines;
+}
+
 function getMissingRequiredDesignContextReason(workspaceRoot: string, story: UserStory): string | null {
 	const config = getConfig();
 	if (!config.REQUIRE_DESIGN_CONTEXT_FOR_TAGGED_STORIES) {
@@ -1160,8 +1191,9 @@ async function openCopilotChatWithPrompt(prompt: string, copiedPromptMessage?: s
 }
 
 async function sendToCopilot(prompt: string, taskId: string, workspaceRoot: string): Promise<void> {
+	log('  Resetting Copilot Chat session before story execution...');
 	log('  Sending prompt to Copilot Chat...');
-	await openCopilotChatWithPrompt(prompt);
+	await openCopilotChatWithPrompt(prompt, undefined, { startNewChat: true });
 
 	// Poll the .ralph status file until Copilot writes "completed" to it
 	await waitForCopilotCompletion(taskId, workspaceRoot);

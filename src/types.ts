@@ -137,6 +137,7 @@ export interface StoryPromptContext {
 	projectConstraintsLines?: string[];
 	designContextLines?: string[];
 	priorWorkLines?: string[];
+	recentCheckpointLines?: string[];
 	taskMemoryPath: string;
 	executionCheckpointPath: string;
 	completionSignalPath: string;

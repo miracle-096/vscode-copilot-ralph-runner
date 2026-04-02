@@ -174,7 +174,19 @@ Recall scoring uses:
 - changed file overlap
 - recency
 
-### 6. Start autonomous execution
+### 6. Inject the recent checkpoint and reset chat state
+
+Before each story is sent to Copilot, RALPH now starts a fresh Copilot Chat session instead of continuing an unbounded long-running thread.
+
+The runner explicitly reads execution checkpoints from `.ralph/checkpoints/` and injects a compact `Recent Checkpoint` section when a valid checkpoint exists. Selection is predictable:
+
+- prefer the current story's own latest valid checkpoint when rerunning the same story
+- otherwise fall back to the most recently updated valid checkpoint from other stories
+- if no valid checkpoint exists, omit the section and continue with the existing execution path
+
+This keeps handoff state explicit: previous session context is discarded, and the checkpoint becomes the short authoritative reminder for plan, execution status, risks, prerequisites, and resume guidance.
+
+### 7. Start autonomous execution
 
 When you run `RALPH: Start`, RALPH composes a prompt in this fixed order:
 
@@ -182,12 +194,13 @@ When you run `RALPH: Start`, RALPH composes a prompt in this fixed order:
 2. Project constraints
 3. Design context
 4. Relevant prior work
-5. Current story
-6. Completion contract
+5. Recent checkpoint
+6. Current story
+7. Completion contract
 
-The prompt remains bounded so optional context does not overwhelm the current task.
+The prompt remains bounded so optional context does not overwhelm the current task. The `Recent Checkpoint` section comes after older recalled task memory and before the current story so the latest explicit handoff can refine execution without overriding durable repo constraints or design guidance.
 
-### 7. Require task memory and execution checkpoint before completion
+### 8. Require task memory and execution checkpoint before completion
 
 RALPH no longer treats the completion signal as sufficient by itself. Before a story is finalized, Copilot must persist a structured task memory artifact to `.ralph/memory/US-xxx.json` with fields such as:
 

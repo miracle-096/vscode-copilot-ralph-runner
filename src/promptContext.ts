@@ -3,6 +3,7 @@ import { PromptSection, StoryPromptContext } from './types';
 const MAX_PROJECT_CONSTRAINT_LINES = 12;
 const MAX_DESIGN_CONTEXT_LINES = 12;
 const MAX_PRIOR_WORK_LINES = 14;
+const MAX_RECENT_CHECKPOINT_LINES = 12;
 const MAX_ACCEPTANCE_CRITERIA = 8;
 const MAX_LINE_LENGTH = 220;
 
@@ -27,6 +28,7 @@ export function composeStoryExecutionPrompt(context: StoryPromptContext): string
 	const projectConstraintsLines = boundContextLines(context.projectConstraintsLines ?? [], MAX_PROJECT_CONSTRAINT_LINES);
 	const designContextLines = boundContextLines(context.designContextLines ?? [], MAX_DESIGN_CONTEXT_LINES);
 	const priorWorkLines = boundContextLines(context.priorWorkLines ?? [], MAX_PRIOR_WORK_LINES);
+	const recentCheckpointLines = boundContextLines(context.recentCheckpointLines ?? [], MAX_RECENT_CHECKPOINT_LINES);
 	const acceptanceCriteriaLines = context.story.acceptanceCriteria
 		.slice(0, MAX_ACCEPTANCE_CRITERIA)
 		.map((acceptanceCriteria, index) => `${index + 1}. ${truncateLine(acceptanceCriteria)}`);
@@ -60,6 +62,11 @@ export function composeStoryExecutionPrompt(context: StoryPromptContext): string
 		{
 			title: 'Relevant Prior Work:',
 			lines: priorWorkLines,
+			omitWhenEmpty: true,
+		},
+		{
+			title: 'Recent Checkpoint:',
+			lines: recentCheckpointLines,
 			omitWhenEmpty: true,
 		},
 		{

@@ -65,8 +65,11 @@ import {
 } from '../taskMemory';
 import {
 	createSynthesizedExecutionCheckpoint,
+	getRecentExecutionCheckpoint,
 	hasExecutionCheckpointArtifact,
+	listValidExecutionCheckpoints,
 	readExecutionCheckpoint,
+	summarizeExecutionCheckpointForPrompt,
 	validateExecutionCheckpoint,
 	writeExecutionCheckpoint,
 } from '../executionCheckpoint';
@@ -1100,6 +1103,7 @@ suite('Extension Test Suite', () => {
 			projectConstraintsLines: Array.from({ length: 15 }, (_, index) => `Project constraint ${index + 1}`),
 			designContextLines: ['Design note 1', 'Design note 2'],
 			priorWorkLines: Array.from({ length: 16 }, (_, index) => `Prior work ${index + 1}`),
+			recentCheckpointLines: Array.from({ length: 15 }, (_, index) => `Recent checkpoint ${index + 1}`),
 			taskMemoryPath: 'd:/workspace/vscode-copilot-ralph-runner/.ralph/memory/US-302.json',
 			executionCheckpointPath: 'd:/workspace/vscode-copilot-ralph-runner/.ralph/checkpoints/US-302.checkpoint.json',
 			completionSignalPath: 'd:/workspace/vscode-copilot-ralph-runner/.ralph/task-US-302-status',
@@ -1110,6 +1114,7 @@ suite('Extension Test Suite', () => {
 		const projectIndex = prompt.indexOf('Project Constraints:');
 		const designIndex = prompt.indexOf('Design Context:');
 		const priorWorkIndex = prompt.indexOf('Relevant Prior Work:');
+		const checkpointIndex = prompt.indexOf('Recent Checkpoint:');
 		const currentStoryIndex = prompt.indexOf('Current Story:');
 		const completionIndex = prompt.indexOf('Completion Contract:');
 
@@ -1117,7 +1122,8 @@ suite('Extension Test Suite', () => {
 		assert.ok(projectIndex > systemIndex);
 		assert.ok(designIndex > projectIndex);
 		assert.ok(priorWorkIndex > designIndex);
-		assert.ok(currentStoryIndex > priorWorkIndex);
+		assert.ok(checkpointIndex > priorWorkIndex);
+		assert.ok(currentStoryIndex > checkpointIndex);
 		assert.ok(completionIndex > currentStoryIndex);
 		assert.ok(prompt.includes('... 3 more lines omitted for brevity.'));
 		assert.ok(prompt.includes('... 2 more acceptance criteria omitted for brevity.'));
@@ -1144,6 +1150,7 @@ suite('Extension Test Suite', () => {
 		assert.strictEqual(prompt.includes('Project Constraints:'), false);
 		assert.strictEqual(prompt.includes('Design Context:'), false);
 		assert.strictEqual(prompt.includes('Relevant Prior Work:'), false);
+		assert.strictEqual(prompt.includes('Recent Checkpoint:'), false);
 	});
 
 	test('Task memory artifact can be written, read, and indexed per story', () => {
@@ -1316,6 +1323,65 @@ suite('Extension Test Suite', () => {
 		}
 	});
 
+	test('Recent checkpoint selection prefers the current story and otherwise falls back to the latest valid checkpoint', () => {
+		const workspaceRoot = fs.mkdtempSync(path.join(os.tmpdir(), 'ralph-recent-checkpoint-'));
+		try {
+			writeExecutionCheckpoint(workspaceRoot, 'US-600', {
+				title: 'Older checkpoint',
+				status: 'completed',
+				stageGoal: 'Older work',
+				summary: 'Older checkpoint summary.',
+				keyDecisions: ['Older checkpoint decision'],
+				confirmedConstraints: ['Older checkpoint constraint'],
+				unresolvedRisks: ['Older checkpoint risk'],
+				nextStoryPrerequisites: ['Older prerequisite'],
+				resumeRecommendation: 'Older resume recommendation.',
+				updatedAt: '2026-04-02T12:00:00.000Z',
+			}, 'completed');
+
+			writeExecutionCheckpoint(workspaceRoot, 'US-601', {
+				title: 'Latest other checkpoint',
+				status: 'failed',
+				stageGoal: 'Latest other work',
+				summary: 'Latest other checkpoint summary.',
+				keyDecisions: ['Latest other checkpoint decision'],
+				confirmedConstraints: ['Latest other checkpoint constraint'],
+				unresolvedRisks: ['Latest other checkpoint risk'],
+				nextStoryPrerequisites: ['Latest other prerequisite'],
+				resumeRecommendation: 'Latest other resume recommendation.',
+				updatedAt: '2026-04-02T12:10:00.000Z',
+			}, 'failed');
+
+			writeExecutionCheckpoint(workspaceRoot, 'US-602', {
+				title: 'Current story checkpoint',
+				status: 'interrupted',
+				stageGoal: 'Current story recovery',
+				summary: 'Current story checkpoint summary.',
+				keyDecisions: ['Current story checkpoint decision'],
+				confirmedConstraints: ['Current story checkpoint constraint'],
+				unresolvedRisks: ['Current story checkpoint risk'],
+				nextStoryPrerequisites: ['Current story prerequisite'],
+				resumeRecommendation: 'Current story resume recommendation.',
+				updatedAt: '2026-04-02T12:05:00.000Z',
+			}, 'interrupted');
+
+			const validCheckpoints = listValidExecutionCheckpoints(workspaceRoot);
+			assert.deepStrictEqual(validCheckpoints.map(checkpoint => checkpoint.storyId), ['US-601', 'US-602', 'US-600']);
+
+			const preferredCheckpoint = getRecentExecutionCheckpoint(workspaceRoot, { preferredStoryId: 'US-602' });
+			assert.strictEqual(preferredCheckpoint?.storyId, 'US-602');
+
+			const fallbackCheckpoint = getRecentExecutionCheckpoint(workspaceRoot, { preferredStoryId: 'US-999' });
+			assert.strictEqual(fallbackCheckpoint?.storyId, 'US-601');
+
+			const promptLines = summarizeExecutionCheckpointForPrompt(fallbackCheckpoint);
+			assert.ok(promptLines.some(line => line.includes('US-601')));
+			assert.ok(promptLines.some(line => line.includes('Resume Recommendation: Latest other resume recommendation.')));
+		} finally {
+			fs.rmSync(workspaceRoot, { recursive: true, force: true });
+		}
+	});
+
 	test('Task memory recall ranks related memories and summarizes bounded prior work', () => {
 		const workspaceRoot = fs.mkdtempSync(path.join(os.tmpdir(), 'ralph-task-memory-recall-'));
 		try {
@@ -1449,6 +1515,19 @@ suite('Extension Test Suite', () => {
 				fileHints: ['src/promptContext.ts'],
 			}, { limit: 2 });
 			const priorWorkLines = summarizeRecalledTaskMemoriesForPrompt(matches, 2);
+			writeExecutionCheckpoint(workspaceRoot, 'US-500', {
+				title: 'Dashboard checkpoint',
+				status: 'completed',
+				stageGoal: 'Carry the latest dashboard layout decisions into the next story',
+				summary: 'Checkpoint for the latest dashboard work.',
+				keyDecisions: ['Preserve SummaryCard reuse during follow-up work'],
+				confirmedConstraints: ['Keep prompts bounded'],
+				unresolvedRisks: ['Validate card stacking below tablet breakpoint'],
+				nextStoryPrerequisites: ['Review the saved dashboard checkpoint before continuing'],
+				resumeRecommendation: 'Start from the checkpoint instead of reusing prior chat context.',
+				updatedAt: '2026-04-02T12:20:00.000Z',
+			}, 'completed');
+			const recentCheckpointLines = summarizeExecutionCheckpointForPrompt(getRecentExecutionCheckpoint(workspaceRoot, { preferredStoryId: 'US-501' }));
 			const prompt = composeStoryExecutionPrompt({
 				story: {
 					id: 'US-501',
@@ -1461,6 +1540,7 @@ suite('Extension Test Suite', () => {
 				projectConstraintsLines,
 				designContextLines,
 				priorWorkLines,
+				recentCheckpointLines,
 				taskMemoryPath: path.join(workspaceRoot, '.ralph', 'memory', 'US-501.json'),
 				executionCheckpointPath: path.join(workspaceRoot, '.ralph', 'checkpoints', 'US-501.checkpoint.json'),
 				completionSignalPath: path.join(workspaceRoot, '.ralph', 'task-US-501-status'),
@@ -1469,12 +1549,15 @@ suite('Extension Test Suite', () => {
 			assert.ok(prompt.includes('Project Constraints:'));
 			assert.ok(prompt.includes('Design Context:'));
 			assert.ok(prompt.includes('Relevant Prior Work:'));
+			assert.ok(prompt.includes('Recent Checkpoint:'));
 			assert.ok(prompt.includes('Technology Summary'));
 			assert.ok(prompt.includes('Build Commands'));
 			assert.ok(prompt.includes('Component Reuse Requirements:'));
 			assert.ok(prompt.includes('US-490 — Dashboard cards refactor'));
+			assert.ok(prompt.includes('US-500 — Dashboard checkpoint [completed]'));
 			assert.ok(prompt.indexOf('Project Constraints:') < prompt.indexOf('Design Context:'));
 			assert.ok(prompt.indexOf('Design Context:') < prompt.indexOf('Relevant Prior Work:'));
+			assert.ok(prompt.indexOf('Relevant Prior Work:') < prompt.indexOf('Recent Checkpoint:'));
 		} finally {
 			fs.rmSync(workspaceRoot, { recursive: true, force: true });
 		}
