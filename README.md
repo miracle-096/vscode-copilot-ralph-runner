@@ -15,7 +15,8 @@ RALPH also contributes a Copilot Chat participant command for constraint-aware p
 - Stores layered design context in `.prd/design-context/` with reusable shared artifacts and story-level overrides
 - Requires a structured task memory artifact before accepting completion
 - Recalls relevant prior task memories and injects them into later prompts
-- Builds prompts in a fixed order: system rules, project constraints, design context, prior work, current story, completion contract
+- Evaluates optional machine-executable policy gates before a story starts and before it can be accepted as complete
+- Builds prompts in a fixed order: system rules, project constraints, design context, prior work, source context, checkpoint, machine policy gates, current story, completion contract
 
 ## Requirements
 
@@ -71,6 +72,7 @@ RALPH creates and maintains these files during the workflow:
 | `.ralph/story-status.json` | Durable per-story workflow status used by split and merge workflows |
 | `.ralph/project-constraints.generated.json` | Machine-generated summary of stack, scripts, architecture, allowed paths, and delivery checks |
 | `.ralph/source-context-index.json` | Lightweight repository source-context index for directories, scripts, entry files, types, and hotspots |
+| `.ralph/policy-baselines/US-xxx.policy-baseline.json` | Per-story baseline of pre-existing workspace changes so completion gates only inspect new edits from the current story |
 | `.ralph/memory/US-xxx.json` | Structured task memory for one completed story |
 | `.ralph/memory-index.json` | Compact recall index built from all persisted task memories |
 | `.ralph/checkpoints/US-xxx.checkpoint.json` | Latest execution checkpoint for one completed, failed, or interrupted story |
@@ -218,7 +220,31 @@ The runner explicitly reads execution checkpoints from `.ralph/checkpoints/` and
 
 This keeps handoff state explicit: previous session context is discarded, and the checkpoint becomes the short authoritative reminder for plan, execution status, risks, prerequisites, and resume guidance.
 
-### 9. Start autonomous execution
+### 9. Enforce machine policy gates
+
+RALPH can now promote selected project constraints from advisory prompt text into machine-executable policy gates.
+
+The `ralph-runner.policyGates` setting defines a first-pass schema with two phases:
+
+- `preflightRules` run before a story starts
+- `completionRules` run after Copilot signals completion but before RALPH accepts the story as done
+
+The initial rule types are:
+
+- `required-artifact` for prerequisites such as project constraints, design context, task memory, or execution checkpoints
+- `restricted-paths` for high-risk locations such as `prd.json`, `.prd/**`, and generated output directories
+- `require-command` for enforcing at least one relevant test or build command before completion
+
+When policy gates are enabled, RALPH also captures a per-story workspace-change baseline in `.ralph/policy-baselines/`. Completion gates compare the current working tree against that baseline so unrelated pre-existing edits do not accidentally fail the current story.
+
+Existing compatibility switches still fit naturally into the unified policy system:
+
+- `ralph-runner.requireProjectConstraintsBeforeRun`
+- `ralph-runner.requireDesignContextForTaggedStories`
+
+If `ralph-runner.policyGates.enabled` stays `false`, the current legacy behavior is preserved.
+
+### 10. Start autonomous execution
 
 When you run `RALPH: Start`, RALPH composes a prompt in this fixed order:
 
@@ -228,12 +254,13 @@ When you run `RALPH: Start`, RALPH composes a prompt in this fixed order:
 4. Relevant prior work
 5. Relevant source context
 6. Recent checkpoint
-7. Current story
-8. Completion contract
+7. Machine policy gates
+8. Current story
+9. Completion contract
 
-The prompt remains bounded so optional context does not overwhelm the current task. The `Relevant Source Context` section comes after older recalled task memory and before the `Recent Checkpoint` handoff so repository structure hints can complement prior implementation history without overriding durable repo constraints or design guidance.
+The prompt remains bounded so optional context does not overwhelm the current task. The `Relevant Source Context` section comes after older recalled task memory and before the `Recent Checkpoint` handoff so repository structure hints can complement prior implementation history without overriding durable repo constraints or design guidance. When machine policy gates are enabled, the prompt also exposes the active preflight and completion rules explicitly so Copilot can see the hard blockers before writing the completion signal.
 
-### 10. Require task memory and execution checkpoint before completion
+### 11. Require task memory and execution checkpoint before completion
 
 RALPH no longer treats the completion signal as sufficient by itself. Before a story is finalized, Copilot must persist a structured task memory artifact to `.ralph/memory/US-xxx.json` with fields such as:
 
@@ -300,6 +327,8 @@ The command reads the merged constraints from `.ralph/project-constraints.genera
 | `ralph-runner.requireProjectConstraintsBeforeRun` | `false` | Block execution until project constraints are initialized |
 | `ralph-runner.autoInjectDesignContext` | `true` | Inject resolved or synthesized design context when available |
 | `ralph-runner.requireDesignContextForTaggedStories` | `false` | Block design-sensitive stories only when no explicit or synthesized design coverage is available |
+| `ralph-runner.policyGates` | schema object | Enable machine-executable preflight and completion gates for artifacts, dangerous paths, and relevant test/build commands |
+| `ralph-runner.policyGateCommandTimeoutMs` | `600000` | Timeout for policy-gated test/build command execution |
 | `ralph-runner.autoRecallTaskMemory` | `true` | Recall and inject related prior task memory automatically |
 | `ralph-runner.autoCommitGit` | `true` | When a Git repository is detected, ask Copilot to commit within the same implementation story instead of relying on separate Git commit stories |
 | `ralph-runner.recalledTaskMemoryLimit` | `3` | Maximum memory entries to inject or preview |

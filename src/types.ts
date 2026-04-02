@@ -164,10 +164,86 @@ export interface StoryPromptContext {
 	priorWorkLines?: string[];
 	sourceContextLines?: string[];
 	recentCheckpointLines?: string[];
+	policyLines?: string[];
 	taskMemoryPath: string;
 	executionCheckpointPath: string;
 	completionSignalPath: string;
 	additionalExecutionRules?: string[];
+}
+
+export type PolicyGatePhase = 'preflight' | 'completion';
+
+export type PolicyArtifactKind =
+	| 'project-constraints'
+	| 'design-context'
+	| 'task-memory'
+	| 'execution-checkpoint'
+	| 'source-context-index';
+
+export type PolicyRuleCondition = 'always' | 'story.designSensitive';
+
+export type PolicyCommandSource = 'projectConstraints.testCommands' | 'projectConstraints.buildCommands';
+
+export interface PolicyRuleBase {
+	id: string;
+	title: string;
+	phase: PolicyGatePhase;
+	type: 'required-artifact' | 'restricted-paths' | 'require-command';
+	enabled?: boolean;
+	when?: PolicyRuleCondition;
+}
+
+export interface RequiredArtifactPolicyRule extends PolicyRuleBase {
+	type: 'required-artifact';
+	artifact: PolicyArtifactKind;
+}
+
+export interface RestrictedPathsPolicyRule extends PolicyRuleBase {
+	type: 'restricted-paths';
+	paths: string[];
+}
+
+export interface RequireCommandPolicyRule extends PolicyRuleBase {
+	type: 'require-command';
+	commands?: string[];
+	commandsFrom?: PolicyCommandSource;
+	minSuccesses?: number;
+	filePatterns?: string[];
+}
+
+export type PolicyRule = RequiredArtifactPolicyRule | RestrictedPathsPolicyRule | RequireCommandPolicyRule;
+
+export interface RalphPolicyConfig {
+	enabled: boolean;
+	preflightRules: PolicyRule[];
+	completionRules: PolicyRule[];
+}
+
+export interface PolicyViolation {
+	ruleId: string;
+	title: string;
+	phase: PolicyGatePhase;
+	summary: string;
+	details: string[];
+	nextSteps: string[];
+}
+
+export interface PolicyCommandExecutionResult {
+	command: string;
+	success: boolean;
+	output: string;
+}
+
+export interface PolicyEvaluationResult {
+	ok: boolean;
+	violations: PolicyViolation[];
+	executedCommands: PolicyCommandExecutionResult[];
+}
+
+export interface PolicyBaselineArtifact {
+	storyId: string;
+	capturedAt: string;
+	changedFiles: string[];
 }
 
 export function normalizeStoryExecutionStatus(value: unknown): StoryExecutionStatus | undefined {

@@ -28,6 +28,8 @@ export interface RalphLanguagePack {
 		clearAndRetry: string;
 		cancel: string;
 		projectConstraintsRequiredBeforeRun: string;
+		policyBlockedBeforeStory: (storyId: string) => string;
+		policyBlockedAfterStory: (storyId: string) => string;
 		allStoriesCompleted: string;
 		pausedAfterLoops: (count: number) => string;
 		notRunning: string;
@@ -343,6 +345,8 @@ const CHINESE_PACK: RalphLanguagePack = {
 		clearAndRetry: '清理并重试',
 		cancel: '取消',
 		projectConstraintsRequiredBeforeRun: 'RALPH：执行前必须先初始化项目约束，请先运行“RALPH: 初始化项目约束”。',
+		policyBlockedBeforeStory: storyId => `RALPH：机器策略门禁阻止了 ${storyId} 开始执行，请先根据输出面板中的缺失项完成处理。`,
+		policyBlockedAfterStory: storyId => `RALPH：机器策略门禁阻止了 ${storyId} 完成，请先处理输出面板中列出的缺失项或失败命令。`,
 		allStoriesCompleted: 'RALPH：所有用户故事均已完成！',
 		pausedAfterLoops: count => `RALPH 已在执行 ${count} 个步骤后暂停。运行“RALPH: 开始执行”即可继续。`,
 		notRunning: 'RALPH 当前未运行。',
@@ -674,6 +678,8 @@ const ENGLISH_PACK: RalphLanguagePack = {
 		clearAndRetry: 'Clear and Retry',
 		cancel: 'Cancel',
 		projectConstraintsRequiredBeforeRun: 'RALPH: Project constraints are required before execution. Run "RALPH: Initialize Project Constraints" first.',
+		policyBlockedBeforeStory: storyId => `RALPH: Machine policy gates blocked ${storyId} before execution. Review the missing items in the output panel first.`,
+		policyBlockedAfterStory: storyId => `RALPH: Machine policy gates blocked completion for ${storyId}. Fix the listed missing artifacts or failing commands first.`,
 		allStoriesCompleted: 'RALPH: All user stories completed!',
 		pausedAfterLoops: count => `RALPH paused after ${count} steps. Run "RALPH: Start" to resume.`,
 		notRunning: 'RALPH is not running.',

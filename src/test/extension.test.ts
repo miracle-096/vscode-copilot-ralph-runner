@@ -81,6 +81,11 @@ import {
 	summarizeRecalledSourceContextForPrompt,
 	summarizeSourceContextIndexForPrompt,
 } from '../sourceContext';
+import {
+	buildEffectivePolicyConfig,
+	deriveStoryChangedFiles,
+	evaluatePolicyGates,
+} from '../policyGate';
 import { parseTaskSignalStatus } from '../taskStatus';
 import { shouldAbortCopilotWait } from '../extension';
 // import * as myExtension from '../../extension';
@@ -98,6 +103,9 @@ suite('Extension Test Suite', () => {
 		const packageJson = JSON.parse(fs.readFileSync(packageJsonPath, 'utf8')) as {
 			contributes?: {
 				commands?: Array<{ command: string; title: string; }>;
+				configuration?: {
+					properties?: Record<string, unknown>;
+				};
 				chatParticipants?: Array<{
 					id: string;
 					name: string;
@@ -119,6 +127,7 @@ suite('Extension Test Suite', () => {
 		assert.strictEqual(designCommands[0]?.title, 'RALPH: 界面设计描述');
 		assert.strictEqual(contributedCommands.some(command => command.command === 'ralph-runner.recallTaskMemory'), false);
 		assert.strictEqual(contributedCommands.some(command => command.command === 'ralph-runner.previewSourceContextRecall'), true);
+		assert.strictEqual(typeof packageJson.contributes?.configuration?.properties?.['ralph-runner.policyGates'], 'object');
 
 		const contributedParticipants = packageJson.contributes?.chatParticipants ?? [];
 		assert.strictEqual(contributedParticipants.some(participant => participant.id === 'recent-graduates.ralph-runner'), true);
@@ -1141,6 +1150,28 @@ suite('Extension Test Suite', () => {
 		assert.ok(prompt.includes('... 2 more acceptance criteria omitted for brevity.'));
 	});
 
+	test('Story prompt can include machine policy gates between checkpoint and current story', () => {
+		const prompt = composeStoryExecutionPrompt({
+			story: {
+				id: 'US-302A',
+				title: 'Policy-guarded prompt',
+				description: 'Show machine policy requirements in a bounded prompt section.',
+				acceptanceCriteria: ['Prompt shows policy gates'],
+				priority: 2,
+			},
+			workspaceRoot: 'd:/workspace/vscode-copilot-ralph-runner',
+			recentCheckpointLines: ['Checkpoint line'],
+			policyLines: ['Completion Gates', '- Block dangerous path edits'],
+			taskMemoryPath: 'd:/workspace/vscode-copilot-ralph-runner/.ralph/memory/US-302A.json',
+			executionCheckpointPath: 'd:/workspace/vscode-copilot-ralph-runner/.ralph/checkpoints/US-302A.checkpoint.json',
+			completionSignalPath: 'd:/workspace/vscode-copilot-ralph-runner/.ralph/task-US-302A-status',
+		});
+
+		assert.ok(prompt.includes('Machine Policy Gates:'));
+		assert.ok(prompt.indexOf('Recent Checkpoint:') < prompt.indexOf('Machine Policy Gates:'));
+		assert.ok(prompt.indexOf('Machine Policy Gates:') < prompt.indexOf('Current Story:'));
+	});
+
 	test('Prompt composition omits empty optional sections safely', () => {
 		const prompt = composeStoryExecutionPrompt({
 			story: {
@@ -1164,6 +1195,116 @@ suite('Extension Test Suite', () => {
 		assert.strictEqual(prompt.includes('Relevant Prior Work:'), false);
 		assert.strictEqual(prompt.includes('Relevant Source Context:'), false);
 		assert.strictEqual(prompt.includes('Recent Checkpoint:'), false);
+		assert.strictEqual(prompt.includes('Machine Policy Gates:'), false);
+	});
+
+	test('Policy config merges legacy compatibility rules without overriding the schema', () => {
+		const config = buildEffectivePolicyConfig({ enabled: true }, {
+			requireProjectConstraintsBeforeRun: true,
+			requireDesignContextForTaggedStories: true,
+		});
+
+		assert.strictEqual(config.enabled, true);
+		assert.ok(config.preflightRules.some(rule => rule.id === 'legacy-require-project-constraints'));
+		assert.ok(config.preflightRules.some(rule => rule.id === 'legacy-require-design-context'));
+		assert.ok(config.completionRules.some(rule => rule.id === 'protect-dangerous-paths'));
+	});
+
+	test('Completion policy blocks dangerous story-specific path edits after baseline diffing', () => {
+		const config = buildEffectivePolicyConfig({
+			enabled: true,
+			completionRules: [{
+				id: 'protect-dangerous-paths',
+				title: 'Block dangerous path edits',
+				phase: 'completion',
+				type: 'restricted-paths',
+				paths: ['prd.json', 'dist/**'],
+				enabled: true,
+				when: 'always',
+			}],
+		}, {
+			requireProjectConstraintsBeforeRun: false,
+			requireDesignContextForTaggedStories: false,
+		});
+		const changedFiles = deriveStoryChangedFiles(['README.md', 'prd.json', 'src/extension.ts'], {
+			storyId: 'US-401',
+			capturedAt: new Date().toISOString(),
+			changedFiles: ['README.md'],
+		});
+
+		const result = evaluatePolicyGates(config, {
+			workspaceRoot: 'd:/workspace/vscode-copilot-ralph-runner',
+			story: {
+				id: 'US-401',
+				title: 'Protect critical paths',
+				description: 'Do not allow dangerous path edits.',
+				acceptanceCriteria: ['Blocked paths are rejected'],
+				priority: 1,
+			},
+			phase: 'completion',
+			changedFiles,
+			projectConstraints: null,
+			isDesignSensitiveStory: false,
+			hasArtifact: () => true,
+		});
+
+		assert.deepStrictEqual(changedFiles, ['prd.json', 'src/extension.ts']);
+		assert.strictEqual(result.ok, false);
+		assert.ok(result.violations[0].details.some(detail => detail.includes('prd.json')));
+	});
+
+	test('Completion policy can require at least one relevant test command to pass', () => {
+		const config = buildEffectivePolicyConfig({
+			enabled: true,
+			completionRules: [{
+				id: 'require-relevant-tests',
+				title: 'Require at least one relevant test command',
+				phase: 'completion',
+				type: 'require-command',
+				commandsFrom: 'projectConstraints.testCommands',
+				minSuccesses: 1,
+				filePatterns: ['src/**'],
+				enabled: true,
+				when: 'always',
+			}],
+		}, {
+			requireProjectConstraintsBeforeRun: false,
+			requireDesignContextForTaggedStories: false,
+		});
+
+		const result = evaluatePolicyGates(config, {
+			workspaceRoot: 'd:/workspace/vscode-copilot-ralph-runner',
+			story: {
+				id: 'US-402',
+				title: 'Run policy tests',
+				description: 'Require test coverage before completion.',
+				acceptanceCriteria: ['A test command passes'],
+				priority: 1,
+			},
+			phase: 'completion',
+			changedFiles: ['src/extension.ts'],
+			projectConstraints: {
+				version: 1,
+				generatedAt: new Date().toISOString(),
+				technologySummary: [],
+				buildCommands: [],
+				testCommands: ['npm test'],
+				lintCommands: [],
+				styleRules: [],
+				gitRules: [],
+				architectureRules: [],
+				allowedPaths: [],
+				forbiddenPaths: [],
+				reuseHints: [],
+				deliveryChecklist: [],
+			},
+			isDesignSensitiveStory: false,
+			hasArtifact: () => true,
+			commandRunner: command => ({ command, success: command === 'npm test', output: 'ok' }),
+		});
+
+		assert.strictEqual(result.ok, true);
+		assert.deepStrictEqual(result.executedCommands.map(command => command.command), ['npm test']);
 	});
 
 	test('Task memory artifact can be written, read, and indexed per story', () => {

@@ -64,9 +64,20 @@ import {
 	writeSourceContextIndex,
 } from './sourceContext';
 import {
+	buildEffectivePolicyConfig,
+	clearPolicyBaseline,
+	deriveStoryChangedFiles,
+	evaluatePolicyGates,
+	readPolicyBaseline,
+	summarizePolicyConfigForPrompt,
+	summarizePolicyViolations,
+	writePolicyBaseline,
+} from './policyGate';
+import {
 	DesignContextScope,
 	ExecutionCheckpointArtifact,
 	ExecutionCheckpointStatus,
+	GeneratedProjectConstraints,
 	PrdFile,
 	STORY_STATUSES,
 	StoryExecutionStatus,
@@ -127,6 +138,8 @@ function getConfig() {
 		RECALLED_TASK_MEMORY_LIMIT: cfg.get<number>('recalledTaskMemoryLimit', 3),
 		REQUIRE_PROJECT_CONSTRAINTS_BEFORE_RUN: cfg.get<boolean>('requireProjectConstraintsBeforeRun', false),
 		REQUIRE_DESIGN_CONTEXT_FOR_TAGGED_STORIES: cfg.get<boolean>('requireDesignContextForTaggedStories', false),
+		POLICY_GATES: cfg.get<unknown>('policyGates', undefined),
+		POLICY_GATE_COMMAND_TIMEOUT_MS: cfg.get<number>('policyGateCommandTimeoutMs', 600000),
 		LANGUAGE: normalizeRalphLanguage(cfg.get<string>('language', 'Chinese')),
 	};
 }
@@ -647,7 +660,7 @@ async function startRalph(): Promise<void> {
 	}
 
 	const config = getConfig();
-	if (config.REQUIRE_PROJECT_CONSTRAINTS_BEFORE_RUN && !hasProjectConstraintsArtifacts(workspaceRoot)) {
+	if (!getEffectivePolicyConfig().enabled && config.REQUIRE_PROJECT_CONSTRAINTS_BEFORE_RUN && !hasProjectConstraintsArtifacts(workspaceRoot)) {
 		vscode.window.showWarningMessage(languagePack.runtime.projectConstraintsRequiredBeforeRun);
 		log('Startup aborted — project constraints are required but have not been initialized yet.');
 		return;
@@ -700,6 +713,29 @@ async function startRalph(): Promise<void> {
 		log(`Priority: ${nextStory.priority}`);
 		refreshSourceContextIndexArtifact(workspaceRoot, `before ${nextStory.id}`);
 
+		const effectivePolicyConfig = getEffectivePolicyConfig();
+		if (effectivePolicyConfig.enabled) {
+			const preflightPolicyResult = evaluatePolicyGates(effectivePolicyConfig, {
+				workspaceRoot,
+				story: nextStory,
+				phase: 'preflight',
+				projectConstraints: getMergedProjectConstraintsSafe(workspaceRoot),
+				isDesignSensitiveStory: isDesignSensitiveStory(nextStory),
+				hasExecutionTimeDesignFallback: synthesizeExecutionDesignContextPromptLines(nextStory, null).length > 0,
+				hasArtifact: artifact => hasPolicyArtifact(workspaceRoot, nextStory, artifact),
+				commandTimeoutMs: config.POLICY_GATE_COMMAND_TIMEOUT_MS,
+				artifactPaths: getPolicyArtifactPaths(workspaceRoot, nextStory),
+			});
+			if (!preflightPolicyResult.ok) {
+				log(`  Policy gates blocked ${nextStory.id} before execution.`);
+				for (const line of summarizePolicyViolations(preflightPolicyResult)) {
+					log(`  ${line}`);
+				}
+				vscode.window.showWarningMessage(languagePack.runtime.policyBlockedBeforeStory(nextStory.id));
+				break;
+			}
+		}
+
 		const missingRequiredDesignContext = getMissingRequiredDesignContextReason(workspaceRoot, nextStory);
 		if (missingRequiredDesignContext) {
 			log(`  ${missingRequiredDesignContext}`);
@@ -709,6 +745,8 @@ async function startRalph(): Promise<void> {
 
 		// Guard: ensure no other task is inprogress before queuing this one.
 		await ensureNoActiveTask(workspaceRoot);
+		const baselinePath = writePolicyBaseline(workspaceRoot, nextStory.id, detectChangedFilesForWorkspace(workspaceRoot));
+		log(`  Policy baseline captured for ${nextStory.id}: ${baselinePath.replace(/\\/g, '/')}`);
 
 		// ── Persist "inprogress" state to .ralph/task-<id>-status ───────────
 		RalphStateManager.setInProgress(workspaceRoot, nextStory.id);
@@ -758,6 +796,8 @@ async function startRalph(): Promise<void> {
 
 			// Write failure to progress.txt (prd.json is never modified)
 			writeProgressEntry(workspaceRoot, nextStory.id, 'failed', `${errMsg}; checkpoint persisted (${failedCheckpoint.source})`);
+		} finally {
+			clearPolicyBaseline(workspaceRoot, nextStory.id);
 		}
 
 		loopsExecuted++;
@@ -1023,6 +1063,10 @@ async function executeStory(story: UserStory, workspaceRoot: string): Promise<{
 		status: 'completed',
 		taskMemory: taskMemoryResult.artifact,
 	});
+	const completionPolicyResult = evaluateCompletionPolicyGates(workspaceRoot, story);
+	if (!completionPolicyResult.ok) {
+		throw new Error(`Policy gates blocked completion for ${story.id}`);
+	}
 	log(`  Task memory ready for ${story.id}: ${taskMemoryResult.filePath} (${taskMemoryResult.source})`);
 	log(`  Execution checkpoint ready for ${story.id}: ${checkpointResult.filePath} (${checkpointResult.source})`);
 	return {
@@ -1039,6 +1083,7 @@ function buildCopilotPromptForStory(story: UserStory, workspaceRoot: string): st
 	const priorWorkLines = getPriorWorkPromptLines(workspaceRoot, story);
 	const sourceContextLines = getSourceContextPromptLines(workspaceRoot, story);
 	const recentCheckpointLines = getRecentCheckpointPromptLines(workspaceRoot, story);
+	const policyLines = getPolicyPromptLines();
 	const additionalExecutionRules = [
 		'Greedily execute as many sub-tasks as possible in a single pass.',
 		'If something partially fails, keep all the parts that passed and do not revert them.',
@@ -1058,6 +1103,7 @@ function buildCopilotPromptForStory(story: UserStory, workspaceRoot: string): st
 		priorWorkLines,
 		sourceContextLines,
 		recentCheckpointLines,
+		policyLines,
 		taskMemoryPath: resolveTaskMemoryPath(workspaceRoot, story.id).replace(/\\/g, '/'),
 		executionCheckpointPath: resolveExecutionCheckpointPath(workspaceRoot, story.id).replace(/\\/g, '/'),
 		completionSignalPath: resolveTaskStatusPath(workspaceRoot, story.id).replace(/\\/g, '/'),
@@ -1229,8 +1275,19 @@ function getRecentCheckpointPromptLines(workspaceRoot: string, story: UserStory)
 	return promptLines;
 }
 
+function getPolicyPromptLines(): string[] {
+	const promptLines = summarizePolicyConfigForPrompt(getEffectivePolicyConfig());
+	if (promptLines.length > 0) {
+		log(`  Injecting ${promptLines.length} machine policy prompt lines.`);
+	}
+	return promptLines;
+}
+
 function getMissingRequiredDesignContextReason(workspaceRoot: string, story: UserStory): string | null {
 	const config = getConfig();
+	if (getEffectivePolicyConfig().enabled) {
+		return null;
+	}
 	if (!config.REQUIRE_DESIGN_CONTEXT_FOR_TAGGED_STORIES) {
 		return null;
 	}
@@ -1595,7 +1652,7 @@ function createCheckpointFallbackStory(storyId: string): UserStory {
 	};
 }
 
-function detectChangedFilesForTaskMemory(workspaceRoot: string, storyId: string): string[] {
+function detectChangedFilesForWorkspace(workspaceRoot: string): string[] {
 	try {
 		const output = execSync('git status --short --untracked-files=all', {
 			cwd: workspaceRoot,
@@ -1609,16 +1666,114 @@ function detectChangedFilesForTaskMemory(workspaceRoot: string, storyId: string)
 			.filter((line: string) => line.length > 0)
 			.map((line: string) => line.slice(3).split(' -> ').pop() ?? '')
 			.map((filePath: string) => filePath.replace(/\\/g, '/'))
-			.filter((filePath: string) => filePath.length > 0 && !filePath.startsWith('.prd/') && filePath !== 'prd.json');
+			.filter((filePath: string) => filePath.length > 0 && !filePath.startsWith('.ralph/'));
 
 		if (changedFiles.length > 0) {
 			return Array.from(new Set(changedFiles));
 		}
 	} catch {
-		log(`  WARNING: Unable to inspect git status for fallback task memory on ${storyId}.`);
+		log('  WARNING: Unable to inspect git status for workspace change detection.');
 	}
 
 	return ['(unable to determine changed files automatically)'];
+}
+
+function getStoryChangedFiles(workspaceRoot: string, storyId: string): string[] {
+	const currentChangedFiles = detectChangedFilesForWorkspace(workspaceRoot);
+	const baseline = readPolicyBaseline(workspaceRoot, storyId);
+	if (baseline) {
+		return deriveStoryChangedFiles(currentChangedFiles, baseline)
+			.filter(filePath => !filePath.startsWith('.ralph/'));
+	}
+
+	return currentChangedFiles.filter(filePath => !filePath.startsWith('.ralph/'));
+}
+
+function detectChangedFilesForTaskMemory(workspaceRoot: string, storyId: string): string[] {
+	const storyChangedFiles = getStoryChangedFiles(workspaceRoot, storyId)
+		.filter(filePath => !filePath.startsWith('.prd/') && filePath !== 'prd.json');
+	if (storyChangedFiles.length > 0) {
+		return storyChangedFiles;
+	}
+
+	log(`  WARNING: Unable to derive story-specific changed files for fallback task memory on ${storyId}.`);
+	return ['(unable to determine changed files automatically)'];
+}
+
+function getEffectivePolicyConfig() {
+	const config = getConfig();
+	return buildEffectivePolicyConfig(config.POLICY_GATES, {
+		requireProjectConstraintsBeforeRun: config.REQUIRE_PROJECT_CONSTRAINTS_BEFORE_RUN,
+		requireDesignContextForTaggedStories: config.REQUIRE_DESIGN_CONTEXT_FOR_TAGGED_STORIES,
+	});
+}
+
+function getMergedProjectConstraintsSafe(workspaceRoot: string): GeneratedProjectConstraints | null {
+	if (!hasProjectConstraintsArtifacts(workspaceRoot)) {
+		return null;
+	}
+
+	try {
+		return loadMergedProjectConstraints(workspaceRoot);
+	} catch {
+		return null;
+	}
+}
+
+function hasPolicyArtifact(workspaceRoot: string, story: UserStory, artifact: 'project-constraints' | 'design-context' | 'task-memory' | 'execution-checkpoint' | 'source-context-index'): boolean {
+	if (artifact === 'project-constraints') {
+		return hasProjectConstraintsArtifacts(workspaceRoot);
+	}
+	if (artifact === 'design-context') {
+		return hasAnyDesignContextForStory(workspaceRoot, story);
+	}
+	if (artifact === 'task-memory') {
+		return hasTaskMemoryArtifact(workspaceRoot, story.id);
+	}
+	if (artifact === 'execution-checkpoint') {
+		return hasExecutionCheckpointArtifact(workspaceRoot, story.id);
+	}
+	return Boolean(getSourceContextIndex(workspaceRoot));
+}
+
+function getPolicyArtifactPaths(workspaceRoot: string, story: UserStory) {
+	return {
+		'project-constraints': `${resolveGeneratedProjectConstraintsPath(workspaceRoot).replace(/\\/g, '/')} and ${resolveEditableProjectConstraintsPath(workspaceRoot).replace(/\\/g, '/')}`,
+		'design-context': resolveDesignContextPath(workspaceRoot, story.id).replace(/\\/g, '/'),
+		'task-memory': resolveTaskMemoryPath(workspaceRoot, story.id).replace(/\\/g, '/'),
+		'execution-checkpoint': resolveExecutionCheckpointPath(workspaceRoot, story.id).replace(/\\/g, '/'),
+		'source-context-index': resolveSourceContextIndexPath(workspaceRoot).replace(/\\/g, '/'),
+	};
+}
+
+function evaluateCompletionPolicyGates(workspaceRoot: string, story: UserStory) {
+	const policyConfig = getEffectivePolicyConfig();
+	if (!policyConfig.enabled) {
+		return { ok: true, violations: [], executedCommands: [] };
+	}
+
+	const result = evaluatePolicyGates(policyConfig, {
+		workspaceRoot,
+		story,
+		phase: 'completion',
+		changedFiles: getStoryChangedFiles(workspaceRoot, story.id),
+		projectConstraints: getMergedProjectConstraintsSafe(workspaceRoot),
+		isDesignSensitiveStory: isDesignSensitiveStory(story),
+		hasExecutionTimeDesignFallback: synthesizeExecutionDesignContextPromptLines(story, null).length > 0,
+		hasArtifact: artifact => hasPolicyArtifact(workspaceRoot, story, artifact),
+		commandTimeoutMs: getConfig().POLICY_GATE_COMMAND_TIMEOUT_MS,
+		artifactPaths: getPolicyArtifactPaths(workspaceRoot, story),
+	});
+
+	if (!result.ok) {
+		log(`  Policy gates blocked completion for ${story.id}.`);
+		for (const line of summarizePolicyViolations(result)) {
+			log(`  ${line}`);
+		}
+		vscode.window.showWarningMessage(getLanguagePack().runtime.policyBlockedAfterStory(story.id));
+	}
+
+	return result;
 }
 
 function deriveChangedModules(changedFiles: string[]): string[] {

@@ -31,6 +31,7 @@ export function composeStoryExecutionPrompt(context: StoryPromptContext): string
 	const priorWorkLines = boundContextLines(context.priorWorkLines ?? [], MAX_PRIOR_WORK_LINES);
 	const sourceContextLines = boundContextLines(context.sourceContextLines ?? [], MAX_SOURCE_CONTEXT_LINES);
 	const recentCheckpointLines = boundContextLines(context.recentCheckpointLines ?? [], MAX_RECENT_CHECKPOINT_LINES);
+	const policyLines = boundContextLines(context.policyLines ?? [], MAX_SOURCE_CONTEXT_LINES);
 	const acceptanceCriteriaLines = context.story.acceptanceCriteria
 		.slice(0, MAX_ACCEPTANCE_CRITERIA)
 		.map((acceptanceCriteria, index) => `${index + 1}. ${truncateLine(acceptanceCriteria)}`);
@@ -74,6 +75,11 @@ export function composeStoryExecutionPrompt(context: StoryPromptContext): string
 		{
 			title: 'Recent Checkpoint:',
 			lines: recentCheckpointLines,
+			omitWhenEmpty: true,
+		},
+		{
+			title: 'Machine Policy Gates:',
+			lines: policyLines,
 			omitWhenEmpty: true,
 		},
 		{

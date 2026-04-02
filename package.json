@@ -155,6 +155,94 @@
           "default": false,
           "description": "启用后，被识别为设计敏感的故事必须先补充界面设计描述才可执行。"
         },
+        "ralph-runner.policyGates": {
+          "type": "object",
+          "default": {
+            "enabled": false,
+            "preflightRules": [
+              {
+                "id": "require-project-constraints",
+                "title": "Require project constraints before execution",
+                "phase": "preflight",
+                "type": "required-artifact",
+                "artifact": "project-constraints",
+                "enabled": false,
+                "when": "always"
+              },
+              {
+                "id": "require-design-context",
+                "title": "Require design context for design-sensitive stories",
+                "phase": "preflight",
+                "type": "required-artifact",
+                "artifact": "design-context",
+                "enabled": false,
+                "when": "story.designSensitive"
+              }
+            ],
+            "completionRules": [
+              {
+                "id": "protect-dangerous-paths",
+                "title": "Block dangerous path edits",
+                "phase": "completion",
+                "type": "restricted-paths",
+                "paths": [
+                  "prd.json",
+                  ".prd/**",
+                  "dist/**",
+                  "build/**",
+                  "out/**",
+                  "coverage/**",
+                  "node_modules/**",
+                  ".next/**",
+                  ".nuxt/**"
+                ],
+                "enabled": true,
+                "when": "always"
+              },
+              {
+                "id": "require-relevant-tests",
+                "title": "Require at least one relevant test command",
+                "phase": "completion",
+                "type": "require-command",
+                "commandsFrom": "projectConstraints.testCommands",
+                "minSuccesses": 1,
+                "filePatterns": [
+                  "src/**",
+                  "package.json",
+                  "eslint.config.*",
+                  "tsconfig.json"
+                ],
+                "enabled": false,
+                "when": "always"
+              },
+              {
+                "id": "require-task-memory-artifact",
+                "title": "Require task memory artifact before completion",
+                "phase": "completion",
+                "type": "required-artifact",
+                "artifact": "task-memory",
+                "enabled": true,
+                "when": "always"
+              },
+              {
+                "id": "require-execution-checkpoint-artifact",
+                "title": "Require execution checkpoint before completion",
+                "phase": "completion",
+                "type": "required-artifact",
+                "artifact": "execution-checkpoint",
+                "enabled": true,
+                "when": "always"
+              }
+            ]
+          },
+          "markdownDescription": "机器可执行的策略门禁配置。开启后，RALPH 会在故事开始前和完成前执行 schema 中定义的 preflight/completion 规则；同时会自然并入 `requireProjectConstraintsBeforeRun` 与 `requireDesignContextForTaggedStories` 兼容规则。"
+        },
+        "ralph-runner.policyGateCommandTimeoutMs": {
+          "type": "number",
+          "default": 600000,
+          "minimum": 1000,
+          "description": "机器策略门禁执行测试或构建命令时的超时时间，单位为毫秒。"
+        },
         "ralph-runner.language": {
           "type": "string",
           "default": "Chinese",
