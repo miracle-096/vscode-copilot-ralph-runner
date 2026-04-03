@@ -224,6 +224,17 @@
                 "when": "always"
               },
               {
+                "id": "require-fresh-knowledge",
+                "title": "Require fresh knowledge coverage before completion",
+                "phase": "completion",
+                "type": "knowledge-check",
+                "failOnSeverities": [
+                  "warning"
+                ],
+                "enabled": false,
+                "when": "always"
+              },
+              {
                 "id": "require-task-memory-artifact",
                 "title": "Require task memory before completion",
                 "phase": "completion",
@@ -252,7 +263,7 @@
               }
             ]
           },
-          "markdownDescription": "自动检查规则。开启后，RALPH 会在故事开始前和完成前按这里的 preflight/completion 规则检查。旧的 `requireProjectConstraintsBeforeRun` 和 `requireDesignContextForTaggedStories` 仍会兼容读取，但不再单独展示。"
+          "markdownDescription": "自动检查规则。开启后，RALPH 会在故事开始前和完成前按这里的 preflight/completion 规则检查；其中 `knowledge-check` 可把 Agent Map 新鲜度、模块知识缺口和运行说明覆盖缺口作为 advisory 或 gate 使用。旧的 `requireProjectConstraintsBeforeRun` 和 `requireDesignContextForTaggedStories` 仍会兼容读取，但不再单独展示。"
         },
         "ralph-runner.policyGateCommandTimeoutMs": {
           "type": "number",

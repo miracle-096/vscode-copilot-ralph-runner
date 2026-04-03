@@ -1,0 +1,67 @@
+{
+  "storyId": "US-040",
+  "title": "在 ralph run 与 /ralph-spec 中加入文档新鲜度与缺失知识检测",
+  "status": "completed",
+  "auditableStatus": "completed",
+  "summary": "交付了基于 Agent Map 的知识新鲜度与缺失知识检测，并把结果接入 ralph run、/ralph-spec 与 policy gate。",
+  "changedFiles": [
+    "README.md",
+    "package.json",
+    "src/extension.ts",
+    "src/knowledgeCheck.ts",
+    "src/policyGate.ts",
+    "src/projectConstraints.ts",
+    "src/promptContext.ts",
+    "src/test/extension.test.ts",
+    "src/types.ts"
+  ],
+  "changedModules": [
+    "extension",
+    "knowledgeCheck",
+    "policyGate",
+    "projectConstraints",
+    "promptContext",
+    "types"
+  ],
+  "tests": [
+    {
+      "command": "npm run compile",
+      "success": true,
+      "outputSummary": "TypeScript、ESLint 与 esbuild 均通过。"
+    },
+    {
+      "command": "npm run compile-tests",
+      "success": true,
+      "outputSummary": "测试代码单独编译通过。"
+    },
+    {
+      "command": "npm test",
+      "success": true,
+      "outputSummary": "VS Code 扩展测试 62 项全部通过。"
+    }
+  ],
+  "riskLevel": "medium",
+  "riskReasons": [
+    "知识检查目前仍是启发式推断，不是完整语义分析。",
+    "如果 README 或 runbook 文本风格变化很大，missing-runbook-coverage 的命中率可能需要后续继续调优。"
+  ],
+  "releaseNotes": [
+    "ralph run 现在会在执行提示里自动附带知识目录过期、模块知识缺失和运行说明覆盖缺口提醒。",
+    "/ralph-spec 现在会把知识检查提醒合并到最终提示词，便于智能体显式补齐缺口。",
+    "policyGates 新增 knowledge-check 规则，可把 warning 级知识问题升级为完成前 gate。"
+  ],
+  "rollbackHints": [
+    "回滚时需要一起撤销 src/knowledgeCheck.ts、extension/policyGate/promptContext/projectConstraints/types 的接线改动，以及 package.json 默认规则与 README 文档。",
+    "优先使用本故事的单个 Git 提交作为回滚单位，不要只回退其中一部分接线。"
+  ],
+  "followUps": [
+    "可以增加独立命令，直接展示当前工作区的知识检查报告。",
+    "可以进一步把 runbook 覆盖检查接到更强的结构化 README/文档索引上。"
+  ],
+  "recommendFeatureFlag": false,
+  "evidenceGaps": [],
+  "approvalState": "notRequired",
+  "approvalHistory": [],
+  "generatedAt": "2026-04-03T08:57:30.000Z",
+  "source": "copilot"
+}

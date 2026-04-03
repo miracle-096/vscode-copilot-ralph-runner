@@ -7,6 +7,11 @@ import * as path from 'path';
 // as well as import your extension to test it
 import * as vscode from 'vscode';
 import { generateAgentMapArtifacts } from '../agentMap';
+import {
+	createEmptyKnowledgeCheckReport,
+	evaluateKnowledgeCoverage,
+	summarizeKnowledgeCheckForPrompt,
+} from '../knowledgeCheck';
 import { composeStoryExecutionPrompt } from '../promptContext';
 import {
 	buildProjectConstraintChatAdvicePrompt,
@@ -150,6 +155,7 @@ suite('Extension Test Suite', () => {
 		const policyGateDefault = packageJson.contributes?.configuration?.properties?.['ralph-runner.policyGates'] as {
 			default?: { completionRules?: Array<{ id?: string; }>; };
 		};
+		assert.strictEqual(policyGateDefault.default?.completionRules?.some(rule => rule.id === 'require-fresh-knowledge'), true);
 		assert.strictEqual(policyGateDefault.default?.completionRules?.some(rule => rule.id === 'require-story-evidence-artifact'), true);
 
 		const contributedParticipants = packageJson.contributes?.chatParticipants ?? [];
@@ -466,6 +472,22 @@ suite('Extension Test Suite', () => {
 		assert.ok(prompt.includes('Do not stop at giving advice only.'));
 		assert.ok(prompt.includes('1. Final request for the LLM'));
 		assert.ok(prompt.includes('Provide a complete, polished request inside a fenced code block.'));
+	});
+
+	test('Project constraint chat advice prompt can attach knowledge freshness reminders', () => {
+		const prompt = buildProjectConstraintChatAdvicePrompt({
+			workspaceRoot: 'd:/workspace/vscode-copilot-ralph-runner',
+			language: 'Chinese',
+			userRequest: '请帮我完善 ralph run 的执行说明。',
+			generatedPath: 'd:/workspace/vscode-copilot-ralph-runner/.ralph/project-constraints.generated.json',
+			editablePath: 'd:/workspace/vscode-copilot-ralph-runner/.github/ralph/project-constraints.md',
+			knowledgeReminderLines: ['- [stale-documentation] README may lag behind the current run flow.'],
+			constraints: null,
+		});
+
+		assert.ok(prompt.includes('Knowledge freshness and coverage reminders:'));
+		assert.ok(prompt.includes('[stale-documentation] README may lag behind the current run flow.'));
+		assert.ok(prompt.includes('Carry the applicable reminders into the final request'));
 	});
 
 	test('Project constraint chat response extraction prefers the final request code block', () => {
@@ -1207,6 +1229,7 @@ suite('Extension Test Suite', () => {
 			designContextLines: ['Design note 1', 'Design note 2'],
 			priorWorkLines: Array.from({ length: 16 }, (_, index) => `Prior work ${index + 1}`),
 			sourceContextLines: Array.from({ length: 15 }, (_, index) => `Source context ${index + 1}`),
+			knowledgeLines: Array.from({ length: 16 }, (_, index) => `Knowledge check ${index + 1}`),
 			recentCheckpointLines: Array.from({ length: 15 }, (_, index) => `Recent checkpoint ${index + 1}`),
 			taskMemoryPath: 'd:/workspace/vscode-copilot-ralph-runner/.ralph/memory/US-302.json',
 			executionCheckpointPath: 'd:/workspace/vscode-copilot-ralph-runner/.ralph/checkpoints/US-302.checkpoint.json',
@@ -1220,6 +1243,7 @@ suite('Extension Test Suite', () => {
 		const designIndex = prompt.indexOf('Design Context:');
 		const priorWorkIndex = prompt.indexOf('Relevant Prior Work:');
 		const sourceContextIndex = prompt.indexOf('Relevant Source Context:');
+		const knowledgeIndex = prompt.indexOf('Knowledge Freshness Checks:');
 		const checkpointIndex = prompt.indexOf('Recent Checkpoint:');
 		const currentStoryIndex = prompt.indexOf('Current Story:');
 		const completionIndex = prompt.indexOf('Completion Contract:');
@@ -1229,7 +1253,8 @@ suite('Extension Test Suite', () => {
 		assert.ok(designIndex > projectIndex);
 		assert.ok(priorWorkIndex > designIndex);
 		assert.ok(sourceContextIndex > priorWorkIndex);
-		assert.ok(checkpointIndex > sourceContextIndex);
+		assert.ok(knowledgeIndex > sourceContextIndex);
+		assert.ok(checkpointIndex > knowledgeIndex);
 		assert.ok(currentStoryIndex > checkpointIndex);
 		assert.ok(completionIndex > currentStoryIndex);
 		assert.ok(prompt.includes('... 3 more lines omitted for brevity.'));
@@ -1257,6 +1282,30 @@ suite('Extension Test Suite', () => {
 		assert.ok(prompt.includes('Machine Policy Gates:'));
 		assert.ok(prompt.indexOf('Recent Checkpoint:') < prompt.indexOf('Machine Policy Gates:'));
 		assert.ok(prompt.indexOf('Machine Policy Gates:') < prompt.indexOf('Current Story:'));
+	});
+
+	test('Story prompt can include knowledge freshness checks before checkpoint and policy gates', () => {
+		const prompt = composeStoryExecutionPrompt({
+			story: {
+				id: 'US-302B',
+				title: 'Knowledge-aware prompt',
+				description: 'Show missing knowledge in the execution context.',
+				acceptanceCriteria: ['Prompt shows knowledge freshness issues'],
+				priority: 2,
+			},
+			workspaceRoot: 'd:/workspace/vscode-copilot-ralph-runner',
+			knowledgeLines: ['- [missing-module-knowledge] extension.ts has weak coverage.'],
+			recentCheckpointLines: ['Checkpoint line'],
+			policyLines: ['Completion Gates', '- Block dangerous path edits'],
+			taskMemoryPath: 'd:/workspace/vscode-copilot-ralph-runner/.ralph/memory/US-302B.json',
+			executionCheckpointPath: 'd:/workspace/vscode-copilot-ralph-runner/.ralph/checkpoints/US-302B.checkpoint.json',
+			evidencePath: 'd:/workspace/vscode-copilot-ralph-runner/.ralph/evidence/US-302B.evidence.json',
+			completionSignalPath: 'd:/workspace/vscode-copilot-ralph-runner/.ralph/task-US-302B-status',
+		});
+
+		assert.ok(prompt.includes('Knowledge Freshness Checks:'));
+		assert.ok(prompt.indexOf('Knowledge Freshness Checks:') < prompt.indexOf('Recent Checkpoint:'));
+		assert.ok(prompt.indexOf('Recent Checkpoint:') < prompt.indexOf('Machine Policy Gates:'));
 	});
 
 	test('Prompt composition omits empty optional sections safely', () => {
@@ -1393,6 +1442,96 @@ suite('Extension Test Suite', () => {
 
 		assert.strictEqual(result.ok, true);
 		assert.deepStrictEqual(result.executedCommands.map(command => command.command), ['npm test']);
+	});
+
+	test('Knowledge checks distinguish stale docs, missing module knowledge, and runbook gaps', () => {
+		const workspaceRoot = fs.mkdtempSync(path.join(os.tmpdir(), 'ralph-knowledge-check-'));
+		try {
+			fs.mkdirSync(path.join(workspaceRoot, 'src'), { recursive: true });
+			fs.writeFileSync(path.join(workspaceRoot, 'package.json'), JSON.stringify({
+				name: 'knowledge-check-sample',
+				main: './dist/extension.js',
+				packageManager: 'npm@10.0.0',
+				scripts: { compile: 'tsc --noEmit' },
+			}, null, 2));
+			fs.writeFileSync(path.join(workspaceRoot, 'prd.json'), JSON.stringify({
+				project: 'Knowledge Check Sample',
+				branchName: 'feature/knowledge-check',
+				description: 'Sample workspace',
+				userStories: [],
+			}, null, 2));
+			fs.writeFileSync(path.join(workspaceRoot, 'README.md'), '# Sample\n\nGeneral notes only.\n');
+			fs.writeFileSync(path.join(workspaceRoot, 'src', 'extension.ts'), 'export const flow = true;\n');
+			fs.writeFileSync(path.join(workspaceRoot, 'src', 'agentMap.ts'), 'export const weakCoverage = true;\n');
+
+			const generated = generateAgentMapArtifacts(workspaceRoot);
+			fs.writeFileSync(path.join(workspaceRoot, 'src', 'customKnowledge.ts'), 'export const uncovered = true;\n');
+			const staleFuture = new Date(Date.now() + 30_000);
+			fs.utimesSync(path.join(workspaceRoot, 'src', 'customKnowledge.ts'), staleFuture, staleFuture);
+
+			const report = evaluateKnowledgeCoverage(workspaceRoot, {
+				scope: 'run-completion',
+				promptText: 'Update /ralph-spec and Agent Map guidance, plus the ralph run workflow.',
+				changedFiles: ['src/customKnowledge.ts'],
+			});
+
+			assert.ok(generated.overview.moduleMap.some(moduleEntry => moduleEntry.id === 'agentMap'));
+			assert.ok(report.issues.some(issue => issue.type === 'stale-documentation'));
+			assert.ok(report.issues.some(issue => issue.type === 'missing-module-knowledge'));
+			assert.ok(report.issues.some(issue => issue.type === 'missing-runbook-coverage'));
+			assert.ok(summarizeKnowledgeCheckForPrompt(report).some(line => line.includes('stale-documentation')));
+		} finally {
+			fs.rmSync(workspaceRoot, { recursive: true, force: true });
+		}
+	});
+
+	test('Knowledge-check policy rule can block completion on warning findings', () => {
+		const config = buildEffectivePolicyConfig({
+			enabled: true,
+			completionRules: [{
+				id: 'require-fresh-knowledge',
+				title: 'Require fresh knowledge coverage before completion',
+				phase: 'completion',
+				type: 'knowledge-check',
+				failOnSeverities: ['warning'],
+				enabled: true,
+				when: 'always',
+			}],
+		}, {
+			requireProjectConstraintsBeforeRun: false,
+			requireDesignContextForTaggedStories: false,
+		});
+
+		const result = evaluatePolicyGates(config, {
+			workspaceRoot: 'd:/workspace/vscode-copilot-ralph-runner',
+			story: {
+				id: 'US-403',
+				title: 'Block stale knowledge',
+				description: 'Stop completion when docs lag behind the code.',
+				acceptanceCriteria: ['Knowledge issues can gate completion'],
+				priority: 1,
+			},
+			phase: 'completion',
+			changedFiles: ['src/extension.ts'],
+			projectConstraints: null,
+			isDesignSensitiveStory: false,
+			hasArtifact: () => true,
+			knowledgeCheckReport: {
+				...createEmptyKnowledgeCheckReport('run-completion', 'US-403'),
+				issues: [{
+					id: 'stale-docs',
+					type: 'stale-documentation',
+					severity: 'warning',
+					summary: 'README is stale.',
+					details: ['README.md is older than src/extension.ts.'],
+					suggestions: ['Update README.md.'],
+					relatedPaths: ['README.md', 'src/extension.ts'],
+				}],
+			},
+		});
+
+		assert.strictEqual(result.ok, false);
+		assert.ok(result.violations[0].details.some(detail => detail.includes('stale-documentation')));
 	});
 
 	test('Policy command output decoder recovers Chinese text from Windows shell bytes', () => {

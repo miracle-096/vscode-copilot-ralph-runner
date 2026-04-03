@@ -60,6 +60,7 @@ export interface ProjectConstraintChatAdvicePromptInput {
 	constraints: GeneratedProjectConstraints | null;
 	generatedPath: string;
 	editablePath: string;
+	knowledgeReminderLines?: string[];
 }
 
 type GeneratedProjectConstraintListKey =
@@ -303,6 +304,19 @@ export function buildProjectConstraintChatAdvicePrompt(input: ProjectConstraintC
 		'',
 		'Merged project constraints:',
 		...(constraintLines.length > 0 ? constraintLines : ['- No project constraints are currently available.']),
+	];
+
+	const knowledgeReminderLines = input.knowledgeReminderLines ?? [];
+	if (knowledgeReminderLines.length > 0) {
+		lines.push(
+			'',
+			'Knowledge freshness and coverage reminders:',
+			...knowledgeReminderLines,
+			'Carry the applicable reminders into the final request when they affect the requested change surface.',
+		);
+	}
+
+	lines.push(
 		'',
 		'Response format:',
 		'1. Final request for the LLM',
@@ -313,7 +327,7 @@ export function buildProjectConstraintChatAdvicePrompt(input: ProjectConstraintC
 		'   - Briefly explain which important changes were made because of the project constraints.',
 		'3. Risks or missing information',
 		'   - Mention only the remaining gaps that still block a high-quality implementation request.',
-	];
+	);
 
 	return lines.join('\n');
 }

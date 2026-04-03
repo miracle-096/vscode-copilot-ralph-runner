@@ -1,7 +1,11 @@
 import { execSync } from 'child_process';
 import * as fs from 'fs';
+import { TextDecoder } from 'util';
 import {
 	GeneratedProjectConstraints,
+	KnowledgeCheckIssueSeverity,
+	KnowledgeCheckIssueType,
+	KnowledgeCheckReport,
 	PolicyArtifactKind,
 	PolicyBaselineArtifact,
 	PolicyCommandExecutionResult,
@@ -31,6 +35,7 @@ export interface PolicyEvaluationContext {
 	isDesignSensitiveStory: boolean;
 	hasExecutionTimeDesignFallback?: boolean;
 	hasArtifact: (artifact: PolicyArtifactKind) => boolean;
+	knowledgeCheckReport?: KnowledgeCheckReport;
 	commandTimeoutMs?: number;
 	commandRunner?: (command: string, workspaceRoot: string, timeoutMs: number) => PolicyCommandExecutionResult;
 	artifactPaths?: Partial<Record<PolicyArtifactKind, string>>;
@@ -48,6 +53,17 @@ const DEFAULT_DANGEROUS_PATHS = [
 	'.next/**',
 	'.nuxt/**',
 ];
+const WINDOWS_CODE_PAGE_ENCODINGS: Readonly<Record<string, string>> = {
+	'65001': 'utf-8',
+	'54936': 'gb18030',
+	'936': 'gb18030',
+	'950': 'big5',
+	'949': 'euc-kr',
+	'932': 'shift_jis',
+	'1252': 'windows-1252',
+};
+
+let cachedWindowsShellEncoding: string | null | undefined;
 
 export function createDefaultPolicyConfig(): RalphPolicyConfig {
 	return {
@@ -90,6 +106,15 @@ export function createDefaultPolicyConfig(): RalphPolicyConfig {
 				commandsFrom: 'projectConstraints.testCommands',
 				minSuccesses: 1,
 				filePatterns: ['src/**', 'package.json', 'eslint.config.*', 'tsconfig.json'],
+				enabled: false,
+				when: 'always',
+			},
+			{
+				id: 'require-fresh-knowledge',
+				title: 'Require fresh knowledge coverage before completion',
+				phase: 'completion',
+				type: 'knowledge-check',
+				failOnSeverities: ['warning'],
 				enabled: false,
 				when: 'always',
 			},
@@ -302,7 +327,7 @@ function normalizePolicyRule(value: unknown, phase: PolicyGatePhase): PolicyRule
 	const enabled = value.enabled !== false;
 	const type = value.type;
 
-	if (!id || !title || (type !== 'required-artifact' && type !== 'restricted-paths' && type !== 'require-command')) {
+	if (!id || !title || (type !== 'required-artifact' && type !== 'restricted-paths' && type !== 'require-command' && type !== 'knowledge-check')) {
 		return undefined;
 	}
 
@@ -320,6 +345,19 @@ function normalizePolicyRule(value: unknown, phase: PolicyGatePhase): PolicyRule
 			return undefined;
 		}
 		return { id, title, phase, type, paths, enabled, when };
+	}
+
+	if (type === 'knowledge-check') {
+		return {
+			id,
+			title,
+			phase,
+			type,
+			failOnTypes: normalizeKnowledgeIssueTypes(value.failOnTypes),
+			failOnSeverities: normalizeKnowledgeIssueSeverities(value.failOnSeverities),
+			enabled,
+			when,
+		};
 	}
 
 	const commands = normalizeStringArray(value.commands);
@@ -379,6 +417,10 @@ function evaluatePolicyRule(
 
 	if (rule.type === 'restricted-paths') {
 		return evaluateRestrictedPathsRule(rule, context);
+	}
+
+	if (rule.type === 'knowledge-check') {
+		return evaluateKnowledgeCheckRule(rule, context);
 	}
 
 	return evaluateRequireCommandRule(rule, context, executedCommands);
@@ -481,6 +523,41 @@ function evaluateRequireCommandRule(
 	)];
 }
 
+function evaluateKnowledgeCheckRule(
+	rule: Extract<PolicyRule, { type: 'knowledge-check'; }>,
+	context: PolicyEvaluationContext,
+) {
+	if (!context.knowledgeCheckReport) {
+		return [createViolation(
+			rule,
+			`${rule.title} could not evaluate for ${context.story.id}.`,
+			['Knowledge freshness checks were not available in the current policy evaluation context.'],
+			['Re-run the story after regenerating the Agent Map or disable this rule if knowledge checks are intentionally unavailable.'],
+		)];
+	}
+
+	const allowedSeverities = new Set((rule.failOnSeverities?.length ?? 0) > 0 ? rule.failOnSeverities : ['warning']);
+	const allowedTypes = (rule.failOnTypes?.length ?? 0) > 0 ? new Set(rule.failOnTypes) : null;
+	const blockingIssues = context.knowledgeCheckReport.issues.filter(issue =>
+		allowedSeverities.has(issue.severity)
+		&& (!allowedTypes || allowedTypes.has(issue.type))
+	);
+
+	if (blockingIssues.length === 0) {
+		return [];
+	}
+
+	return [createViolation(
+		rule,
+		`${rule.title} blocked ${context.phase === 'completion' ? 'completion' : 'execution'} for ${context.story.id}.`,
+		blockingIssues.flatMap(issue => [
+			`[${issue.type}] ${issue.summary}`,
+			...issue.details,
+		]),
+		Array.from(new Set(blockingIssues.flatMap(issue => issue.suggestions))).slice(0, 4),
+	)];
+}
+
 function resolvePolicyCommands(rule: Extract<PolicyRule, { type: 'require-command'; }>, constraints: GeneratedProjectConstraints | null): string[] {
 	const commands = [...(rule.commands ?? [])];
 	if (rule.commandsFrom === 'projectConstraints.testCommands') {
@@ -501,7 +578,6 @@ function runPolicyCommand(command: string, context: PolicyEvaluationContext): Po
 	try {
 		const output = execSync(command, {
 			cwd: context.workspaceRoot,
-			encoding: 'utf-8',
 			stdio: ['ignore', 'pipe', 'pipe'],
 			timeout: timeoutMs,
 			windowsHide: true,
@@ -509,7 +585,7 @@ function runPolicyCommand(command: string, context: PolicyEvaluationContext): Po
 		return {
 			command,
 			success: true,
-			output: output.trim(),
+			output: decodePolicyCommandOutput(output).trim(),
 		};
 	} catch (error: unknown) {
 		const output = extractCommandErrorOutput(error);
@@ -546,7 +622,26 @@ function describePolicyRule(rule: PolicyRule): string {
 	if (rule.type === 'restricted-paths') {
 		return `${rule.title} (${rule.paths.join(', ')})`;
 	}
+	if (rule.type === 'knowledge-check') {
+		return `${rule.title} (${(rule.failOnTypes ?? []).join(', ') || 'all issue types'}; ${(rule.failOnSeverities ?? []).join(', ') || 'warning'})`;
+	}
 	return `${rule.title} (${rule.commandsFrom ?? (rule.commands ?? []).join(', ')})`;
+}
+
+function normalizeKnowledgeIssueTypes(value: unknown): KnowledgeCheckIssueType[] {
+	if (!Array.isArray(value)) {
+		return [];
+	}
+	return Array.from(new Set(value.filter((item): item is KnowledgeCheckIssueType =>
+		item === 'stale-documentation' || item === 'missing-module-knowledge' || item === 'missing-runbook-coverage'
+	)));
+}
+
+function normalizeKnowledgeIssueSeverities(value: unknown): KnowledgeCheckIssueSeverity[] {
+	if (!Array.isArray(value)) {
+		return [];
+	}
+	return Array.from(new Set(value.filter((item): item is KnowledgeCheckIssueSeverity => item === 'info' || item === 'warning')));
 }
 
 function formatArtifactName(artifact: PolicyArtifactKind): string {
@@ -633,14 +728,99 @@ function isRecord(value: unknown): value is Record<string, unknown> {
 	return typeof value === 'object' && value !== null && !Array.isArray(value);
 }
 
+export function decodePolicyCommandOutput(
+	value: string | Buffer | null | undefined,
+	shellEncoding?: string,
+): string {
+	if (typeof value === 'string') {
+		return value;
+	}
+
+	if (!value) {
+		return '';
+	}
+
+	if (!Buffer.isBuffer(value)) {
+		return String(value);
+	}
+
+	if (value.length === 0) {
+		return '';
+	}
+
+	const utf8Text = value.toString('utf8');
+	const resolvedShellEncoding = shellEncoding ?? getWindowsShellEncoding();
+	if (!shouldRetryCommandOutputDecode(utf8Text, resolvedShellEncoding)) {
+		return utf8Text;
+	}
+	if (!resolvedShellEncoding) {
+		return utf8Text;
+	}
+
+	const decoded = tryDecodePolicyCommandOutput(value, resolvedShellEncoding);
+	if (!decoded || !isDecodedOutputPreferred(decoded, utf8Text)) {
+		return utf8Text;
+	}
+
+	return decoded;
+}
+
 function extractCommandErrorOutput(error: unknown): string {
 	if (error && typeof error === 'object') {
-		const stderr = 'stderr' in error ? String(error.stderr ?? '') : '';
-		const stdout = 'stdout' in error ? String(error.stdout ?? '') : '';
+		const stderr = 'stderr' in error ? decodePolicyCommandOutput(error.stderr as string | Buffer | null | undefined) : '';
+		const stdout = 'stdout' in error ? decodePolicyCommandOutput(error.stdout as string | Buffer | null | undefined) : '';
 		const message = 'message' in error ? String(error.message ?? '') : '';
-		return [stderr, stdout, message].map(part => part.trim()).filter(part => part.length > 0).join('\n').trim();
+		const output = [stderr, stdout].map(part => part.trim()).filter(part => part.length > 0).join('\n').trim();
+		return output.length > 0 ? output : message.trim();
 	}
 	return String(error ?? '').trim();
+}
+
+function shouldRetryCommandOutputDecode(text: string, shellEncoding?: string): boolean {
+	if (!shellEncoding || shellEncoding === 'utf-8') {
+		return false;
+	}
+
+	return text.includes('\uFFFD');
+}
+
+function tryDecodePolicyCommandOutput(buffer: Buffer, shellEncoding: string): string | undefined {
+	try {
+		return new TextDecoder(shellEncoding).decode(buffer);
+	} catch {
+		return undefined;
+	}
+}
+
+function isDecodedOutputPreferred(candidate: string, baseline: string): boolean {
+	return countReplacementCharacters(candidate) < countReplacementCharacters(baseline);
+}
+
+function countReplacementCharacters(value: string): number {
+	return Array.from(value).filter(char => char === '\uFFFD').length;
+}
+
+function getWindowsShellEncoding(): string | undefined {
+	if (process.platform !== 'win32') {
+		return undefined;
+	}
+
+	if (cachedWindowsShellEncoding !== undefined) {
+		return cachedWindowsShellEncoding ?? undefined;
+	}
+
+	try {
+		const output = execSync('chcp', {
+			stdio: ['ignore', 'pipe', 'ignore'],
+			windowsHide: true,
+		});
+		const match = output.toString('ascii').match(/\b(\d{3,5})\b/);
+		cachedWindowsShellEncoding = match ? (WINDOWS_CODE_PAGE_ENCODINGS[match[1]] ?? null) : null;
+	} catch {
+		cachedWindowsShellEncoding = null;
+	}
+
+	return cachedWindowsShellEncoding ?? undefined;
 }
 
 function truncateOutput(output: string): string {

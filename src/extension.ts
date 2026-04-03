@@ -24,6 +24,11 @@ import {
 	writeDesignContextForScope,
 } from './designContext';
 import { generateAgentMapArtifacts } from './agentMap';
+import {
+	createEmptyKnowledgeCheckReport,
+	evaluateKnowledgeCoverage,
+	summarizeKnowledgeCheckForPrompt,
+} from './knowledgeCheck';
 import { composeStoryExecutionPrompt } from './promptContext';
 import {
 	createSynthesizedTaskMemory,
@@ -760,6 +765,10 @@ async function startRalph(): Promise<void> {
 		refreshSourceContextIndexArtifact(workspaceRoot, `before ${nextStory.id}`);
 
 		const effectivePolicyConfig = getEffectivePolicyConfig();
+		const preflightKnowledgeReport = getKnowledgeCheckReportSafe(workspaceRoot, {
+			scope: 'run-preflight',
+			story: nextStory,
+		});
 		if (effectivePolicyConfig.enabled) {
 			const preflightPolicyResult = evaluatePolicyGates(effectivePolicyConfig, {
 				workspaceRoot,
@@ -769,6 +778,7 @@ async function startRalph(): Promise<void> {
 				isDesignSensitiveStory: isDesignSensitiveStory(nextStory),
 				hasExecutionTimeDesignFallback: synthesizeExecutionDesignContextPromptLines(nextStory, null).length > 0,
 				hasArtifact: artifact => hasPolicyArtifact(workspaceRoot, nextStory, artifact),
+				knowledgeCheckReport: preflightKnowledgeReport,
 				commandTimeoutMs: config.POLICY_GATE_COMMAND_TIMEOUT_MS,
 				artifactPaths: getPolicyArtifactPaths(workspaceRoot, nextStory),
 			});
@@ -1045,6 +1055,10 @@ const handleRalphChatRequest: vscode.ChatRequestHandler = async (
 	}
 
 	const mergedConstraints = loadMergedProjectConstraints(workspaceRoot);
+	const knowledgeReport = getKnowledgeCheckReportSafe(workspaceRoot, {
+		scope: 'spec',
+		promptText: userRequest,
+	});
 	const prompt = buildProjectConstraintChatAdvicePrompt({
 		workspaceRoot,
 		language: getConfig().LANGUAGE,
@@ -1052,6 +1066,7 @@ const handleRalphChatRequest: vscode.ChatRequestHandler = async (
 		constraints: mergedConstraints,
 		generatedPath: resolveGeneratedProjectConstraintsPath(workspaceRoot),
 		editablePath: resolveEditableProjectConstraintsPath(workspaceRoot),
+		knowledgeReminderLines: summarizeKnowledgeCheckForPrompt(knowledgeReport),
 	});
 
 	stream.progress(languagePack.chatSpec.thinking);
@@ -1172,6 +1187,7 @@ function buildCopilotPromptForStory(story: UserStory, workspaceRoot: string): st
 	const designContextLines = getDesignContextPromptLines(workspaceRoot, story);
 	const priorWorkLines = getPriorWorkPromptLines(workspaceRoot, story);
 	const sourceContextLines = getSourceContextPromptLines(workspaceRoot, story);
+	const knowledgeLines = getKnowledgePromptLines(workspaceRoot, story);
 	const recentCheckpointLines = getRecentCheckpointPromptLines(workspaceRoot, story);
 	const policyLines = getPolicyPromptLines();
 	const additionalExecutionRules = [
@@ -1192,6 +1208,7 @@ function buildCopilotPromptForStory(story: UserStory, workspaceRoot: string): st
 		designContextLines,
 		priorWorkLines,
 		sourceContextLines,
+		knowledgeLines,
 		recentCheckpointLines,
 		policyLines,
 		taskMemoryPath: resolveTaskMemoryPath(workspaceRoot, story.id).replace(/\\/g, '/'),
@@ -1341,6 +1358,20 @@ function getSourceContextPromptLines(workspaceRoot: string, story: UserStory): s
 	const promptLines = summarizeRecalledSourceContextForPrompt(matches, 4);
 	log(`  Injecting ${matches.length} recalled source context matches for story ${story.id}.`);
 	return promptLines;
+}
+
+function getKnowledgePromptLines(workspaceRoot: string, story: UserStory): string[] {
+	const report = getKnowledgeCheckReportSafe(workspaceRoot, {
+		scope: 'run-preflight',
+		story,
+	});
+	if (report.issues.length === 0) {
+		log(`  Knowledge checks found no freshness or coverage issues for story ${story.id}.`);
+		return [];
+	}
+
+	log(`  Knowledge checks found ${report.issues.length} issue(s) for story ${story.id}.`);
+	return summarizeKnowledgeCheckForPrompt(report);
 }
 
 function getRecentCheckpointPromptLines(workspaceRoot: string, story: UserStory): string[] {
@@ -1856,6 +1887,11 @@ function evaluateCompletionPolicyGates(workspaceRoot: string, story: UserStory) 
 		isDesignSensitiveStory: isDesignSensitiveStory(story),
 		hasExecutionTimeDesignFallback: synthesizeExecutionDesignContextPromptLines(story, null).length > 0,
 		hasArtifact: artifact => hasPolicyArtifact(workspaceRoot, story, artifact),
+		knowledgeCheckReport: getKnowledgeCheckReportSafe(workspaceRoot, {
+			scope: 'run-completion',
+			story,
+			changedFiles: getStoryChangedFiles(workspaceRoot, story.id),
+		}),
 		commandTimeoutMs: getConfig().POLICY_GATE_COMMAND_TIMEOUT_MS,
 		artifactPaths: getPolicyArtifactPaths(workspaceRoot, story),
 	});
@@ -1950,6 +1986,11 @@ function getCompletionPolicyExecutedTestCommands(workspaceRoot: string, story: U
 		isDesignSensitiveStory: isDesignSensitiveStory(story),
 		hasExecutionTimeDesignFallback: synthesizeExecutionDesignContextPromptLines(story, null).length > 0,
 		hasArtifact: artifact => artifact === 'story-evidence' ? true : hasPolicyArtifact(workspaceRoot, story, artifact),
+		knowledgeCheckReport: getKnowledgeCheckReportSafe(workspaceRoot, {
+			scope: 'run-completion',
+			story,
+			changedFiles: getStoryChangedFiles(workspaceRoot, story.id),
+		}),
 		commandTimeoutMs: getConfig().POLICY_GATE_COMMAND_TIMEOUT_MS,
 		artifactPaths: getPolicyArtifactPaths(workspaceRoot, story),
 	});
@@ -1978,6 +2019,19 @@ function buildStoryCompletionNote(executionResult: {
 }): string {
 	const evidenceSummary = summarizeStoryEvidenceForStatus(executionResult.evidence.artifact).join('; ');
 	return `Finalized as ${executionResult.evidence.artifact.status}; task memory persisted (${executionResult.taskMemory.source}); checkpoint persisted (${executionResult.checkpoint.source}); evidence persisted (${executionResult.evidence.source})${evidenceSummary ? `; ${evidenceSummary}` : ''}`;
+}
+
+function getKnowledgeCheckReportSafe(
+	workspaceRoot: string,
+	input: Parameters<typeof evaluateKnowledgeCoverage>[1],
+) {
+	try {
+		return evaluateKnowledgeCoverage(workspaceRoot, input);
+	} catch (error: unknown) {
+		const message = error instanceof Error ? error.message : String(error);
+		log(`  WARNING: Failed to evaluate knowledge freshness checks${input.story ? ` for ${input.story.id}` : ''}: ${message}`);
+		return createEmptyKnowledgeCheckReport(input.scope, input.story?.id);
+	}
 }
 
 function buildApprovalProgressNote(evidence: StoryEvidenceArtifact, action: StoryApprovalAction): string {

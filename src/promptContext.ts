@@ -4,6 +4,7 @@ const MAX_PROJECT_CONSTRAINT_LINES = 12;
 const MAX_DESIGN_CONTEXT_LINES = 12;
 const MAX_PRIOR_WORK_LINES = 14;
 const MAX_SOURCE_CONTEXT_LINES = 12;
+const MAX_KNOWLEDGE_LINES = 14;
 const MAX_RECENT_CHECKPOINT_LINES = 12;
 const MAX_ACCEPTANCE_CRITERIA = 8;
 const MAX_LINE_LENGTH = 220;
@@ -30,6 +31,7 @@ export function composeStoryExecutionPrompt(context: StoryPromptContext): string
 	const designContextLines = boundContextLines(context.designContextLines ?? [], MAX_DESIGN_CONTEXT_LINES);
 	const priorWorkLines = boundContextLines(context.priorWorkLines ?? [], MAX_PRIOR_WORK_LINES);
 	const sourceContextLines = boundContextLines(context.sourceContextLines ?? [], MAX_SOURCE_CONTEXT_LINES);
+	const knowledgeLines = boundContextLines(context.knowledgeLines ?? [], MAX_KNOWLEDGE_LINES);
 	const recentCheckpointLines = boundContextLines(context.recentCheckpointLines ?? [], MAX_RECENT_CHECKPOINT_LINES);
 	const policyLines = boundContextLines(context.policyLines ?? [], MAX_SOURCE_CONTEXT_LINES);
 	const acceptanceCriteriaLines = context.story.acceptanceCriteria
@@ -70,6 +72,11 @@ export function composeStoryExecutionPrompt(context: StoryPromptContext): string
 		{
 			title: 'Relevant Source Context:',
 			lines: sourceContextLines,
+			omitWhenEmpty: true,
+		},
+		{
+			title: 'Knowledge Freshness Checks:',
+			lines: knowledgeLines,
 			omitWhenEmpty: true,
 		},
 		{

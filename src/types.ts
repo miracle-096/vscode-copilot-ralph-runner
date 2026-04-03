@@ -268,6 +268,30 @@ export interface AgentKnowledgeCatalogArtifact {
 	source: 'copilot';
 }
 
+export type KnowledgeCheckScope = 'run-preflight' | 'run-completion' | 'spec';
+export type KnowledgeCheckIssueType = 'stale-documentation' | 'missing-module-knowledge' | 'missing-runbook-coverage';
+export type KnowledgeCheckIssueSeverity = 'info' | 'warning';
+
+export interface KnowledgeCheckIssue {
+	id: string;
+	type: KnowledgeCheckIssueType;
+	severity: KnowledgeCheckIssueSeverity;
+	summary: string;
+	details: string[];
+	suggestions: string[];
+	relatedPaths: string[];
+}
+
+export interface KnowledgeCheckReport {
+	generatedAt: string;
+	scope: KnowledgeCheckScope;
+	storyId?: string;
+	issues: KnowledgeCheckIssue[];
+	relevantModules: string[];
+	checkedArtifacts: string[];
+	source?: 'copilot';
+}
+
 export interface SourceContextRecallMatch {
 	label: string;
 	category: 'source-directory' | 'test-directory' | 'build-script' | 'entry-file' | 'module-hint' | 'type-hint' | 'hotspot';
@@ -309,6 +333,7 @@ export interface StoryPromptContext {
 	designContextLines?: string[];
 	priorWorkLines?: string[];
 	sourceContextLines?: string[];
+	knowledgeLines?: string[];
 	recentCheckpointLines?: string[];
 	policyLines?: string[];
 	taskMemoryPath: string;
@@ -336,7 +361,7 @@ export interface PolicyRuleBase {
 	id: string;
 	title: string;
 	phase: PolicyGatePhase;
-	type: 'required-artifact' | 'restricted-paths' | 'require-command';
+	type: 'required-artifact' | 'restricted-paths' | 'require-command' | 'knowledge-check';
 	enabled?: boolean;
 	when?: PolicyRuleCondition;
 }
@@ -359,7 +384,13 @@ export interface RequireCommandPolicyRule extends PolicyRuleBase {
 	filePatterns?: string[];
 }
 
-export type PolicyRule = RequiredArtifactPolicyRule | RestrictedPathsPolicyRule | RequireCommandPolicyRule;
+export interface KnowledgeCheckPolicyRule extends PolicyRuleBase {
+	type: 'knowledge-check';
+	failOnTypes?: KnowledgeCheckIssueType[];
+	failOnSeverities?: KnowledgeCheckIssueSeverity[];
+}
+
+export type PolicyRule = RequiredArtifactPolicyRule | RestrictedPathsPolicyRule | RequireCommandPolicyRule | KnowledgeCheckPolicyRule;
 
 export interface RalphPolicyConfig {
 	enabled: boolean;
