@@ -28,7 +28,7 @@ dist-ssr
 *.njsproj
 *.sln
 *.sw?
-*.vsix
+
 prd.json
 progress.txt
 .github/ralph/project-constraints.md
