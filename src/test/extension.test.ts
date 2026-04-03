@@ -1286,6 +1286,9 @@ suite('Extension Test Suite', () => {
 		assert.ok(prompt.includes('Before writing the completion signal, write a structured task memory artifact as valid JSON to:'));
 		assert.ok(prompt.includes('After completing this executor pass, confirm what was done.'));
 		assert.ok(prompt.includes('RALPH will launch a separate Reviewer Agent pass after this executor pass completes.'));
+		assert.ok(prompt.includes('Apply architecture thinking during execution: keep module boundaries explicit'));
+		assert.ok(prompt.includes('Do not reduce governance to language-specific lint or static complexity rules'));
+		assert.ok(prompt.includes('persist reusable architecture conclusions in architectureNotes'));
 		assert.ok(prompt.includes('d:/workspace/vscode-copilot-ralph-runner/.ralph/memory/US-301.json'));
 		assert.ok(prompt.includes('Also write a structured execution checkpoint artifact as valid JSON to:'));
 		assert.ok(prompt.includes('d:/workspace/vscode-copilot-ralph-runner/.ralph/checkpoints/US-301.checkpoint.json'));
@@ -1339,7 +1342,11 @@ suite('Extension Test Suite', () => {
 
 		assert.ok(reviewerPrompt.includes('Reviewer Agent Rules:'));
 		assert.ok(reviewerPrompt.includes('Score the result across exactly four dimensions'));
+		assert.ok(reviewerPrompt.includes('For architecture consistency, explicitly judge module boundaries, responsibility clarity, reuse opportunities, and rollback safety.'));
+		assert.ok(reviewerPrompt.includes('Do not rely on language-specific static complexity metrics or lint-only signals'));
+		assert.ok(reviewerPrompt.includes('If the story touches too many files or mixes responsibilities, require a focused split or refactor recommendation'));
 		assert.ok(reviewerPrompt.includes('reviewSummary must include: totalScore, passingScore, passed, reviewPass'));
+		assert.ok(reviewerPrompt.includes('Persist reusable architecture conclusions in architectureNotes'));
 		assert.ok(reviewerPrompt.includes('reviewLoop must include: reviewerPasses, autoRefactorRounds, maxAutoRefactorRounds'));
 		assert.ok(refactorPrompt.includes('Executor Refactor Rules:'));
 		assert.ok(refactorPrompt.includes('Auto-Refactor Round: 1/2'));
@@ -1477,7 +1484,7 @@ suite('Extension Test Suite', () => {
 			maxAutoRefactorRounds: DEFAULT_STORY_AUTO_REFACTOR_LIMIT,
 			reviewPass: 2,
 			refactorPerformed: true,
-			changedFiles: ['src/extension.ts', 'src/promptContext.ts'],
+			changedFiles: ['src/extension.ts', 'src/promptContext.ts', 'src/taskMemory.ts', 'src/storyEvidence.ts', 'src/executionCheckpoint.ts', 'README.md'],
 			evidence: createSynthesizedStoryEvidence({
 				id: 'US-305',
 				title: 'Synthesized review',
@@ -1485,7 +1492,8 @@ suite('Extension Test Suite', () => {
 				acceptanceCriteria: ['Fallback review is actionable'],
 				priority: 5,
 			}, {
-				changedFiles: ['src/extension.ts', 'src/promptContext.ts'],
+				changedFiles: ['src/extension.ts', 'src/promptContext.ts', 'src/taskMemory.ts', 'src/storyEvidence.ts', 'src/executionCheckpoint.ts', 'README.md'],
+				changedModules: ['src/execution', 'src/review', 'docs'],
 				tests: [],
 			}),
 			fallbackReason: 'Reviewer output was missing.',
@@ -1505,6 +1513,8 @@ suite('Extension Test Suite', () => {
 		assert.strictEqual(validation.isValid, true);
 		assert.strictEqual(loop.autoRefactorRounds, 1);
 		assert.ok(review.findings.some(finding => finding.includes('Reviewer output was missing')));
+		assert.ok(review.findings.some(finding => finding.includes('Architecture note:')));
+		assert.ok(review.recommendations.some(recommendation => recommendation.includes('Split the next pass by module boundary') || recommendation.includes('Split follow-up work by module')));
 		assert.ok(review.recommendations.length > 0);
 	});
 
@@ -1536,6 +1546,7 @@ suite('Extension Test Suite', () => {
 				summary: 'Task memory review payload.',
 				changedFiles: ['src/extension.ts'],
 				changedModules: ['src'],
+				architectureNotes: ['Keep prompt composition and review orchestration separate so rollback stays localized.'],
 				keyDecisions: ['Persist structured review metadata.'],
 				constraintsConfirmed: ['prd.json remained read-only during task execution.'],
 				testsRun: ['npm run compile'],
@@ -1551,6 +1562,7 @@ suite('Extension Test Suite', () => {
 				status: 'completed',
 				stageGoal: 'Persist reviewer pass details.',
 				summary: 'Checkpoint contains reviewer data.',
+				architectureNotes: ['Checkpoint should preserve the current module-boundary judgment for the next fresh chat.'],
 				keyDecisions: ['Carry reviewer score across resets.'],
 				confirmedConstraints: ['prd.json remained read-only during task execution.'],
 				unresolvedRisks: ['None'],
@@ -1566,6 +1578,7 @@ suite('Extension Test Suite', () => {
 				summary: 'Evidence contains reviewer data.',
 				changedFiles: ['src/extension.ts'],
 				changedModules: ['src'],
+				architectureNotes: ['Evidence should explain the rollback seam for the review metadata persistence change.'],
 				tests: [{ command: 'npm run compile', success: true }],
 				riskLevel: 'medium',
 				riskReasons: ['Core execution surface changed.'],
@@ -1586,8 +1599,11 @@ suite('Extension Test Suite', () => {
 			const evidence = readStoryEvidence(workspaceRoot, 'US-306');
 
 			assert.strictEqual(taskMemory?.reviewSummary?.reviewPass, 3);
+			assert.strictEqual(taskMemory?.architectureNotes[0], 'Keep prompt composition and review orchestration separate so rollback stays localized.');
 			assert.strictEqual(checkpoint?.reviewLoop?.autoRefactorRounds, 2);
+			assert.strictEqual(checkpoint?.architectureNotes[0], 'Checkpoint should preserve the current module-boundary judgment for the next fresh chat.');
 			assert.strictEqual(evidence?.reviewSummary?.refactorPerformed, true);
+			assert.strictEqual(evidence?.architectureNotes[0], 'Evidence should explain the rollback seam for the review metadata persistence change.');
 			assert.strictEqual(evidence?.reviewLoop?.endedReason, 'max-rounds');
 		} finally {
 			fs.rmSync(workspaceRoot, { recursive: true, force: true });
@@ -1818,6 +1834,7 @@ suite('Extension Test Suite', () => {
 					summary: 'Added a structured evidence artifact to completion flow.',
 					changedFiles: ['src/extension.ts', 'package.json'],
 					changedModules: ['extension'],
+					architectureNotes: ['Core execution and packaging changed together, so rollback should stay file-scoped.'],
 					keyDecisions: ['Make completion auditable'],
 					patternsUsed: [],
 					constraintsConfirmed: ['Do not edit prd.json'],
@@ -2262,6 +2279,7 @@ suite('Extension Test Suite', () => {
 					summary: 'Touched prompt context and task memory.',
 					changedFiles: ['src/promptContext.ts', 'src/taskMemory.ts'],
 					changedModules: ['promptContext', 'taskMemory'],
+					architectureNotes: ['Keep prompt composition separate from task-memory persistence so recall changes remain reversible.'],
 					keyDecisions: ['Keep source context bounded'],
 					patternsUsed: [],
 					constraintsConfirmed: ['Do not edit prd.json'],

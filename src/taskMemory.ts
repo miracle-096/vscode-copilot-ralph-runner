@@ -27,6 +27,7 @@ export interface TaskMemoryValidationResult {
 export interface SynthesizedTaskMemoryOptions {
 	changedFiles?: string[];
 	changedModules?: string[];
+	architectureNotes?: string[];
 	keyDecisions?: string[];
 	constraintsConfirmed?: string[];
 	testsRun?: string[];
@@ -52,6 +53,7 @@ export function createEmptyTaskMemory(storyId: string, title = ''): TaskMemoryAr
 		summary: '',
 		changedFiles: [],
 		changedModules: [],
+		architectureNotes: [],
 		keyDecisions: [],
 		patternsUsed: [],
 		constraintsConfirmed: [],
@@ -78,6 +80,7 @@ export function createSynthesizedTaskMemory(
 		summary,
 		changedFiles: options.changedFiles ?? ['(unable to determine changed files automatically)'],
 		changedModules: options.changedModules ?? [],
+		architectureNotes: options.architectureNotes ?? [],
 		keyDecisions: options.keyDecisions ?? ['RALPH synthesized this task memory because a valid artifact was not persisted before completion.'],
 		constraintsConfirmed: options.constraintsConfirmed ?? ['prd.json remained read-only during task execution.'],
 		testsRun: options.testsRun ?? [],
@@ -248,6 +251,7 @@ export function normalizeTaskMemory(value: Partial<TaskMemoryArtifact> | null | 
 		summary: normalizeOptionalString(value.summary) ?? fallback.summary,
 		changedFiles: toStringArray(value.changedFiles),
 		changedModules: toStringArray(value.changedModules),
+		architectureNotes: toStringArray(value.architectureNotes),
 		keyDecisions: toStringArray(value.keyDecisions),
 		patternsUsed: toStringArray(value.patternsUsed),
 		constraintsConfirmed: toStringArray(value.constraintsConfirmed),
@@ -283,6 +287,7 @@ export function summarizeTaskMemoryForPrompt(memory: TaskMemoryArtifact | null):
 		...(memory.summary ? [`Summary: ${memory.summary}`, ''] : []),
 		...prefixLines('Changed Files', memory.changedFiles),
 		...prefixLines('Changed Modules', memory.changedModules),
+		...prefixLines('Architecture Notes', memory.architectureNotes),
 		...prefixLines('Key Decisions', memory.keyDecisions),
 		...prefixLines('Confirmed Constraints', memory.constraintsConfirmed),
 		...prefixLines('Tests Run', memory.testsRun),

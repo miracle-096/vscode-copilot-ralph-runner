@@ -32,6 +32,7 @@ export interface StoryEvidenceValidationResult {
 export interface SynthesizedStoryEvidenceOptions {
 	changedFiles?: string[];
 	changedModules?: string[];
+	architectureNotes?: string[];
 	tests?: StoryEvidenceTestResult[];
 	taskMemory?: TaskMemoryArtifact;
 	checkpoint?: ExecutionCheckpointArtifact;
@@ -56,6 +57,7 @@ export function createEmptyStoryEvidence(
 		summary: '',
 		changedFiles: [],
 		changedModules: [],
+		architectureNotes: [],
 		tests: [],
 		riskLevel: 'medium',
 		riskReasons: [],
@@ -167,6 +169,7 @@ export function normalizeStoryEvidence(
 		summary: typeof value?.summary === 'string' ? value.summary.trim() : fallback.summary,
 		changedFiles: toStringArray(value?.changedFiles),
 		changedModules: toStringArray(value?.changedModules),
+		architectureNotes: toStringArray(value?.architectureNotes),
 		tests: normalizeTestResults(value?.tests),
 		riskLevel,
 		riskReasons: toStringArray(value?.riskReasons),
@@ -226,6 +229,7 @@ export function createSynthesizedStoryEvidence(
 ): StoryEvidenceArtifact {
 	const changedFiles = Array.from(new Set(options.changedFiles ?? []));
 	const changedModules = Array.from(new Set(options.changedModules ?? []));
+	const architectureNotes = Array.from(new Set(options.architectureNotes ?? []));
 	const tests = normalizeTestResults(options.tests);
 	const evidenceGaps: string[] = [];
 	const riskReasons: string[] = [];
@@ -255,6 +259,13 @@ export function createSynthesizedStoryEvidence(
 		riskReasons.push('The story touches a relatively broad file surface.');
 	}
 
+	if (architectureNotes.length === 0 && changedFiles.length >= 6) {
+		architectureNotes.push('The change surface is broad enough that the next pass should validate module boundaries and split points explicitly.');
+	}
+	if (architectureNotes.length === 0 && changedModules.length > 1) {
+		architectureNotes.push('Multiple modules changed; confirm each edit belongs to a single responsibility and document reuse opportunities.');
+	}
+
 	const recommendFeatureFlag = touchesCoreExecutionSurface || changedFiles.some(filePath => filePath.startsWith('src/'));
 	const riskLevel = touchesCoreExecutionSurface
 		? 'high'
@@ -271,6 +282,7 @@ export function createSynthesizedStoryEvidence(
 		summary,
 		changedFiles,
 		changedModules,
+		architectureNotes,
 		tests,
 		riskLevel,
 		riskReasons: riskReasons.length > 0 ? riskReasons : ['The story risk was inferred from the available completion evidence.'],
@@ -300,6 +312,7 @@ export function summarizeStoryEvidenceForStatus(evidence: StoryEvidenceArtifact 
 		`featureFlag=${evidence.recommendFeatureFlag ? 'yes' : 'no'}`,
 		`approval=${evidence.approvalState}`,
 		...summarizeStoryReviewForStatus(evidence.reviewSummary ?? null, evidence.reviewLoop ?? null),
+		...(evidence.architectureNotes.length > 0 ? [`architecture=${evidence.architectureNotes.join('; ')}`] : []),
 		...(evidence.evidenceGaps.length > 0 ? [`gaps=${evidence.evidenceGaps.join('; ')}`] : []),
 	];
 }

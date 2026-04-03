@@ -244,10 +244,22 @@ export function createSynthesizedStoryReview(
 			?? []
 	);
 	const changedFileCount = changedFiles.filter(filePath => !filePath.startsWith('(')).length;
+	const changedModules = Array.from(new Set([
+		...(options.taskMemory?.changedModules ?? []),
+		...(options.evidence?.changedModules ?? []),
+	]));
+	const architectureNotes = Array.from(new Set([
+		...(options.taskMemory?.architectureNotes ?? []),
+		...(options.checkpoint?.architectureNotes ?? []),
+		...(options.evidence?.architectureNotes ?? []),
+	]));
 	const evidenceGaps = options.evidence?.evidenceGaps ?? [];
 	const successfulTests = options.evidence?.tests.filter(test => test.success).length ?? 0;
 	const unresolvedRisks = options.checkpoint?.unresolvedRisks ?? [];
 	const reviewNotes = options.fallbackReason ? [options.fallbackReason] : [];
+	const broadScope = changedFileCount > 5 || changedModules.length > 2;
+	const mixedResponsibilities = changedFileCount > 0 && changedModules.length > 1;
+	const rollbackSignalMissing = architectureNotes.length === 0 && unresolvedRisks.length > 0;
 
 	const dimensions: StoryReviewDimensionScore[] = [
 		buildDimensionScore(
@@ -255,13 +267,25 @@ export function createSynthesizedStoryReview(
 			25,
 			[
 				changedFiles.some(filePath => ['src/extension.ts', 'src/promptContext.ts', 'package.json'].includes(filePath)) ? 4 : 0,
+				broadScope ? 4 : 0,
+				rollbackSignalMissing ? 2 : 0,
 				unresolvedRisks.length > 0 ? 3 : 0,
 			],
 			unresolvedRisks.length > 0
-				? 'Core execution surfaces changed with unresolved risks still recorded.'
-				: 'Changes stay aligned with the existing module boundaries and checkpointed decisions.',
-			unresolvedRisks.length > 0 ? ['Residual execution risks were still present at review time.'] : [],
-			unresolvedRisks.length > 0 ? ['Close the unresolved checkpoint risks or narrow the implementation surface.'] : []
+				? 'Architecture fit is only partial because module boundaries or rollback seams still need clarification in the persisted handoff.'
+				: broadScope
+					? 'Architecture fit is mixed because the story spans a broad surface and may blur module boundaries or responsibilities.'
+					: 'Changes stay aligned with module boundaries, coherent responsibilities, reuse opportunities, and checkpointed rollback decisions.',
+			Array.from(new Set([
+				...(unresolvedRisks.length > 0 ? ['Residual execution risks were still present at review time.'] : []),
+				...(broadScope ? ['The implementation spans enough files/modules that architecture boundaries need a clearer split.'] : []),
+				...(rollbackSignalMissing ? ['Rollback seams were not clearly captured in the persisted architecture notes.'] : []),
+			])),
+			Array.from(new Set([
+				...(unresolvedRisks.length > 0 ? ['Close the unresolved checkpoint risks or narrow the implementation surface.'] : []),
+				...(broadScope ? ['Split the next pass by module boundary or extract shared logic so each change cluster has one primary responsibility.'] : []),
+				...(rollbackSignalMissing ? ['Document the rollback path for the riskiest files before broadening the story further.'] : []),
+			]))
 		),
 		buildDimensionScore(
 			'acceptanceCoverage',
@@ -282,21 +306,26 @@ export function createSynthesizedStoryReview(
 			[
 				changedFileCount === 0 ? 15 : 0,
 				changedFileCount > 8 ? 10 : changedFileCount > 5 ? 5 : 0,
+				mixedResponsibilities ? 4 : 0,
 			],
 			changedFileCount === 0
 				? 'Changed-file scope could not be established reliably.'
 				: changedFileCount > 5
-					? 'The story touched a broad file surface, so scope control is only partial.'
+					? 'The story touched a broad file surface, so scope control is only partial and may need a narrower handoff.'
 					: 'The changed-file surface stays relatively focused for this story.',
 			changedFileCount === 0
 				? ['The review could not confirm which files changed.']
 				: changedFileCount > 5
 					? ['The implementation spans many files for a single story handoff.']
+					: mixedResponsibilities
+						? ['The story appears to mix responsibilities across multiple modules.']
 					: [],
 			changedFileCount === 0
 				? ['Record concrete changedFiles in task memory and evidence before final handoff.']
 				: changedFileCount > 5
 					? ['Trim incidental edits and keep the next refactor limited to reviewer-identified hotspots.']
+					: mixedResponsibilities
+						? ['Split follow-up work by module or extract the shared logic so each story handoff stays cohesive.']
 					: []
 		),
 		buildDimensionScore(
@@ -322,6 +351,7 @@ export function createSynthesizedStoryReview(
 
 	const findings = Array.from(new Set([
 		...reviewNotes,
+		...architectureNotes.slice(0, 3).map(note => `Architecture note: ${note}`),
 		...dimensions.flatMap(dimension => dimension.issues),
 	]));
 	const recommendations = Array.from(new Set(dimensions.flatMap(dimension => dimension.recommendations)));

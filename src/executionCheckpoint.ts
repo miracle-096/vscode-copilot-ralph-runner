@@ -25,6 +25,7 @@ export interface ExecutionCheckpointValidationResult {
 
 export interface SynthesizedExecutionCheckpointOptions {
 	stageGoal?: string;
+	architectureNotes?: string[];
 	keyDecisions?: string[];
 	confirmedConstraints?: string[];
 	unresolvedRisks?: string[];
@@ -44,6 +45,7 @@ export function createEmptyExecutionCheckpoint(
 		status,
 		stageGoal: '',
 		summary: '',
+		architectureNotes: [],
 		keyDecisions: [],
 		confirmedConstraints: [],
 		unresolvedRisks: [],
@@ -68,6 +70,7 @@ export function createSynthesizedExecutionCheckpoint(
 		status,
 		stageGoal: options.stageGoal ?? title,
 		summary,
+		architectureNotes: options.architectureNotes ?? [],
 		keyDecisions: options.keyDecisions ?? ['RALPH synthesized this execution checkpoint because a valid checkpoint artifact was not available.'],
 		confirmedConstraints: options.confirmedConstraints ?? ['prd.json remained read-only during task execution.'],
 		unresolvedRisks: options.unresolvedRisks ?? ['Checkpoint details may need manual review before the next handoff.'],
@@ -172,6 +175,7 @@ export function summarizeExecutionCheckpointForPrompt(checkpoint: ExecutionCheck
 		`Summary: ${checkpoint.summary}`,
 		`Resume Recommendation: ${checkpoint.resumeRecommendation}`,
 		...prefixLines('Review Summary', summarizeStoryReviewForPrompt(checkpoint.reviewSummary ?? null), 8),
+		...prefixLines('Architecture Notes', checkpoint.architectureNotes, 2),
 		...prefixLines('Key Decisions', checkpoint.keyDecisions, 2),
 		...prefixLines('Confirmed Constraints', checkpoint.confirmedConstraints, 2),
 		...prefixLines('Unresolved Risks', checkpoint.unresolvedRisks, 2),
@@ -234,6 +238,7 @@ export function normalizeExecutionCheckpoint(
 		status: normalizeCheckpointStatus(value.status) ?? fallback.status,
 		stageGoal: normalizeOptionalString(value.stageGoal) ?? fallback.stageGoal,
 		summary: normalizeOptionalString(value.summary) ?? fallback.summary,
+		architectureNotes: toStringArray(value.architectureNotes),
 		keyDecisions: toStringArray(value.keyDecisions),
 		confirmedConstraints: toStringArray(value.confirmedConstraints),
 		unresolvedRisks: toStringArray(value.unresolvedRisks),

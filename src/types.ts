@@ -81,6 +81,7 @@ export interface TaskMemoryArtifact {
 	summary: string;
 	changedFiles: string[];
 	changedModules: string[];
+	architectureNotes: string[];
 	keyDecisions: string[];
 	patternsUsed: string[];
 	constraintsConfirmed: string[];
@@ -101,6 +102,7 @@ export interface ExecutionCheckpointArtifact {
 	status: ExecutionCheckpointStatus;
 	stageGoal: string;
 	summary: string;
+	architectureNotes: string[];
 	keyDecisions: string[];
 	confirmedConstraints: string[];
 	unresolvedRisks: string[];
@@ -178,6 +180,7 @@ export interface StoryEvidenceArtifact {
 	summary: string;
 	changedFiles: string[];
 	changedModules: string[];
+	architectureNotes: string[];
 	tests: StoryEvidenceTestResult[];
 	riskLevel: StoryRiskLevel;
 	riskReasons: string[];
