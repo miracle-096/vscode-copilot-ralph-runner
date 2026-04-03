@@ -12,7 +12,11 @@ import {
 	evaluateKnowledgeCoverage,
 	summarizeKnowledgeCheckForPrompt,
 } from '../knowledgeCheck';
-import { composeStoryExecutionPrompt } from '../promptContext';
+import {
+	composeStoryExecutionPrompt,
+	composeStoryRefactorPrompt,
+	composeStoryReviewerPrompt,
+} from '../promptContext';
 import {
 	buildProjectConstraintChatAdvicePrompt,
 	extractRunnableProjectConstraintRequest,
@@ -86,6 +90,13 @@ import {
 	writeStoryEvidence,
 	readStoryEvidence,
 } from '../storyEvidence';
+import {
+	buildStoryReviewLoopState,
+	createSynthesizedStoryReview,
+	DEFAULT_STORY_AUTO_REFACTOR_LIMIT,
+	deriveMaxReviewerPasses,
+	validateStoryReviewResult,
+} from '../storyReview';
 import {
 	getSourceContextIndex,
 	recallRelevantSourceContext,
@@ -1207,12 +1218,66 @@ suite('Extension Test Suite', () => {
 		});
 
 		assert.ok(prompt.includes('Before writing the completion signal, write a structured task memory artifact as valid JSON to:'));
+		assert.ok(prompt.includes('After completing this executor pass, confirm what was done.'));
+		assert.ok(prompt.includes('RALPH will launch a separate Reviewer Agent pass after this executor pass completes.'));
 		assert.ok(prompt.includes('d:/workspace/vscode-copilot-ralph-runner/.ralph/memory/US-301.json'));
 		assert.ok(prompt.includes('Also write a structured execution checkpoint artifact as valid JSON to:'));
 		assert.ok(prompt.includes('d:/workspace/vscode-copilot-ralph-runner/.ralph/checkpoints/US-301.checkpoint.json'));
 		assert.ok(prompt.includes('Also write a structured evidence artifact as valid JSON to:'));
 		assert.ok(prompt.includes('d:/workspace/vscode-copilot-ralph-runner/.ralph/evidence/US-301.evidence.json'));
 		assert.ok(prompt.includes('Only write the completion signal after the task memory artifact, execution checkpoint, and evidence artifact all exist and are complete.'));
+	});
+
+	test('Reviewer and refactor prompts encode the bounded review loop contract', () => {
+		const reviewerPrompt = composeStoryReviewerPrompt({
+			story: {
+				id: 'US-304',
+				title: 'Reviewer loop',
+				description: 'Run a reviewer pass after execution.',
+				acceptanceCriteria: ['Score all four review dimensions'],
+				priority: 4,
+			},
+			workspaceRoot: 'd:/workspace/vscode-copilot-ralph-runner',
+			reviewPass: 1,
+			maxReviewerPasses: 3,
+			maxAutoRefactorRounds: 2,
+			passingScore: 85,
+			taskMemoryPath: 'd:/workspace/vscode-copilot-ralph-runner/.ralph/memory/US-304.json',
+			executionCheckpointPath: 'd:/workspace/vscode-copilot-ralph-runner/.ralph/checkpoints/US-304.checkpoint.json',
+			evidencePath: 'd:/workspace/vscode-copilot-ralph-runner/.ralph/evidence/US-304.evidence.json',
+			completionSignalPath: 'd:/workspace/vscode-copilot-ralph-runner/.ralph/task-US-304-status',
+			taskMemoryLines: ['Summary: Initial execution completed.'],
+			checkpointLines: ['Stage Goal: Reviewer handoff'],
+			evidenceLines: ['Status: completed'],
+			reviewLoopLines: ['autoRefactors=0/2'],
+		});
+
+		const refactorPrompt = composeStoryRefactorPrompt({
+			story: {
+				id: 'US-304',
+				title: 'Reviewer loop',
+				description: 'Run a reviewer pass after execution.',
+				acceptanceCriteria: ['Score all four review dimensions'],
+				priority: 4,
+			},
+			workspaceRoot: 'd:/workspace/vscode-copilot-ralph-runner',
+			refactorRound: 1,
+			maxAutoRefactorRounds: 2,
+			reviewPass: 1,
+			reviewSummaryLines: ['Score: 70/100', 'Finding: Missing tests', 'Recommendation: Add one relevant passing test'],
+			taskMemoryPath: 'd:/workspace/vscode-copilot-ralph-runner/.ralph/memory/US-304.json',
+			executionCheckpointPath: 'd:/workspace/vscode-copilot-ralph-runner/.ralph/checkpoints/US-304.checkpoint.json',
+			evidencePath: 'd:/workspace/vscode-copilot-ralph-runner/.ralph/evidence/US-304.evidence.json',
+			completionSignalPath: 'd:/workspace/vscode-copilot-ralph-runner/.ralph/task-US-304-status',
+		});
+
+		assert.ok(reviewerPrompt.includes('Reviewer Agent Rules:'));
+		assert.ok(reviewerPrompt.includes('Score the result across exactly four dimensions'));
+		assert.ok(reviewerPrompt.includes('reviewSummary must include: totalScore, passingScore, passed, reviewPass'));
+		assert.ok(reviewerPrompt.includes('reviewLoop must include: reviewerPasses, autoRefactorRounds, maxAutoRefactorRounds'));
+		assert.ok(refactorPrompt.includes('Executor Refactor Rules:'));
+		assert.ok(refactorPrompt.includes('Auto-Refactor Round: 1/2'));
+		assert.ok(refactorPrompt.includes('Apply only the smallest set of code changes needed to resolve the reviewer findings.'));
 	});
 
 	test('Story prompt composition uses deterministic ordered sections and bounds long context', () => {
@@ -1333,6 +1398,134 @@ suite('Extension Test Suite', () => {
 		assert.strictEqual(prompt.includes('Relevant Source Context:'), false);
 		assert.strictEqual(prompt.includes('Recent Checkpoint:'), false);
 		assert.strictEqual(prompt.includes('Machine Policy Gates:'), false);
+	});
+
+	test('Synthesized story review keeps scoring bounded and actionable', () => {
+		const review = createSynthesizedStoryReview({
+			id: 'US-305',
+			title: 'Synthesized review',
+			description: 'Generate fallback review data.',
+			acceptanceCriteria: ['Fallback review is actionable'],
+			priority: 5,
+		}, {
+			maxAutoRefactorRounds: DEFAULT_STORY_AUTO_REFACTOR_LIMIT,
+			reviewPass: 2,
+			refactorPerformed: true,
+			changedFiles: ['src/extension.ts', 'src/promptContext.ts'],
+			evidence: createSynthesizedStoryEvidence({
+				id: 'US-305',
+				title: 'Synthesized review',
+				description: 'Generate fallback review data.',
+				acceptanceCriteria: ['Fallback review is actionable'],
+				priority: 5,
+			}, {
+				changedFiles: ['src/extension.ts', 'src/promptContext.ts'],
+				tests: [],
+			}),
+			fallbackReason: 'Reviewer output was missing.',
+		});
+		const validation = validateStoryReviewResult(review, {
+			reviewPass: 2,
+			maxAutoRefactorRounds: DEFAULT_STORY_AUTO_REFACTOR_LIMIT,
+		});
+		const loop = buildStoryReviewLoopState(review, {
+			reviewerPasses: review.reviewPass,
+			autoRefactorRounds: 1,
+			maxAutoRefactorRounds: DEFAULT_STORY_AUTO_REFACTOR_LIMIT,
+		});
+
+		assert.strictEqual(review.maxReviewerPasses, deriveMaxReviewerPasses(DEFAULT_STORY_AUTO_REFACTOR_LIMIT));
+		assert.strictEqual(review.dimensions.length, 4);
+		assert.strictEqual(validation.isValid, true);
+		assert.strictEqual(loop.autoRefactorRounds, 1);
+		assert.ok(review.findings.some(finding => finding.includes('Reviewer output was missing')));
+		assert.ok(review.recommendations.length > 0);
+	});
+
+	test('Task memory, checkpoint, and evidence preserve review metadata on round-trip', () => {
+		const workspaceRoot = fs.mkdtempSync(path.join(os.tmpdir(), 'ralph-review-roundtrip-'));
+		try {
+			const reviewSummary = createSynthesizedStoryReview({
+				id: 'US-306',
+				title: 'Review round-trip',
+				description: 'Persist review metadata',
+				acceptanceCriteria: ['Review fields survive normalization'],
+				priority: 6,
+			}, {
+				reviewPass: 3,
+				maxAutoRefactorRounds: 2,
+				refactorPerformed: true,
+				refactorSummary: 'Two targeted reviewer-driven cleanups executed.',
+				changedFiles: ['src/extension.ts'],
+				fallbackReason: 'Round-trip verification.',
+			});
+			const reviewLoop = buildStoryReviewLoopState(reviewSummary, {
+				reviewerPasses: 3,
+				autoRefactorRounds: 2,
+				maxAutoRefactorRounds: 2,
+			});
+
+			writeTaskMemory(workspaceRoot, 'US-306', {
+				title: 'Review round-trip',
+				summary: 'Task memory review payload.',
+				changedFiles: ['src/extension.ts'],
+				changedModules: ['src'],
+				keyDecisions: ['Persist structured review metadata.'],
+				constraintsConfirmed: ['prd.json remained read-only during task execution.'],
+				testsRun: ['npm run compile'],
+				risks: ['Review metadata drift'],
+				followUps: ['Keep reviewer loop auditable.'],
+				searchKeywords: ['review', 'loop'],
+				reviewSummary,
+				reviewLoop,
+				source: 'copilot',
+			});
+			writeExecutionCheckpoint(workspaceRoot, 'US-306', {
+				title: 'Review round-trip',
+				status: 'completed',
+				stageGoal: 'Persist reviewer pass details.',
+				summary: 'Checkpoint contains reviewer data.',
+				keyDecisions: ['Carry reviewer score across resets.'],
+				confirmedConstraints: ['prd.json remained read-only during task execution.'],
+				unresolvedRisks: ['None'],
+				nextStoryPrerequisites: ['Read the persisted review summary.'],
+				resumeRecommendation: 'Resume from the latest reviewed state.',
+				reviewSummary,
+				reviewLoop,
+				source: 'copilot',
+			}, 'completed');
+			writeStoryEvidence(workspaceRoot, 'US-306', {
+				title: 'Review round-trip',
+				status: 'pendingReview',
+				summary: 'Evidence contains reviewer data.',
+				changedFiles: ['src/extension.ts'],
+				changedModules: ['src'],
+				tests: [{ command: 'npm run compile', success: true }],
+				riskLevel: 'medium',
+				riskReasons: ['Core execution surface changed.'],
+				releaseNotes: ['Adds reviewer metadata persistence.'],
+				rollbackHints: ['Revert the reviewer loop wiring if needed.'],
+				followUps: ['Confirm reviewer score threshold with the team.'],
+				recommendFeatureFlag: false,
+				evidenceGaps: [],
+				approvalState: 'pending',
+				approvalHistory: [],
+				reviewSummary,
+				reviewLoop,
+				source: 'copilot',
+			});
+
+			const taskMemory = readTaskMemory(workspaceRoot, 'US-306');
+			const checkpoint = readExecutionCheckpoint(workspaceRoot, 'US-306');
+			const evidence = readStoryEvidence(workspaceRoot, 'US-306');
+
+			assert.strictEqual(taskMemory?.reviewSummary?.reviewPass, 3);
+			assert.strictEqual(checkpoint?.reviewLoop?.autoRefactorRounds, 2);
+			assert.strictEqual(evidence?.reviewSummary?.refactorPerformed, true);
+			assert.strictEqual(evidence?.reviewLoop?.endedReason, 'max-rounds');
+		} finally {
+			fs.rmSync(workspaceRoot, { recursive: true, force: true });
+		}
 	});
 
 	test('Policy config merges legacy compatibility rules without overriding the schema', () => {

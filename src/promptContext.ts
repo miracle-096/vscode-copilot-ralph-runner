@@ -1,4 +1,9 @@
-import { PromptSection, StoryPromptContext } from './types';
+import {
+	PromptSection,
+	StoryPromptContext,
+	StoryRefactorPromptContext,
+	StoryReviewerPromptContext,
+} from './types';
 
 const MAX_PROJECT_CONSTRAINT_LINES = 12;
 const MAX_DESIGN_CONTEXT_LINES = 12;
@@ -105,7 +110,11 @@ export function composeStoryExecutionPrompt(context: StoryPromptContext): string
 		{
 			title: 'Completion Contract:',
 			lines: [
-				'After completing all changes, confirm what was done.',
+				'After completing this executor pass, confirm what was done.',
+				'',
+				'RALPH will launch a separate Reviewer Agent pass after this executor pass completes.',
+				'Focus this pass on implementation, relevant validation, and leaving auditable artifacts for the reviewer handoff.',
+				'Do not skip artifact updates just because a later reviewer pass may request another targeted refactor.',
 				'',
 				'⚠️ IMPORTANT: Do NOT modify prd.json. Never edit, overwrite, or update prd.json for any reason.',
 				'Progress is tracked separately — your only responsibility is to execute the task and write the completion signal below.',
@@ -113,16 +122,19 @@ export function composeStoryExecutionPrompt(context: StoryPromptContext): string
 				'Before writing the completion signal, write a structured task memory artifact as valid JSON to:',
 				context.taskMemoryPath,
 				'The task memory artifact must include: summary, changedFiles, changedModules, keyDecisions, constraintsConfirmed, testsRun, risks, followUps, and searchKeywords.',
+				'You may add reviewSummary and reviewLoop fields when they help the next reviewer handoff.',
 				'Use source: "copilot" when you write the task memory artifact yourself.',
 				'',
 				'Also write a structured execution checkpoint artifact as valid JSON to:',
 				context.executionCheckpointPath,
 				'The execution checkpoint must include: status, summary, stageGoal, keyDecisions, confirmedConstraints, unresolvedRisks, nextStoryPrerequisites, and resumeRecommendation.',
+				'Keep the checkpoint specific enough that a fresh Reviewer Agent session can continue from it without hidden context.',
 				'When you write the checkpoint yourself for a successful story, use status: "completed" and source: "copilot".',
 				'',
 				'Also write a structured evidence artifact as valid JSON to:',
 				context.evidencePath,
 				'The evidence artifact must include: changedFiles, tests, riskLevel, riskReasons, releaseNotes, rollbackHints, followUps, recommendFeatureFlag, evidenceGaps, and a final auditable status.',
+				'If you already know likely reviewer concerns, capture them in the artifact details so the later reviewer pass can score architecture consistency, acceptance coverage, change scope control, and verifiability.',
 				'Only write the completion signal after the task memory artifact, execution checkpoint, and evidence artifact all exist and are complete.',
 				'',
 				'━━━ TASK COMPLETION SIGNAL (REQUIRED) ━━━',
@@ -130,6 +142,120 @@ export function composeStoryExecutionPrompt(context: StoryPromptContext): string
 				`(nothing else, no newline) to the file: ${context.completionSignalPath}`,
 				'This is how RALPH knows the task is done and can move to the next step.',
 				'Do NOT skip this step — without it RALPH will time out waiting.',
+			],
+		},
+	];
+
+	return composePromptSections(sections);
+}
+
+export function composeStoryReviewerPrompt(context: StoryReviewerPromptContext): string {
+	const sections: PromptSection[] = [
+		{
+			title: 'Reviewer Agent Rules:',
+			lines: [
+				`You are the Reviewer Agent for User Story ${context.story.id}.`,
+				`Workspace root: ${context.workspaceRoot}`,
+				'',
+				`Review Pass: ${context.reviewPass}/${context.maxReviewerPasses}`,
+				`Maximum Auto-Refactor Rounds: ${context.maxAutoRefactorRounds}`,
+				`Passing Score Threshold: ${context.passingScore}/${100}`,
+				'Review the current workspace and persisted artifacts. Do not make code changes in this pass.',
+				'Score the result across exactly four dimensions: architecture consistency, acceptance coverage, change scope control, and verifiability.',
+				'Each dimension must be scored from 0 to 25, with a totalScore out of 100.',
+			],
+		},
+		{
+			title: 'Current Story:',
+			lines: [
+				`Story ID: ${context.story.id}`,
+				`Title: ${context.story.title}`,
+				`Description: ${context.story.description}`,
+				'Acceptance Criteria:',
+				...context.story.acceptanceCriteria.map((criterion, index) => `${index + 1}. ${criterion}`),
+			],
+		},
+		{
+			title: 'Artifact Inputs:',
+			lines: [
+				'Task Memory Path:',
+				context.taskMemoryPath,
+				'Execution Checkpoint Path:',
+				context.executionCheckpointPath,
+				'Evidence Path:',
+				context.evidencePath,
+				...boundContextLines(context.taskMemoryLines ?? [], 10),
+				...boundContextLines(context.checkpointLines ?? [], 10),
+				...boundContextLines(context.evidenceLines ?? [], 10),
+				...boundContextLines(context.reviewLoopLines ?? [], 8),
+			],
+		},
+		{
+			title: 'Review Contract:',
+			lines: [
+				'Update the execution checkpoint and evidence artifacts so they both contain reviewSummary and reviewLoop fields.',
+				'You may mirror the same reviewSummary and reviewLoop into task memory when useful for recall.',
+				'reviewSummary must include: totalScore, passingScore, passed, reviewPass, maxReviewerPasses, maxAutoRefactorRounds, dimensions, findings, recommendations, refactorPerformed, reviewedAt, and source: "copilot".',
+				'reviewLoop must include: reviewerPasses, autoRefactorRounds, maxAutoRefactorRounds, and endedReason when this review is terminal.',
+				'If the story does not pass review, findings and recommendations must be concrete and immediately actionable by a later Executor Agent pass.',
+				'If the story passes review, say so explicitly and keep recommendations minimal.',
+				'After updating the artifacts, write the exact text `completed` (nothing else, no newline) to:',
+				context.completionSignalPath,
+			],
+		},
+	];
+
+	return composePromptSections(sections);
+}
+
+export function composeStoryRefactorPrompt(context: StoryRefactorPromptContext): string {
+	const sections: PromptSection[] = [
+		{
+			title: 'Executor Refactor Rules:',
+			lines: [
+				`You are the Executor Agent continuing User Story ${context.story.id}.`,
+				`Workspace root: ${context.workspaceRoot}`,
+				'',
+				`Auto-Refactor Round: ${context.refactorRound}/${context.maxAutoRefactorRounds}`,
+				`This refactor follows reviewer pass ${context.reviewPass}.`,
+				'Apply only the smallest set of code changes needed to resolve the reviewer findings.',
+				'Do not broaden scope, restart the story, or rewrite settled areas without a reviewer-backed reason.',
+			],
+		},
+		{
+			title: 'Current Story:',
+			lines: [
+				`Story ID: ${context.story.id}`,
+				`Title: ${context.story.title}`,
+				`Description: ${context.story.description}`,
+			],
+		},
+		{
+			title: 'Reviewer Findings To Fix:',
+			lines: context.reviewSummaryLines,
+		},
+		{
+			title: 'Artifact Handoff:',
+			lines: [
+				'Task Memory Path:',
+				context.taskMemoryPath,
+				'Execution Checkpoint Path:',
+				context.executionCheckpointPath,
+				'Evidence Path:',
+				context.evidencePath,
+				...boundContextLines(context.taskMemoryLines ?? [], 8),
+				...boundContextLines(context.checkpointLines ?? [], 8),
+				...boundContextLines(context.evidenceLines ?? [], 8),
+			],
+		},
+		{
+			title: 'Refactor Contract:',
+			lines: [
+				'Update code, tests, task memory, execution checkpoint, and evidence as needed to reflect the targeted fixes from this refactor round.',
+				'Preserve or improve auditability: changedFiles, tests, risks, followUps, releaseNotes, rollbackHints, and checkpoint decisions should match the latest workspace state.',
+				'Capture in the artifact details that an auto-refactor round occurred, so the next Reviewer Agent pass can judge whether the fixes addressed the findings.',
+				'After updating the code and artifacts for this refactor round, write the exact text `completed` (nothing else, no newline) to:',
+				context.completionSignalPath,
 			],
 		},
 	];

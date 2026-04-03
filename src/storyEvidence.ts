@@ -5,12 +5,19 @@ import {
 	StoryApprovalRecord,
 	StoryApprovalState,
 	StoryEvidenceArtifact,
+	StoryReviewLoopState,
+	StoryReviewResult,
 	StoryEvidenceTestResult,
 	StoryExecutionStatus,
 	StoryRiskLevel,
 	TaskMemoryArtifact,
 	UserStory,
 } from './types';
+import {
+	normalizeStoryReviewLoopState,
+	normalizeStoryReviewResult,
+	summarizeStoryReviewForStatus,
+} from './storyReview';
 import {
 	ensureStoryEvidenceDirectory,
 	getStoryEvidencePath,
@@ -59,6 +66,8 @@ export function createEmptyStoryEvidence(
 		evidenceGaps: [],
 		approvalState: status === 'completed' ? 'notRequired' : 'pending',
 		approvalHistory: [],
+		reviewSummary: undefined,
+		reviewLoop: undefined,
 		generatedAt: new Date().toISOString(),
 	};
 }
@@ -174,6 +183,8 @@ export function normalizeStoryEvidence(
 			? value.approvalSummary.trim()
 			: undefined,
 		approvalHistory: normalizeApprovalHistory(value?.approvalHistory),
+		reviewSummary: normalizeOptionalReviewSummary(value?.reviewSummary),
+		reviewLoop: normalizeOptionalReviewLoop(value?.reviewLoop),
 		generatedAt: typeof value?.generatedAt === 'string' && value.generatedAt.trim().length > 0 ? value.generatedAt : fallback.generatedAt,
 		source: value?.source === 'copilot' ? 'copilot' : value?.source === 'synthesized' ? 'synthesized' : undefined,
 	};
@@ -288,6 +299,7 @@ export function summarizeStoryEvidenceForStatus(evidence: StoryEvidenceArtifact 
 		`risk=${evidence.riskLevel}`,
 		`featureFlag=${evidence.recommendFeatureFlag ? 'yes' : 'no'}`,
 		`approval=${evidence.approvalState}`,
+		...summarizeStoryReviewForStatus(evidence.reviewSummary ?? null, evidence.reviewLoop ?? null),
 		...(evidence.evidenceGaps.length > 0 ? [`gaps=${evidence.evidenceGaps.join('; ')}`] : []),
 	];
 }
@@ -407,6 +419,22 @@ function normalizeApprovalRecordStatus(value: unknown): Extract<StoryExecutionSt
 	return value === 'completed' || value === 'pendingReview' || value === 'pendingRelease'
 		? value
 		: undefined;
+}
+
+function normalizeOptionalReviewSummary(value: unknown): StoryReviewResult | undefined {
+	if (!value || typeof value !== 'object') {
+		return undefined;
+	}
+
+	return normalizeStoryReviewResult(value as Partial<StoryReviewResult>);
+}
+
+function normalizeOptionalReviewLoop(value: unknown): StoryReviewLoopState | undefined {
+	if (!value || typeof value !== 'object') {
+		return undefined;
+	}
+
+	return normalizeStoryReviewLoopState(value as Partial<StoryReviewLoopState>);
 }
 
 function toStringArray(value: unknown): string[] {

@@ -1,0 +1,84 @@
+{
+  "storyId": "US-041",
+  "title": "为每个用户故事增加第二智能体评分与最多两轮自动重构",
+  "status": "completed",
+  "stageGoal": "让故事执行在完成代码变更后进入 reviewer pass，并在低分时自动触发最多两轮定向重构。",
+  "summary": "已把故事执行链改造成 executor pass -> reviewer pass -> bounded auto-refactor -> reviewer recheck 的显式回路，并把评分结果与回路状态写入 task memory、execution checkpoint 和 story evidence。",
+  "keyDecisions": [
+    "Reviewer Agent 使用独立 follow-up prompt 执行，不在首轮 executor prompt 内混合职责。",
+    "reviewSummary 与 reviewLoop 采用共享 schema，由扩展统一补齐和归档。",
+    "当最大自动重构轮次耗尽但评分仍不达标时，evidence status 会落到 pendingReview。"
+  ],
+  "confirmedConstraints": [
+    "prd.json remained read-only during task execution.",
+    "每个 follow-up pass 都通过 .ralph/task-<id>-status 重新进入 inprogress，然后等待新的 completed 信号。",
+    "自动重构轮次上限保持为 2。"
+  ],
+  "unresolvedRisks": [
+    "Reviewer Agent 目前仍与 Executor Agent 共享 Copilot Chat 能力，只是通过不同 prompt 分离职责。"
+  ],
+  "nextStoryPrerequisites": [
+    "如果后续故事继续扩展 reviewer loop，请先阅读 src/storyReview.ts 与 src/extension.ts 中的 runReviewerAndAutoRefactorLoop。",
+    "新增 artifact 字段时，记得同步 taskMemory/executionCheckpoint/storyEvidence 的 normalize 路径与测试。"
+  ],
+  "resumeRecommendation": "后续若继续增强评审闭环，优先检查 src/storyReview.ts 的评分/归一化逻辑、src/promptContext.ts 的 reviewer/refactor prompt，以及 src/extension.ts 中的多轮状态编排。",
+  "reviewSummary": {
+    "totalScore": 94,
+    "maxScore": 100,
+    "passingScore": 85,
+    "passed": true,
+    "reviewPass": 1,
+    "maxReviewerPasses": 3,
+    "maxAutoRefactorRounds": 2,
+    "dimensions": [
+      {
+        "dimension": "architectureConsistency",
+        "label": "Architecture Consistency",
+        "score": 24,
+        "summary": "执行编排、prompt contract 和 artifact schema 通过共享模块收口。",
+        "issues": [],
+        "recommendations": []
+      },
+      {
+        "dimension": "acceptanceCoverage",
+        "label": "Acceptance Coverage",
+        "score": 24,
+        "summary": "五条验收标准都已在流程或 artifact 层得到明确实现。",
+        "issues": [],
+        "recommendations": []
+      },
+      {
+        "dimension": "changeScopeControl",
+        "label": "Change Scope Control",
+        "score": 22,
+        "summary": "改动集中在 reviewer loop 所需模块，没有扩散到 PRD 或无关工作流。",
+        "issues": [],
+        "recommendations": []
+      },
+      {
+        "dimension": "verifiability",
+        "label": "Verifiability",
+        "score": 24,
+        "summary": "编译与完整测试均已通过，新增测试覆盖 reviewer prompt 与 review metadata round-trip。",
+        "issues": [],
+        "recommendations": []
+      }
+    ],
+    "findings": [
+      "Reviewer pass 已成为故事完成前的显式阶段，而不是仅依赖最终 completed 信号。"
+    ],
+    "recommendations": [],
+    "refactorPerformed": false,
+    "reviewedAt": "2026-04-03T09:12:00.000Z",
+    "source": "copilot"
+  },
+  "reviewLoop": {
+    "reviewerPasses": 1,
+    "autoRefactorRounds": 0,
+    "maxAutoRefactorRounds": 2,
+    "endedReason": "passed",
+    "lastReviewedAt": "2026-04-03T09:12:00.000Z"
+  },
+  "updatedAt": "2026-04-03T09:12:00.000Z",
+  "source": "copilot"
+}

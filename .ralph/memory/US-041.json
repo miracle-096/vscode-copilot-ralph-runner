@@ -1,0 +1,119 @@
+{
+  "storyId": "US-041",
+  "title": "为每个用户故事增加第二智能体评分与最多两轮自动重构",
+  "summary": "RALPH 现在会在故事执行完成后启动独立 Reviewer Agent pass，对架构一致性、验收覆盖、改动面控制和可验证性四个维度打分；低分时由扩展编排层驱动 Executor Agent 最多两轮自动重构，并将评分与回路状态写回 task memory、execution checkpoint 和 story evidence。",
+  "changedFiles": [
+    "src/extension.ts",
+    "src/promptContext.ts",
+    "src/storyReview.ts",
+    "src/taskMemory.ts",
+    "src/executionCheckpoint.ts",
+    "src/storyEvidence.ts",
+    "src/types.ts",
+    "src/test/extension.test.ts"
+  ],
+  "changedModules": [
+    "story execution orchestration",
+    "review prompt composition",
+    "review scoring schema",
+    "artifact persistence",
+    "extension test coverage"
+  ],
+  "keyDecisions": [
+    "把 Reviewer Agent pass 与自动重构回路放到扩展编排层执行，而不是只靠单次 Copilot prompt 自行约束。",
+    "新增 reviewSummary 与 reviewLoop 共享 schema，并挂到 task memory、execution checkpoint 和 story evidence 上，保证 fresh chat handoff 仍然可审计。",
+    "当评审仍不达标且达到最大自动重构轮次时，将最终 evidence 状态固定为 pendingReview，避免故事被不可预测地标记为 completed。"
+  ],
+  "patternsUsed": [
+    "post-completion validation with synthesized fallback",
+    "fresh-chat handoff between executor and reviewer passes",
+    "shared artifact normalization across task memory, checkpoint, and evidence"
+  ],
+  "constraintsConfirmed": [
+    "prd.json remained read-only during task execution.",
+    "每个 reviewer/refactor follow-up pass 都重新设置 task signal 并开启 fresh Copilot Chat session。",
+    "自动重构轮次上限固定为 2。"
+  ],
+  "testsRun": [
+    "npm run compile",
+    "npm test"
+  ],
+  "risks": [
+    "Reviewer Agent 仍通过 Copilot Chat prompt 扮演角色，没有独立模型隔离。",
+    "自动重构是否能在两轮内收敛，仍取决于 reviewer 建议质量与故事复杂度。"
+  ],
+  "followUps": [
+    "如果后续需要更强隔离，可把 Reviewer Agent 对接到独立模型或 participant 配置。",
+    "可考虑把评分阈值和最大自动重构轮次暴露为可配置设置。"
+  ],
+  "searchKeywords": [
+    "reviewer agent",
+    "auto refactor loop",
+    "reviewSummary",
+    "reviewLoop",
+    "acceptance coverage",
+    "verifiability"
+  ],
+  "relatedStories": [
+    "US-040"
+  ],
+  "reviewSummary": {
+    "totalScore": 94,
+    "maxScore": 100,
+    "passingScore": 85,
+    "passed": true,
+    "reviewPass": 1,
+    "maxReviewerPasses": 3,
+    "maxAutoRefactorRounds": 2,
+    "dimensions": [
+      {
+        "dimension": "architectureConsistency",
+        "label": "Architecture Consistency",
+        "score": 24,
+        "summary": "Reviewer loop 由扩展编排层统一驱动，评分 schema 与 artifact 归档保持一致。",
+        "issues": [],
+        "recommendations": []
+      },
+      {
+        "dimension": "acceptanceCoverage",
+        "label": "Acceptance Coverage",
+        "score": 24,
+        "summary": "执行链、评分输出、自动重构上限、结构化工件回写和最终状态流转均已有代码与测试覆盖。",
+        "issues": [],
+        "recommendations": []
+      },
+      {
+        "dimension": "changeScopeControl",
+        "label": "Change Scope Control",
+        "score": 22,
+        "summary": "改动集中在执行编排、prompt 组合、artifact schema 和测试，范围与故事目标一致。",
+        "issues": [],
+        "recommendations": []
+      },
+      {
+        "dimension": "verifiability",
+        "label": "Verifiability",
+        "score": 24,
+        "summary": "编译和完整扩展测试套件均通过，review loop 新增断言已覆盖关键 prompt 与 artifact round-trip。",
+        "issues": [],
+        "recommendations": []
+      }
+    ],
+    "findings": [
+      "Reviewer loop 已从单次完成流转升级为执行后评审再决定最终状态。"
+    ],
+    "recommendations": [],
+    "refactorPerformed": false,
+    "reviewedAt": "2026-04-03T09:12:00.000Z",
+    "source": "copilot"
+  },
+  "reviewLoop": {
+    "reviewerPasses": 1,
+    "autoRefactorRounds": 0,
+    "maxAutoRefactorRounds": 2,
+    "endedReason": "passed",
+    "lastReviewedAt": "2026-04-03T09:12:00.000Z"
+  },
+  "createdAt": "2026-04-03T09:12:00.000Z",
+  "source": "copilot"
+}

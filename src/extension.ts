@@ -29,13 +29,18 @@ import {
 	evaluateKnowledgeCoverage,
 	summarizeKnowledgeCheckForPrompt,
 } from './knowledgeCheck';
-import { composeStoryExecutionPrompt } from './promptContext';
+import {
+	composeStoryExecutionPrompt,
+	composeStoryRefactorPrompt,
+	composeStoryReviewerPrompt,
+} from './promptContext';
 import {
 	createSynthesizedTaskMemory,
 	hasTaskMemoryArtifact,
 	recallRelatedTaskMemories,
 	readTaskMemory,
 	summarizeRecalledTaskMemoriesForPrompt,
+	summarizeTaskMemoryForPrompt,
 	upsertTaskMemoryIndexEntry,
 	validateTaskMemory,
 	writeTaskMemory,
@@ -59,6 +64,16 @@ import {
 	validateStoryEvidence,
 	writeStoryEvidence,
 } from './storyEvidence';
+import {
+	buildStoryReviewLoopState,
+	createSynthesizedStoryReview,
+	DEFAULT_STORY_AUTO_REFACTOR_LIMIT,
+	DEFAULT_STORY_REVIEW_PASSING_SCORE,
+	deriveMaxReviewerPasses,
+	summarizeStoryReviewForPrompt,
+	summarizeStoryReviewForStatus,
+	validateStoryReviewResult,
+} from './storyReview';
 import { parseTaskSignalStatus } from './taskStatus';
 import {
 	buildProjectConstraintChatAdvicePrompt,
@@ -98,6 +113,8 @@ import {
 	GeneratedProjectConstraints,
 	PrdFile,
 	StoryEvidenceArtifact,
+	StoryReviewLoopState,
+	StoryReviewResult,
 	STORY_STATUSES,
 	StoryExecutionStatus,
 	TaskMemoryArtifact,
@@ -1149,10 +1166,26 @@ interface StoryEvidencePersistenceResult {
 	artifact: StoryEvidenceArtifact;
 }
 
+interface StoryReviewPersistenceResult {
+	source: 'copilot' | 'synthesized';
+	artifact: StoryReviewResult;
+	loop: StoryReviewLoopState;
+}
+
+interface StoryExecutionArtifacts {
+	taskMemory: TaskMemoryPersistenceResult;
+	checkpoint: ExecutionCheckpointPersistenceResult;
+	evidence: StoryEvidencePersistenceResult;
+}
+
+const MAX_AUTO_REFACTOR_ROUNDS = DEFAULT_STORY_AUTO_REFACTOR_LIMIT;
+const REVIEW_PASSING_SCORE = DEFAULT_STORY_REVIEW_PASSING_SCORE;
+
 async function executeStory(story: UserStory, workspaceRoot: string): Promise<{
 	taskMemory: TaskMemoryPersistenceResult;
 	checkpoint: ExecutionCheckpointPersistenceResult;
 	evidence: StoryEvidencePersistenceResult;
+	review: StoryReviewPersistenceResult;
 }> {
 	const prompt = buildCopilotPromptForStory(story, workspaceRoot);
 	log('  Delegating user story to Copilot...');
@@ -1161,23 +1194,117 @@ async function executeStory(story: UserStory, workspaceRoot: string): Promise<{
 	if (!completionPolicyResult.ok) {
 		throw new Error(`Policy gates blocked completion for ${story.id}`);
 	}
-	const taskMemoryResult = ensureTaskMemoryPersistence(story, workspaceRoot);
-	const checkpointResult = ensureExecutionCheckpointPersistence(story, workspaceRoot, {
-		status: 'completed',
-		taskMemory: taskMemoryResult.artifact,
-	});
-	const evidenceResult = ensureStoryEvidencePersistence(story, workspaceRoot, {
-		taskMemory: taskMemoryResult.artifact,
-		checkpoint: checkpointResult.artifact,
-	});
-	log(`  Task memory ready for ${story.id}: ${taskMemoryResult.filePath} (${taskMemoryResult.source})`);
-	log(`  Execution checkpoint ready for ${story.id}: ${checkpointResult.filePath} (${checkpointResult.source})`);
-	log(`  Story evidence ready for ${story.id}: ${evidenceResult.filePath} (${evidenceResult.source})`);
+	let artifacts = refreshStoryExecutionArtifacts(story, workspaceRoot);
+	log(`  Task memory ready for ${story.id}: ${artifacts.taskMemory.filePath} (${artifacts.taskMemory.source})`);
+	log(`  Execution checkpoint ready for ${story.id}: ${artifacts.checkpoint.filePath} (${artifacts.checkpoint.source})`);
+	log(`  Story evidence ready for ${story.id}: ${artifacts.evidence.filePath} (${artifacts.evidence.source})`);
+
+	RalphStateManager.setStoryExecutionStatus(workspaceRoot, story.id, 'pendingReview');
+	log(`  Story ${story.id} moved into Reviewer Agent pass.`);
+
+	const reviewResult = await runReviewerAndAutoRefactorLoop(story, workspaceRoot, artifacts);
+	artifacts = reviewResult.artifacts;
 	return {
-		taskMemory: taskMemoryResult,
-		checkpoint: checkpointResult,
-		evidence: evidenceResult,
+		taskMemory: artifacts.taskMemory,
+		checkpoint: artifacts.checkpoint,
+		evidence: artifacts.evidence,
+		review: reviewResult.review,
 	};
+}
+
+function refreshStoryExecutionArtifacts(story: UserStory, workspaceRoot: string): StoryExecutionArtifacts {
+	const taskMemory = ensureTaskMemoryPersistence(story, workspaceRoot);
+	const checkpoint = ensureExecutionCheckpointPersistence(story, workspaceRoot, {
+		status: 'completed',
+		taskMemory: taskMemory.artifact,
+	});
+	const evidence = ensureStoryEvidencePersistence(story, workspaceRoot, {
+		taskMemory: taskMemory.artifact,
+		checkpoint: checkpoint.artifact,
+	});
+
+	return { taskMemory, checkpoint, evidence };
+}
+
+async function runReviewerAndAutoRefactorLoop(
+	story: UserStory,
+	workspaceRoot: string,
+	initialArtifacts: StoryExecutionArtifacts,
+): Promise<{
+	artifacts: StoryExecutionArtifacts;
+	review: StoryReviewPersistenceResult;
+}> {
+	let artifacts = initialArtifacts;
+	let autoRefactorRounds = 0;
+	let latestReview: StoryReviewPersistenceResult | null = null;
+	const maxReviewerPasses = deriveMaxReviewerPasses(MAX_AUTO_REFACTOR_ROUNDS);
+
+	for (let reviewPass = 1; reviewPass <= maxReviewerPasses; reviewPass++) {
+		setTaskInProgressForFollowUpPass(workspaceRoot, story.id, 'pendingReview');
+		log(`  Launching Reviewer Agent pass ${reviewPass}/${maxReviewerPasses} for ${story.id}.`);
+		await sendToCopilot(
+			buildReviewerPromptForStory(story, workspaceRoot, artifacts, reviewPass),
+			story.id,
+			workspaceRoot,
+		);
+
+		artifacts = refreshStoryExecutionArtifacts(story, workspaceRoot);
+		const persistedReview = ensureStoryReviewPersistence(story, workspaceRoot, artifacts, {
+			reviewPass,
+			autoRefactorRounds,
+			maxAutoRefactorRounds: MAX_AUTO_REFACTOR_ROUNDS,
+		});
+		artifacts = persistedReview.artifacts;
+		latestReview = persistedReview.review;
+		log(`  Reviewer Agent scored ${story.id} at ${latestReview.artifact.totalScore}/${latestReview.artifact.maxScore}.`);
+
+		if (latestReview.artifact.passed) {
+			log(`  Reviewer Agent accepted ${story.id} after pass ${reviewPass}.`);
+			return { artifacts, review: latestReview };
+		}
+
+		if (autoRefactorRounds >= MAX_AUTO_REFACTOR_ROUNDS || reviewPass >= maxReviewerPasses) {
+			log(`  Reviewer Agent reached the maximum automatic refactor limit for ${story.id}.`);
+			return { artifacts, review: latestReview };
+		}
+
+		const nextRefactorRound = autoRefactorRounds + 1;
+		setTaskInProgressForFollowUpPass(workspaceRoot, story.id, 'inprogress');
+		log(`  Launching Executor Agent auto-refactor round ${nextRefactorRound}/${MAX_AUTO_REFACTOR_ROUNDS} for ${story.id}.`);
+		await sendToCopilot(
+			buildRefactorPromptForStory(story, workspaceRoot, artifacts, latestReview, nextRefactorRound),
+			story.id,
+			workspaceRoot,
+		);
+
+		autoRefactorRounds = nextRefactorRound;
+		const completionPolicyResult = evaluateCompletionPolicyGates(workspaceRoot, story);
+		if (!completionPolicyResult.ok) {
+			throw new Error(`Policy gates blocked completion for ${story.id} after auto-refactor round ${autoRefactorRounds}`);
+		}
+		artifacts = refreshStoryExecutionArtifacts(story, workspaceRoot);
+	}
+
+	const fallbackResult = latestReview
+		? { artifacts, review: latestReview }
+		: ensureStoryReviewPersistence(story, workspaceRoot, artifacts, {
+		reviewPass: 1,
+		autoRefactorRounds,
+		maxAutoRefactorRounds: MAX_AUTO_REFACTOR_ROUNDS,
+	});
+	return {
+		artifacts: fallbackResult.artifacts,
+		review: fallbackResult.review,
+	};
+}
+
+function setTaskInProgressForFollowUpPass(
+	workspaceRoot: string,
+	storyId: string,
+	status: Extract<StoryExecutionStatus, 'inprogress' | 'pendingReview'>,
+): void {
+	RalphStateManager.setInProgress(workspaceRoot, storyId);
+	RalphStateManager.setStoryExecutionStatus(workspaceRoot, storyId, status);
 }
 
 // ── Copilot Integration ─────────────────────────────────────────────────────
@@ -1216,6 +1343,54 @@ function buildCopilotPromptForStory(story: UserStory, workspaceRoot: string): st
 		evidencePath: resolveStoryEvidencePath(workspaceRoot, story.id).replace(/\\/g, '/'),
 		completionSignalPath: resolveTaskStatusPath(workspaceRoot, story.id).replace(/\\/g, '/'),
 		additionalExecutionRules,
+	});
+}
+
+function buildReviewerPromptForStory(
+	story: UserStory,
+	workspaceRoot: string,
+	artifacts: StoryExecutionArtifacts,
+	reviewPass: number,
+): string {
+	return composeStoryReviewerPrompt({
+		story,
+		workspaceRoot,
+		reviewPass,
+		maxReviewerPasses: deriveMaxReviewerPasses(MAX_AUTO_REFACTOR_ROUNDS),
+		maxAutoRefactorRounds: MAX_AUTO_REFACTOR_ROUNDS,
+		passingScore: REVIEW_PASSING_SCORE,
+		taskMemoryPath: resolveTaskMemoryPath(workspaceRoot, story.id).replace(/\\/g, '/'),
+		executionCheckpointPath: resolveExecutionCheckpointPath(workspaceRoot, story.id).replace(/\\/g, '/'),
+		evidencePath: resolveStoryEvidencePath(workspaceRoot, story.id).replace(/\\/g, '/'),
+		completionSignalPath: resolveTaskStatusPath(workspaceRoot, story.id).replace(/\\/g, '/'),
+		taskMemoryLines: summarizeTaskMemoryForPrompt(artifacts.taskMemory.artifact),
+		checkpointLines: summarizeExecutionCheckpointForPrompt(artifacts.checkpoint.artifact),
+		evidenceLines: summarizeStoryEvidenceForPrompt(artifacts.evidence.artifact),
+		reviewLoopLines: summarizeCurrentReviewLoop(artifacts),
+	});
+}
+
+function buildRefactorPromptForStory(
+	story: UserStory,
+	workspaceRoot: string,
+	artifacts: StoryExecutionArtifacts,
+	review: StoryReviewPersistenceResult,
+	refactorRound: number,
+): string {
+	return composeStoryRefactorPrompt({
+		story,
+		workspaceRoot,
+		refactorRound,
+		maxAutoRefactorRounds: MAX_AUTO_REFACTOR_ROUNDS,
+		reviewPass: review.artifact.reviewPass,
+		reviewSummaryLines: summarizeStoryReviewForPrompt(review.artifact),
+		taskMemoryPath: resolveTaskMemoryPath(workspaceRoot, story.id).replace(/\\/g, '/'),
+		executionCheckpointPath: resolveExecutionCheckpointPath(workspaceRoot, story.id).replace(/\\/g, '/'),
+		evidencePath: resolveStoryEvidencePath(workspaceRoot, story.id).replace(/\\/g, '/'),
+		completionSignalPath: resolveTaskStatusPath(workspaceRoot, story.id).replace(/\\/g, '/'),
+		taskMemoryLines: summarizeTaskMemoryForPrompt(artifacts.taskMemory.artifact),
+		checkpointLines: summarizeExecutionCheckpointForPrompt(artifacts.checkpoint.artifact),
+		evidenceLines: summarizeStoryEvidenceForPrompt(artifacts.evidence.artifact),
 	});
 }
 
@@ -1971,6 +2146,126 @@ function synthesizeStoryEvidenceForStory(
 	});
 }
 
+function ensureStoryReviewPersistence(
+	story: UserStory,
+	workspaceRoot: string,
+	artifacts: StoryExecutionArtifacts,
+	options: {
+		reviewPass: number;
+		autoRefactorRounds: number;
+		maxAutoRefactorRounds: number;
+	},
+): {
+	artifacts: StoryExecutionArtifacts;
+	review: StoryReviewPersistenceResult;
+} {
+	const reviewCandidates: Array<{ value: Partial<StoryReviewResult> | undefined; source: 'copilot' | 'synthesized'; label: string; }> = [
+		{ value: artifacts.evidence.artifact.reviewSummary, source: artifacts.evidence.source, label: 'story evidence' },
+		{ value: artifacts.checkpoint.artifact.reviewSummary, source: artifacts.checkpoint.source, label: 'execution checkpoint' },
+		{ value: artifacts.taskMemory.artifact.reviewSummary, source: artifacts.taskMemory.source, label: 'task memory' },
+	];
+
+	let reviewArtifact: StoryReviewResult | null = null;
+	let reviewSource: 'copilot' | 'synthesized' = 'synthesized';
+	for (const candidate of reviewCandidates) {
+		if (!candidate.value) {
+			continue;
+		}
+
+		const validation = validateStoryReviewResult(candidate.value, {
+			reviewPass: options.reviewPass,
+			maxAutoRefactorRounds: options.maxAutoRefactorRounds,
+			passingScore: REVIEW_PASSING_SCORE,
+			refactorPerformed: options.autoRefactorRounds > 0,
+			refactorSummary: options.autoRefactorRounds > 0 ? `Automatic refactor rounds executed: ${options.autoRefactorRounds}.` : undefined,
+		});
+		if (validation.isValid) {
+			reviewArtifact = validation.artifact;
+			reviewSource = candidate.source === 'copilot' ? 'copilot' : 'synthesized';
+			break;
+		}
+
+		log(`  WARNING: Review summary from ${candidate.label} failed validation for ${story.id}: ${validation.errors.join(' | ')}`);
+	}
+
+	if (!reviewArtifact) {
+		reviewArtifact = createSynthesizedStoryReview(story, {
+			reviewPass: options.reviewPass,
+			maxAutoRefactorRounds: options.maxAutoRefactorRounds,
+			passingScore: REVIEW_PASSING_SCORE,
+			refactorPerformed: options.autoRefactorRounds > 0,
+			refactorSummary: options.autoRefactorRounds > 0 ? `Automatic refactor rounds executed: ${options.autoRefactorRounds}.` : undefined,
+			changedFiles: artifacts.evidence.artifact.changedFiles,
+			taskMemory: artifacts.taskMemory.artifact,
+			checkpoint: artifacts.checkpoint.artifact,
+			evidence: artifacts.evidence.artifact,
+			fallbackReason: 'Reviewer pass did not persist a valid structured review summary, so Ralph synthesized one from the available artifacts.',
+		});
+		reviewSource = 'synthesized';
+		log(`  WARNING: Synthesized structured review summary for ${story.id}.`);
+	}
+
+	const reviewLoop = buildStoryReviewLoopState(reviewArtifact, {
+		reviewerPasses: options.reviewPass,
+		autoRefactorRounds: options.autoRefactorRounds,
+		maxAutoRefactorRounds: options.maxAutoRefactorRounds,
+	});
+	const finalEvidenceStatus = reviewArtifact.passed
+		? artifacts.evidence.artifact.status
+		: 'pendingReview';
+	const finalApprovalState = reviewArtifact.passed
+			? artifacts.evidence.artifact.approvalState
+			: 'pending';
+
+	const nextTaskMemoryArtifact: TaskMemoryArtifact = {
+		...artifacts.taskMemory.artifact,
+		reviewSummary: reviewArtifact,
+		reviewLoop,
+	};
+	const nextCheckpointArtifact: ExecutionCheckpointArtifact = {
+		...artifacts.checkpoint.artifact,
+		reviewSummary: reviewArtifact,
+		reviewLoop,
+	};
+	const nextEvidenceArtifact: StoryEvidenceArtifact = {
+		...artifacts.evidence.artifact,
+		status: finalEvidenceStatus,
+		approvalState: finalApprovalState,
+		reviewSummary: reviewArtifact,
+		reviewLoop,
+	};
+
+	const taskMemoryPath = writeTaskMemory(workspaceRoot, story.id, nextTaskMemoryArtifact);
+	upsertTaskMemoryIndexEntry(workspaceRoot, nextTaskMemoryArtifact, story.id);
+	const checkpointPath = writeExecutionCheckpoint(workspaceRoot, story.id, nextCheckpointArtifact, 'completed');
+	const evidencePath = writeStoryEvidence(workspaceRoot, story.id, nextEvidenceArtifact);
+
+	return {
+		artifacts: {
+			taskMemory: {
+				filePath: taskMemoryPath,
+				source: nextTaskMemoryArtifact.source ?? artifacts.taskMemory.source,
+				artifact: nextTaskMemoryArtifact,
+			},
+			checkpoint: {
+				filePath: checkpointPath,
+				source: nextCheckpointArtifact.source ?? artifacts.checkpoint.source,
+				artifact: nextCheckpointArtifact,
+			},
+			evidence: {
+				filePath: evidencePath,
+				source: nextEvidenceArtifact.source ?? artifacts.evidence.source,
+				artifact: nextEvidenceArtifact,
+			},
+		},
+		review: {
+			source: reviewSource,
+			artifact: reviewArtifact,
+			loop: reviewLoop,
+		},
+	};
+}
+
 function getCompletionPolicyExecutedTestCommands(workspaceRoot: string, story: UserStory) {
 	const policyConfig = getEffectivePolicyConfig();
 	if (!policyConfig.enabled) {
@@ -2016,9 +2311,44 @@ function buildStoryCompletionNote(executionResult: {
 	taskMemory: TaskMemoryPersistenceResult;
 	checkpoint: ExecutionCheckpointPersistenceResult;
 	evidence: StoryEvidencePersistenceResult;
+	review: StoryReviewPersistenceResult;
 }): string {
 	const evidenceSummary = summarizeStoryEvidenceForStatus(executionResult.evidence.artifact).join('; ');
-	return `Finalized as ${executionResult.evidence.artifact.status}; task memory persisted (${executionResult.taskMemory.source}); checkpoint persisted (${executionResult.checkpoint.source}); evidence persisted (${executionResult.evidence.source})${evidenceSummary ? `; ${evidenceSummary}` : ''}`;
+	const reviewSummary = summarizeStoryReviewForStatus(executionResult.review.artifact, executionResult.review.loop).join('; ');
+	return `Finalized as ${executionResult.evidence.artifact.status}; task memory persisted (${executionResult.taskMemory.source}); checkpoint persisted (${executionResult.checkpoint.source}); evidence persisted (${executionResult.evidence.source}); reviewer persisted (${executionResult.review.source})${reviewSummary ? `; ${reviewSummary}` : ''}${evidenceSummary ? `; ${evidenceSummary}` : ''}`;
+}
+
+function summarizeStoryEvidenceForPrompt(evidence: StoryEvidenceArtifact): string[] {
+	const lines = [
+		`Summary: ${evidence.summary}`,
+		`Status: ${evidence.status}`,
+		`Risk Level: ${evidence.riskLevel}`,
+		...summarizeStoryEvidenceForStatus(evidence),
+	];
+
+	for (const test of evidence.tests.slice(0, 4)) {
+		lines.push(`Test: ${test.command} => ${test.success ? 'passed' : 'failed'}`);
+	}
+	for (const gap of evidence.evidenceGaps.slice(0, 3)) {
+		lines.push(`Gap: ${gap}`);
+	}
+	for (const followUp of evidence.followUps.slice(0, 3)) {
+		lines.push(`Follow Up: ${followUp}`);
+	}
+
+	return lines;
+}
+
+function summarizeCurrentReviewLoop(artifacts: StoryExecutionArtifacts): string[] {
+	const reviewSummary = artifacts.evidence.artifact.reviewSummary
+		?? artifacts.checkpoint.artifact.reviewSummary
+		?? artifacts.taskMemory.artifact.reviewSummary
+		?? null;
+	const reviewLoop = artifacts.evidence.artifact.reviewLoop
+		?? artifacts.checkpoint.artifact.reviewLoop
+		?? artifacts.taskMemory.artifact.reviewLoop
+		?? null;
+	return summarizeStoryReviewForStatus(reviewSummary, reviewLoop);
 }
 
 function getKnowledgeCheckReportSafe(

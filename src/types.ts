@@ -89,6 +89,8 @@ export interface TaskMemoryArtifact {
 	followUps: string[];
 	searchKeywords: string[];
 	relatedStories: string[];
+	reviewSummary?: StoryReviewResult;
+	reviewLoop?: StoryReviewLoopState;
 	createdAt: string;
 	source?: 'copilot' | 'synthesized';
 }
@@ -104,8 +106,48 @@ export interface ExecutionCheckpointArtifact {
 	unresolvedRisks: string[];
 	nextStoryPrerequisites: string[];
 	resumeRecommendation: string;
+	reviewSummary?: StoryReviewResult;
+	reviewLoop?: StoryReviewLoopState;
 	updatedAt: string;
 	source?: 'copilot' | 'synthesized';
+}
+
+export type StoryReviewDimensionId = 'architectureConsistency' | 'acceptanceCoverage' | 'changeScopeControl' | 'verifiability';
+
+export interface StoryReviewDimensionScore {
+	dimension: StoryReviewDimensionId;
+	label: string;
+	score: number;
+	summary: string;
+	issues: string[];
+	recommendations: string[];
+}
+
+export type StoryReviewLoopEndedReason = 'passed' | 'max-rounds';
+
+export interface StoryReviewResult {
+	totalScore: number;
+	maxScore: number;
+	passingScore: number;
+	passed: boolean;
+	reviewPass: number;
+	maxReviewerPasses: number;
+	maxAutoRefactorRounds: number;
+	dimensions: StoryReviewDimensionScore[];
+	findings: string[];
+	recommendations: string[];
+	refactorPerformed: boolean;
+	refactorSummary?: string;
+	reviewedAt: string;
+	source?: 'copilot' | 'synthesized';
+}
+
+export interface StoryReviewLoopState {
+	reviewerPasses: number;
+	autoRefactorRounds: number;
+	maxAutoRefactorRounds: number;
+	endedReason?: StoryReviewLoopEndedReason;
+	lastReviewedAt?: string;
 }
 
 export type StoryRiskLevel = 'low' | 'medium' | 'high';
@@ -148,6 +190,8 @@ export interface StoryEvidenceArtifact {
 	approvalUpdatedAt?: string;
 	approvalSummary?: string;
 	approvalHistory: StoryApprovalRecord[];
+	reviewSummary?: StoryReviewResult;
+	reviewLoop?: StoryReviewLoopState;
 	generatedAt: string;
 	source?: 'copilot' | 'synthesized';
 }
@@ -341,6 +385,39 @@ export interface StoryPromptContext {
 	evidencePath: string;
 	completionSignalPath: string;
 	additionalExecutionRules?: string[];
+}
+
+export interface StoryReviewerPromptContext {
+	story: UserStory;
+	workspaceRoot: string;
+	reviewPass: number;
+	maxReviewerPasses: number;
+	maxAutoRefactorRounds: number;
+	passingScore: number;
+	taskMemoryPath: string;
+	executionCheckpointPath: string;
+	evidencePath: string;
+	completionSignalPath: string;
+	taskMemoryLines?: string[];
+	checkpointLines?: string[];
+	evidenceLines?: string[];
+	reviewLoopLines?: string[];
+}
+
+export interface StoryRefactorPromptContext {
+	story: UserStory;
+	workspaceRoot: string;
+	refactorRound: number;
+	maxAutoRefactorRounds: number;
+	reviewPass: number;
+	reviewSummaryLines: string[];
+	taskMemoryPath: string;
+	executionCheckpointPath: string;
+	evidencePath: string;
+	completionSignalPath: string;
+	taskMemoryLines?: string[];
+	checkpointLines?: string[];
+	evidenceLines?: string[];
 }
 
 export type PolicyGatePhase = 'preflight' | 'completion';

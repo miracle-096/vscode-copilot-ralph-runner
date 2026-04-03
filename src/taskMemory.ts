@@ -1,10 +1,17 @@
 import * as fs from 'fs';
 import {
+	StoryReviewLoopState,
+	StoryReviewResult,
 	TaskMemoryArtifact,
 	TaskMemoryIndex,
 	TaskMemoryIndexEntry,
 	UserStory,
 } from './types';
+import {
+	normalizeStoryReviewLoopState,
+	normalizeStoryReviewResult,
+	summarizeStoryReviewForPrompt,
+} from './storyReview';
 import {
 	ensureTaskMemoryDirectory,
 	getTaskMemoryIndexPath,
@@ -53,6 +60,8 @@ export function createEmptyTaskMemory(storyId: string, title = ''): TaskMemoryAr
 		followUps: [],
 		searchKeywords: [],
 		relatedStories: [],
+		reviewSummary: undefined,
+		reviewLoop: undefined,
 		createdAt: new Date().toISOString(),
 	};
 }
@@ -247,6 +256,8 @@ export function normalizeTaskMemory(value: Partial<TaskMemoryArtifact> | null | 
 		followUps: toStringArray(value.followUps),
 		searchKeywords: toStringArray(value.searchKeywords),
 		relatedStories: toStringArray(value.relatedStories),
+		reviewSummary: normalizeOptionalReviewSummary(value.reviewSummary),
+		reviewLoop: normalizeOptionalReviewLoop(value.reviewLoop),
 		createdAt: normalizeOptionalString(value.createdAt) ?? fallback.createdAt,
 		source: value.source === 'copilot' || value.source === 'synthesized' ? value.source : undefined,
 	};
@@ -277,6 +288,7 @@ export function summarizeTaskMemoryForPrompt(memory: TaskMemoryArtifact | null):
 		...prefixLines('Tests Run', memory.testsRun),
 		...prefixLines('Risks', memory.risks),
 		...prefixLines('Follow Ups', memory.followUps),
+		...prefixLines('Review Summary', summarizeStoryReviewForPrompt(memory.reviewSummary ?? null), 8),
 	];
 }
 
@@ -362,11 +374,12 @@ function normalizeTaskMemoryIndexEntry(value: unknown): TaskMemoryIndexEntry | n
 	};
 }
 
-function prefixLines(label: string, values: string[]): string[] {
+function prefixLines(label: string, values: string[], limit?: number): string[] {
 	if (values.length === 0) {
 		return [];
 	}
-	return [label, ...values.map(value => `- ${value}`), ''];
+	const boundedValues = typeof limit === 'number' ? values.slice(0, limit) : values;
+	return [label, ...boundedValues.map(value => `- ${value}`), ''];
 }
 
 function toStringArray(value: unknown): string[] {
@@ -388,6 +401,22 @@ function normalizeOptionalString(value: unknown): string | undefined {
 
 	const trimmed = value.trim();
 	return trimmed.length > 0 ? trimmed : undefined;
+}
+
+function normalizeOptionalReviewSummary(value: unknown): StoryReviewResult | undefined {
+	if (!value || typeof value !== 'object') {
+		return undefined;
+	}
+
+	return normalizeStoryReviewResult(value as Partial<StoryReviewResult>);
+}
+
+function normalizeOptionalReviewLoop(value: unknown): StoryReviewLoopState | undefined {
+	if (!value || typeof value !== 'object') {
+		return undefined;
+	}
+
+	return normalizeStoryReviewLoopState(value as Partial<StoryReviewLoopState>);
 }
 
 function compareIndexEntries(left: TaskMemoryIndexEntry, right: TaskMemoryIndexEntry): number {

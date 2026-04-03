@@ -2,7 +2,14 @@ import * as fs from 'fs';
 import {
 	ExecutionCheckpointArtifact,
 	ExecutionCheckpointStatus,
+	StoryReviewLoopState,
+	StoryReviewResult,
 } from './types';
+import {
+	normalizeStoryReviewLoopState,
+	normalizeStoryReviewResult,
+	summarizeStoryReviewForPrompt,
+} from './storyReview';
 import {
 	ensureExecutionCheckpointDirectory,
 	getExecutionCheckpointDirectoryPath,
@@ -42,6 +49,8 @@ export function createEmptyExecutionCheckpoint(
 		unresolvedRisks: [],
 		nextStoryPrerequisites: [],
 		resumeRecommendation: '',
+		reviewSummary: undefined,
+		reviewLoop: undefined,
 		updatedAt: new Date().toISOString(),
 	};
 }
@@ -162,6 +171,7 @@ export function summarizeExecutionCheckpointForPrompt(checkpoint: ExecutionCheck
 		`Stage Goal: ${checkpoint.stageGoal}`,
 		`Summary: ${checkpoint.summary}`,
 		`Resume Recommendation: ${checkpoint.resumeRecommendation}`,
+		...prefixLines('Review Summary', summarizeStoryReviewForPrompt(checkpoint.reviewSummary ?? null), 8),
 		...prefixLines('Key Decisions', checkpoint.keyDecisions, 2),
 		...prefixLines('Confirmed Constraints', checkpoint.confirmedConstraints, 2),
 		...prefixLines('Unresolved Risks', checkpoint.unresolvedRisks, 2),
@@ -229,6 +239,8 @@ export function normalizeExecutionCheckpoint(
 		unresolvedRisks: toStringArray(value.unresolvedRisks),
 		nextStoryPrerequisites: toStringArray(value.nextStoryPrerequisites),
 		resumeRecommendation: normalizeOptionalString(value.resumeRecommendation) ?? fallback.resumeRecommendation,
+		reviewSummary: normalizeOptionalReviewSummary(value.reviewSummary),
+		reviewLoop: normalizeOptionalReviewLoop(value.reviewLoop),
 		updatedAt: normalizeOptionalString(value.updatedAt) ?? fallback.updatedAt,
 		source: value.source === 'copilot' || value.source === 'synthesized' ? value.source : undefined,
 	};
@@ -262,6 +274,22 @@ function normalizeOptionalString(value: unknown): string | undefined {
 
 	const trimmed = value.trim();
 	return trimmed.length > 0 ? trimmed : undefined;
+}
+
+function normalizeOptionalReviewSummary(value: unknown): StoryReviewResult | undefined {
+	if (!value || typeof value !== 'object') {
+		return undefined;
+	}
+
+	return normalizeStoryReviewResult(value as Partial<StoryReviewResult>);
+}
+
+function normalizeOptionalReviewLoop(value: unknown): StoryReviewLoopState | undefined {
+	if (!value || typeof value !== 'object') {
+		return undefined;
+	}
+
+	return normalizeStoryReviewLoopState(value as Partial<StoryReviewLoopState>);
 }
 
 function prefixLines(label: string, values: string[], limit: number): string[] {

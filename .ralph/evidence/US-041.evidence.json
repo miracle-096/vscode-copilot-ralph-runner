@@ -1,0 +1,116 @@
+{
+  "storyId": "US-041",
+  "title": "为每个用户故事增加第二智能体评分与最多两轮自动重构",
+  "status": "completed",
+  "summary": "新增 Reviewer Agent follow-up pass 与最多两轮 Executor 自动重构回路，执行结果会以 structured reviewSummary/reviewLoop 的形式回写到 task memory、execution checkpoint 和 story evidence，并在低分达到上限时稳定落为 pendingReview。",
+  "changedFiles": [
+    "src/extension.ts",
+    "src/promptContext.ts",
+    "src/storyReview.ts",
+    "src/taskMemory.ts",
+    "src/executionCheckpoint.ts",
+    "src/storyEvidence.ts",
+    "src/types.ts",
+    "src/test/extension.test.ts"
+  ],
+  "changedModules": [
+    "extension orchestration",
+    "review prompts",
+    "review schema",
+    "artifact persistence",
+    "extension tests"
+  ],
+  "tests": [
+    {
+      "command": "npm run compile",
+      "success": true,
+      "outputSummary": "TypeScript type-check, ESLint, and esbuild all passed after the reviewer loop integration."
+    },
+    {
+      "command": "npm test",
+      "success": true,
+      "outputSummary": "Full VS Code extension test suite passed, including the new reviewer/refactor prompt and review metadata round-trip assertions."
+    }
+  ],
+  "riskLevel": "medium",
+  "riskReasons": [
+    "The story changes Ralph core execution orchestration in src/extension.ts.",
+    "Reviewer and executor follow-up passes still depend on prompt quality instead of a separately isolated runtime."
+  ],
+  "releaseNotes": [
+    "Story execution now enters a Reviewer Agent pass before finalizing completion.",
+    "Low-scoring stories can trigger up to two targeted Executor auto-refactor rounds.",
+    "reviewSummary and reviewLoop metadata are now persisted with task memory, checkpoints, and evidence artifacts."
+  ],
+  "rollbackHints": [
+    "Revert src/extension.ts, src/promptContext.ts, src/storyReview.ts, and the artifact schema changes together to restore the previous single-pass completion flow.",
+    "If rollback is partial, ensure reviewSummary/reviewLoop fields are also removed from taskMemory, executionCheckpoint, storyEvidence, and their tests."
+  ],
+  "followUps": [
+    "Consider exposing the review passing threshold and max auto-refactor rounds as user settings.",
+    "Evaluate whether Reviewer Agent should eventually use an independent model selection path."
+  ],
+  "recommendFeatureFlag": false,
+  "evidenceGaps": [],
+  "approvalState": "notRequired",
+  "approvalHistory": [],
+  "reviewSummary": {
+    "totalScore": 94,
+    "maxScore": 100,
+    "passingScore": 85,
+    "passed": true,
+    "reviewPass": 1,
+    "maxReviewerPasses": 3,
+    "maxAutoRefactorRounds": 2,
+    "dimensions": [
+      {
+        "dimension": "architectureConsistency",
+        "label": "Architecture Consistency",
+        "score": 24,
+        "summary": "新能力通过独立 review module 与 extension orchestration 收口，没有把评分逻辑散落到多个 artifact 模块。",
+        "issues": [],
+        "recommendations": []
+      },
+      {
+        "dimension": "acceptanceCoverage",
+        "label": "Acceptance Coverage",
+        "score": 24,
+        "summary": "execution chain、评分结构、自动重构上限、structured artifacts 和最终状态流转都已有实现与断言。",
+        "issues": [],
+        "recommendations": []
+      },
+      {
+        "dimension": "changeScopeControl",
+        "label": "Change Scope Control",
+        "score": 22,
+        "summary": "文件改动集中在 reviewer loop 所需主干模块和测试，没有牵动 PRD 或无关生成物。",
+        "issues": [],
+        "recommendations": []
+      },
+      {
+        "dimension": "verifiability",
+        "label": "Verifiability",
+        "score": 24,
+        "summary": "编译与整套扩展测试均通过，新测试验证了 reviewer/refactor prompt contract 与 review metadata 持久化。",
+        "issues": [],
+        "recommendations": []
+      }
+    ],
+    "findings": [
+      "Reviewer Agent 评分与自动重构回路已经成为故事完成链的一部分。"
+    ],
+    "recommendations": [],
+    "refactorPerformed": false,
+    "reviewedAt": "2026-04-03T09:12:00.000Z",
+    "source": "copilot"
+  },
+  "reviewLoop": {
+    "reviewerPasses": 1,
+    "autoRefactorRounds": 0,
+    "maxAutoRefactorRounds": 2,
+    "endedReason": "passed",
+    "lastReviewedAt": "2026-04-03T09:12:00.000Z"
+  },
+  "generatedAt": "2026-04-03T09:12:00.000Z",
+  "source": "copilot"
+}
