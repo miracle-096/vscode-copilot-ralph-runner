@@ -196,6 +196,102 @@ export interface StoryEvidenceArtifact {
 	source?: 'copilot' | 'synthesized';
 }
 
+export type StoryRunLogStatus = 'running' | 'completed' | 'failed' | 'cancelled' | 'blocked';
+
+export type StoryRunLogPhase =
+	| 'startup'
+	| 'preflight'
+	| 'execution'
+	| 'completion-gates'
+	| 'artifact-persistence'
+	| 'review'
+	| 'refactor'
+	| 'finalization';
+
+export type StoryRunLogCategory = 'signal' | 'diagnostic' | 'noise';
+
+export type StoryRunLogEventKind =
+	| 'stage-transition'
+	| 'context-injection'
+	| 'policy'
+	| 'test'
+	| 'artifact'
+	| 'review'
+	| 'refactor'
+	| 'failure'
+	| 'output'
+	| 'summary';
+
+export interface StoryRunLogPhaseEntry {
+	phase: StoryRunLogPhase;
+	enteredAt: string;
+	exitedAt?: string;
+	summary?: string;
+	status?: StoryRunLogStatus;
+}
+
+export interface StoryRunLogEvent {
+	id: string;
+	timestamp: string;
+	phase: StoryRunLogPhase;
+	category: StoryRunLogCategory;
+	kind: StoryRunLogEventKind;
+	title: string;
+	summary: string;
+	details: string[];
+	data?: Record<string, unknown>;
+}
+
+export interface StoryRunLogContextInjection {
+	name: string;
+	lineCount: number;
+	injected: boolean;
+	summary: string;
+	details: string[];
+}
+
+export interface StoryRunLogPolicyHit {
+	phase: PolicyGatePhase;
+	ok: boolean;
+	blocking: boolean;
+	summary: string;
+	ruleIds: string[];
+	violations: string[];
+	executedCommands: string[];
+}
+
+export interface StoryRunLogTestResult {
+	command: string;
+	success: boolean;
+	summary: string;
+	source: 'policy-gate' | 'artifact';
+	phase: StoryRunLogPhase;
+}
+
+export interface StoryRunLogArtifact {
+	runId: string;
+	storyId: string;
+	title: string;
+	status: StoryRunLogStatus;
+	startedAt: string;
+	endedAt?: string;
+	durationMs?: number;
+	currentPhase: StoryRunLogPhase;
+	phaseHistory: StoryRunLogPhaseEntry[];
+	events: StoryRunLogEvent[];
+	persistedCounts: {
+		signal: number;
+		diagnostic: number;
+		noise: number;
+		skippedNoise: number;
+	};
+	contextInjections: StoryRunLogContextInjection[];
+	policyHits: StoryRunLogPolicyHit[];
+	tests: StoryRunLogTestResult[];
+	keySignals: string[];
+	source: 'system';
+}
+
 export interface SourceContextIndexArtifact {
 	version: number;
 	generatedAt: string;

@@ -83,12 +83,15 @@ RALPH 会在执行过程中创建并维护下列工件：
 | `.ralph/memory-index.json` | 所有任务记忆的紧凑索引，用于后续 recall |
 | `.ralph/checkpoints/US-xxx.checkpoint.json` | 单个故事最近一次执行检查点，记录摘要、风险、恢复建议 |
 | `.ralph/evidence/US-xxx.evidence.json` | 故事证据包，记录测试、风险、发布说明、回滚线索和审批状态 |
+| `.ralph/run-logs/US-xxx-*.run-log.json` | 单次故事执行的结构化运行日志，记录阶段流转、关键事件、上下文注入、策略命中、测试摘要与噪音计数 |
 | `.prd/design-context/US-xxx.design.json` | 故事级设计上下文或自动整理结果 |
 | `.prd/design-context/shared/project.design.json` | 项目级共享设计上下文 |
 | `.prd/design-context/shared/screen-<id>.design.json` | 页面/屏幕级共享设计上下文 |
 | `.prd/design-context/shared/module-<id>.design.json` | 模块级共享设计上下文 |
 | `.ralph/design-context-suggestions/US-xxx.suggestion.json` | 故事设计建议的临时工件 |
 | `progress.txt` | 故事执行日志，记录 done/failed/pending-review/pending-release |
+
+`progress.txt` 继续承担面向人的高层进度跟踪；更细的运行级信号会增量写入 `.ralph/run-logs/`。run log 会把 `signal`、`diagnostic`、`noise` 分开，主动跳过 Copilot 轮询噪音，只保留适合后续智能体检索与消费的关键摘要。
 
 ## 推荐工作流
 

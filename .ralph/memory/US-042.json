@@ -1,0 +1,61 @@
+{
+  "storyId": "US-042",
+  "title": "构建 ralph run 的结构化关键信号日志系统",
+  "summary": "为 ralph run 增加了独立的结构化 run log 工件与 recorder，把故事执行、上下文注入、policy gate、测试摘要、reviewer 评分、自动重构动作和失败信号统一沉淀到 .ralph/run-logs，并对 Copilot 轮询输出做 noise 跳过与计数压缩。",
+  "changedFiles": [
+    "README.md",
+    "src/extension.ts",
+    "src/runLog.ts",
+    "src/test/extension.test.ts",
+    "src/types.ts",
+    "src/workspacePaths.ts"
+  ],
+  "changedModules": [
+    "run-log persistence",
+    "extension orchestration",
+    "context injection logging",
+    "policy/test signal extraction",
+    "run-log tests"
+  ],
+  "keyDecisions": [
+    "把结构化 run log 做成独立的 .ralph/run-logs 工件，而不是继续堆叠在 progress.txt 或现有 artifact schema 里。",
+    "通过 extension orchestration 主链主动记录高价值事件，并把 output channel 文本按 signal、diagnostic、noise 分类，而不是事后全量解析文本日志。",
+    "对 Copilot 轮询与最小等待类输出只保留 skippedNoise 计数，不逐条持久化，避免 run log 被低价值噪音淹没。"
+  ],
+  "patternsUsed": [
+    "story-scoped JSON artifacts under .ralph/",
+    "synthesized vs copilot artifact source tagging",
+    "bounded summaries for machine-consumable logs"
+  ],
+  "constraintsConfirmed": [
+    "prd.json remained read-only during task execution.",
+    "The existing output channel remained user-visible and was not replaced.",
+    "Relevant validation commands were run before completion."
+  ],
+  "testsRun": [
+    "npm run compile",
+    "npm test"
+  ],
+  "risks": [
+    "Structured run logging now touches src/extension.ts, so future orchestration changes must keep recorder phase transitions aligned.",
+    "Noise classification currently uses heuristics over output-channel messages and may need tuning if log wording changes."
+  ],
+  "followUps": [
+    "让 evidence、checkpoint 或 knowledge-check 在需要时直接读取最新 run log 的 summary sections，而不是重复执行部分推导逻辑。",
+    "如果后续增加更多执行阶段，可把 StoryRunLogPhase 扩展为更细粒度的枚举并补充消费方测试。"
+  ],
+  "searchKeywords": [
+    "US-042",
+    "structured run log",
+    "signal diagnostic noise",
+    "run-log recorder",
+    "policy gate summary",
+    "reviewer score log"
+  ],
+  "relatedStories": [
+    "US-040",
+    "US-041"
+  ],
+  "createdAt": "2026-04-03T09:21:30.000Z",
+  "source": "copilot"
+}

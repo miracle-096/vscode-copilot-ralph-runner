@@ -20,6 +20,8 @@ export const EXECUTION_CHECKPOINT_DIR = 'checkpoints';
 export const EXECUTION_CHECKPOINT_FILE_SUFFIX = '.checkpoint.json';
 export const STORY_EVIDENCE_DIR = 'evidence';
 export const STORY_EVIDENCE_FILE_SUFFIX = '.evidence.json';
+export const STORY_RUN_LOG_DIR = 'run-logs';
+export const STORY_RUN_LOG_FILE_SUFFIX = '.run-log.json';
 export const SOURCE_CONTEXT_INDEX_FILENAME = 'source-context-index.json';
 export const POLICY_BASELINE_DIR = 'policy-baselines';
 export const POLICY_BASELINE_FILE_SUFFIX = '.policy-baseline.json';
@@ -72,6 +74,14 @@ export function getStoryEvidenceDirectoryPath(workspaceRoot: string): string {
 
 export function getStoryEvidencePath(workspaceRoot: string, storyId: string): string {
 	return path.join(getStoryEvidenceDirectoryPath(workspaceRoot), `${storyId}${STORY_EVIDENCE_FILE_SUFFIX}`);
+}
+
+export function getStoryRunLogDirectoryPath(workspaceRoot: string): string {
+	return path.join(getRalphDir(workspaceRoot), STORY_RUN_LOG_DIR);
+}
+
+export function getStoryRunLogPath(workspaceRoot: string, runId: string): string {
+	return path.join(getStoryRunLogDirectoryPath(workspaceRoot), `${runId}${STORY_RUN_LOG_FILE_SUFFIX}`);
 }
 
 export function getDesignContextSuggestionDirectoryPath(workspaceRoot: string): string {
@@ -185,6 +195,11 @@ export function ensureExecutionCheckpointDirectory(workspaceRoot: string): strin
 export function ensureStoryEvidenceDirectory(workspaceRoot: string): string {
 	ensureDirectoryExists(getRalphDir(workspaceRoot));
 	return ensureDirectoryExists(getStoryEvidenceDirectoryPath(workspaceRoot));
+}
+
+export function ensureStoryRunLogDirectory(workspaceRoot: string): string {
+	ensureDirectoryExists(getRalphDir(workspaceRoot));
+	return ensureDirectoryExists(getStoryRunLogDirectoryPath(workspaceRoot));
 }
 
 export function ensurePolicyBaselineDirectory(workspaceRoot: string): string {

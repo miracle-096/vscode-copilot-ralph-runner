@@ -105,6 +105,7 @@ import {
 	summarizePolicyViolations,
 	writePolicyBaseline,
 } from './policyGate';
+import { createStoryRunLogRecorder, StoryRunLogRecorder } from './runLog';
 import {
 	DesignContextScope,
 	StoryApprovalAction,
@@ -623,6 +624,7 @@ let outputChannel: vscode.OutputChannel;
 let cancelToken: vscode.CancellationTokenSource | null = null;
 let isRunning = false;
 let statusBarItem: vscode.StatusBarItem;
+let activeRunLog: StoryRunLogRecorder | null = null;
 
 // ── Activation ──────────────────────────────────────────────────────────────
 
@@ -779,7 +781,11 @@ async function startRalph(): Promise<void> {
 		log(`Story ${nextStory.id}: ${nextStory.title}`);
 		log(`Description: ${nextStory.description}`);
 		log(`Priority: ${nextStory.priority}`);
+		activeRunLog = createStoryRunLogRecorder(workspaceRoot, nextStory);
+		activeRunLog.transitionPhase('startup', `Selected ${nextStory.id}: ${nextStory.title}.`);
+		log(`  Structured run log created: ${activeRunLog.filePath.replace(/\\/g, '/')}`);
 		refreshSourceContextIndexArtifact(workspaceRoot, `before ${nextStory.id}`);
+		activeRunLog.transitionPhase('preflight', `Running preflight checks for ${nextStory.id}.`);
 
 		const effectivePolicyConfig = getEffectivePolicyConfig();
 		const preflightKnowledgeReport = getKnowledgeCheckReportSafe(workspaceRoot, {
@@ -799,12 +805,15 @@ async function startRalph(): Promise<void> {
 				commandTimeoutMs: config.POLICY_GATE_COMMAND_TIMEOUT_MS,
 				artifactPaths: getPolicyArtifactPaths(workspaceRoot, nextStory),
 			});
+			activeRunLog?.recordPolicyEvaluation('preflight', preflightPolicyResult);
 			if (!preflightPolicyResult.ok) {
 				log(`  Policy gates blocked ${nextStory.id} before execution.`);
 				for (const line of summarizePolicyViolations(preflightPolicyResult)) {
 					log(`  ${line}`);
 				}
+				activeRunLog?.finalize('blocked', `Preflight policy gates blocked ${nextStory.id}.`, 'preflight');
 				vscode.window.showWarningMessage(languagePack.runtime.policyBlockedBeforeStory(nextStory.id));
+				activeRunLog = null;
 				break;
 			}
 		}
@@ -812,7 +821,17 @@ async function startRalph(): Promise<void> {
 		const missingRequiredDesignContext = getMissingRequiredDesignContextReason(workspaceRoot, nextStory);
 		if (missingRequiredDesignContext) {
 			log(`  ${missingRequiredDesignContext}`);
+			activeRunLog?.recordEvent({
+				phase: 'preflight',
+				category: 'diagnostic',
+				kind: 'failure',
+				title: 'design-context-required',
+				summary: missingRequiredDesignContext,
+				details: [],
+			});
+			activeRunLog?.finalize('blocked', `Required design context was missing for ${nextStory.id}.`, 'preflight');
 			vscode.window.showWarningMessage(missingRequiredDesignContext);
+			activeRunLog = null;
 			break;
 		}
 
@@ -820,6 +839,14 @@ async function startRalph(): Promise<void> {
 		await ensureNoActiveTask(workspaceRoot);
 		const baselinePath = writePolicyBaseline(workspaceRoot, nextStory.id, detectChangedFilesForWorkspace(workspaceRoot));
 		log(`  Policy baseline captured for ${nextStory.id}: ${baselinePath.replace(/\\/g, '/')}`);
+		activeRunLog?.recordEvent({
+			phase: 'preflight',
+			category: 'signal',
+			kind: 'summary',
+			title: 'policy-baseline',
+			summary: `Captured policy baseline for ${nextStory.id}.`,
+			details: [baselinePath.replace(/\\/g, '/')],
+		});
 
 		// ── Persist "inprogress" state to .ralph/task-<id>-status ───────────
 		RalphStateManager.setInProgress(workspaceRoot, nextStory.id);
@@ -827,6 +854,7 @@ async function startRalph(): Promise<void> {
 		log(`  Task state written: .ralph/task-${nextStory.id}-status = inprogress`);
 
 		try {
+			activeRunLog?.transitionPhase('execution', `Delegating ${nextStory.id} to Copilot for implementation.`);
 			// executeStory returns only after Copilot has written "completed"
 			// to .ralph/task-<id>-status (or after a timeout).
 			const executionResult = await executeStory(nextStory, workspaceRoot);
@@ -844,6 +872,7 @@ async function startRalph(): Promise<void> {
 			);
 
 			log(`✅ Story ${nextStory.id} finalized as ${executionResult.evidence.artifact.status} with task memory (${executionResult.taskMemory.source}), checkpoint (${executionResult.checkpoint.source}), and evidence (${executionResult.evidence.source}).`);
+			activeRunLog?.finalize('completed', `Story ${nextStory.id} finalized as ${executionResult.evidence.artifact.status}.`);
 			await maybePromptForManualApproval(workspaceRoot, nextStory, executionResult.evidence.artifact);
 		} catch (err: unknown) {
 			const errMsg = err instanceof Error ? err.message : String(err);
@@ -854,11 +883,29 @@ async function startRalph(): Promise<void> {
 				});
 				log(`⏹ Story ${nextStory.id} cancelled by user.`);
 				log(`  Checkpoint persisted for interrupted story ${nextStory.id} (${interruptedCheckpoint.source}).`);
+				activeRunLog?.recordEvent({
+					phase: 'finalization',
+					category: 'diagnostic',
+					kind: 'failure',
+					title: 'cancelled',
+					summary: `Story ${nextStory.id} was cancelled by the user.`,
+					details: [errMsg],
+				});
+				activeRunLog?.finalize('cancelled', `Story ${nextStory.id} was cancelled during execution.`);
 				RalphStateManager.clearStalledTask(workspaceRoot, nextStory.id);
 				RalphStateManager.clearStoryExecutionStatus(workspaceRoot, nextStory.id);
+				activeRunLog = null;
 				break;
 			}
 			log(`❌ Story ${nextStory.id} failed: ${errMsg}`);
+			activeRunLog?.recordEvent({
+				phase: 'finalization',
+				category: 'diagnostic',
+				kind: 'failure',
+				title: 'execution-failed',
+				summary: `Story ${nextStory.id} failed.`,
+				details: [errMsg],
+			});
 			const failedCheckpoint = ensureExecutionCheckpointPersistence(nextStory, workspaceRoot, {
 				status: 'failed',
 				failureMessage: errMsg,
@@ -870,8 +917,10 @@ async function startRalph(): Promise<void> {
 
 			// Write failure to progress.txt (prd.json is never modified)
 			writeProgressEntry(workspaceRoot, nextStory.id, 'failed', `${errMsg}; checkpoint persisted (${failedCheckpoint.source})`);
+			activeRunLog?.finalize('failed', `Story ${nextStory.id} failed with an unrecovered error.`);
 		} finally {
 			clearPolicyBaseline(workspaceRoot, nextStory.id);
+			activeRunLog = null;
 		}
 
 		loopsExecuted++;
@@ -1188,12 +1237,21 @@ async function executeStory(story: UserStory, workspaceRoot: string): Promise<{
 	review: StoryReviewPersistenceResult;
 }> {
 	const prompt = buildCopilotPromptForStory(story, workspaceRoot);
+	activeRunLog?.recordEvent({
+		phase: 'execution',
+		category: 'signal',
+		kind: 'summary',
+		title: 'prompt-composed',
+		summary: `Execution prompt composed for ${story.id}.`,
+		details: [`length=${prompt.length}`],
+	});
 	log('  Delegating user story to Copilot...');
 	await sendToCopilot(prompt, story.id, workspaceRoot);
 	const completionPolicyResult = evaluateCompletionPolicyGates(workspaceRoot, story);
 	if (!completionPolicyResult.ok) {
 		throw new Error(`Policy gates blocked completion for ${story.id}`);
 	}
+	activeRunLog?.transitionPhase('artifact-persistence', `Persisting story artifacts for ${story.id}.`);
 	let artifacts = refreshStoryExecutionArtifacts(story, workspaceRoot);
 	log(`  Task memory ready for ${story.id}: ${artifacts.taskMemory.filePath} (${artifacts.taskMemory.source})`);
 	log(`  Execution checkpoint ready for ${story.id}: ${artifacts.checkpoint.filePath} (${artifacts.checkpoint.source})`);
@@ -1201,6 +1259,7 @@ async function executeStory(story: UserStory, workspaceRoot: string): Promise<{
 
 	RalphStateManager.setStoryExecutionStatus(workspaceRoot, story.id, 'pendingReview');
 	log(`  Story ${story.id} moved into Reviewer Agent pass.`);
+	activeRunLog?.transitionPhase('review', `Story ${story.id} moved into Reviewer Agent pass.`);
 
 	const reviewResult = await runReviewerAndAutoRefactorLoop(story, workspaceRoot, artifacts);
 	artifacts = reviewResult.artifacts;
@@ -1242,6 +1301,7 @@ async function runReviewerAndAutoRefactorLoop(
 	for (let reviewPass = 1; reviewPass <= maxReviewerPasses; reviewPass++) {
 		setTaskInProgressForFollowUpPass(workspaceRoot, story.id, 'pendingReview');
 		log(`  Launching Reviewer Agent pass ${reviewPass}/${maxReviewerPasses} for ${story.id}.`);
+		activeRunLog?.transitionPhase('review', `Launching reviewer pass ${reviewPass}/${maxReviewerPasses} for ${story.id}.`);
 		await sendToCopilot(
 			buildReviewerPromptForStory(story, workspaceRoot, artifacts, reviewPass),
 			story.id,
@@ -1257,6 +1317,7 @@ async function runReviewerAndAutoRefactorLoop(
 		artifacts = persistedReview.artifacts;
 		latestReview = persistedReview.review;
 		log(`  Reviewer Agent scored ${story.id} at ${latestReview.artifact.totalScore}/${latestReview.artifact.maxScore}.`);
+		activeRunLog?.recordReview(latestReview.artifact, latestReview.loop, latestReview.source);
 
 		if (latestReview.artifact.passed) {
 			log(`  Reviewer Agent accepted ${story.id} after pass ${reviewPass}.`);
@@ -1271,6 +1332,8 @@ async function runReviewerAndAutoRefactorLoop(
 		const nextRefactorRound = autoRefactorRounds + 1;
 		setTaskInProgressForFollowUpPass(workspaceRoot, story.id, 'inprogress');
 		log(`  Launching Executor Agent auto-refactor round ${nextRefactorRound}/${MAX_AUTO_REFACTOR_ROUNDS} for ${story.id}.`);
+		activeRunLog?.transitionPhase('refactor', `Launching auto-refactor round ${nextRefactorRound}/${MAX_AUTO_REFACTOR_ROUNDS} for ${story.id}.`);
+		activeRunLog?.recordRefactorRound(nextRefactorRound, MAX_AUTO_REFACTOR_ROUNDS, `Reviewer findings triggered an automatic refactor for ${story.id}.`);
 		await sendToCopilot(
 			buildRefactorPromptForStory(story, workspaceRoot, artifacts, latestReview, nextRefactorRound),
 			story.id,
@@ -1428,11 +1491,25 @@ function getProjectConstraintsPromptLines(workspaceRoot: string, storyId: string
 	const config = getConfig();
 	if (!config.AUTO_INJECT_PROJECT_CONSTRAINTS) {
 		log(`  Project constraints injection disabled by settings for story ${storyId}.`);
+		activeRunLog?.recordContextInjection({
+			name: 'project-constraints',
+			lineCount: 0,
+			injected: false,
+			summary: 'Project constraints injection was disabled by settings.',
+			details: [storyId],
+		});
 		return [];
 	}
 
 	if (!hasProjectConstraintsArtifacts(workspaceRoot)) {
 		log(`  Project constraints not initialized for story ${storyId}; continuing without injected constraints.`);
+		activeRunLog?.recordContextInjection({
+			name: 'project-constraints',
+			lineCount: 0,
+			injected: false,
+			summary: 'Project constraints artifacts were missing, so nothing was injected.',
+			details: [storyId],
+		});
 		return [];
 	}
 
@@ -1441,14 +1518,35 @@ function getProjectConstraintsPromptLines(workspaceRoot: string, storyId: string
 		const promptLines = summarizeProjectConstraintsForPrompt(mergedConstraints);
 		if (promptLines.length === 0) {
 			log(`  Project constraints loaded for story ${storyId}, but no normalized prompt lines were produced.`);
+			activeRunLog?.recordContextInjection({
+				name: 'project-constraints',
+				lineCount: 0,
+				injected: false,
+				summary: 'Project constraints loaded but produced no prompt lines.',
+				details: [storyId],
+			});
 			return [];
 		}
 
 		log(`  Injecting ${promptLines.length} project constraint prompt lines for story ${storyId}.`);
+		activeRunLog?.recordContextInjection({
+			name: 'project-constraints',
+			lineCount: promptLines.length,
+			injected: true,
+			summary: `Injected ${promptLines.length} project constraint prompt lines.`,
+			details: [],
+		});
 		return promptLines;
 	} catch (error: unknown) {
 		const message = error instanceof Error ? error.message : String(error);
 		log(`  WARNING: Failed to load project constraints for story ${storyId}: ${message}`);
+		activeRunLog?.recordContextInjection({
+			name: 'project-constraints',
+			lineCount: 0,
+			injected: false,
+			summary: 'Project constraints injection failed.',
+			details: [message],
+		});
 		return [];
 	}
 }
@@ -1457,6 +1555,13 @@ function getDesignContextPromptLines(workspaceRoot: string, story: UserStory): s
 	const config = getConfig();
 	if (!config.AUTO_INJECT_DESIGN_CONTEXT) {
 		log(`  Design context injection disabled by settings for story ${story.id}.`);
+		activeRunLog?.recordContextInjection({
+			name: 'design-context',
+			lineCount: 0,
+			injected: false,
+			summary: 'Design context injection was disabled by settings.',
+			details: [story.id],
+		});
 		return [];
 	}
 
@@ -1466,6 +1571,13 @@ function getDesignContextPromptLines(workspaceRoot: string, story: UserStory): s
 		const promptLines = synthesizeExecutionDesignContextPromptLines(story, sharedContext);
 		if (promptLines.length > 0) {
 			log(`  Synthesized ${promptLines.length} execution-time design context prompt lines for story ${story.id}.`);
+			activeRunLog?.recordContextInjection({
+				name: 'design-context',
+				lineCount: promptLines.length,
+				injected: true,
+				summary: `Synthesized ${promptLines.length} execution-time design context prompt lines.`,
+				details: ['execution-time fallback'],
+			});
 			return promptLines;
 		}
 	}
@@ -1473,6 +1585,13 @@ function getDesignContextPromptLines(workspaceRoot: string, story: UserStory): s
 	const designContext = resolveDesignContextForStory(workspaceRoot, story);
 	if (!designContext) {
 		log(`  No design context found for story ${story.id}; continuing without injected design guidance.`);
+		activeRunLog?.recordContextInjection({
+			name: 'design-context',
+			lineCount: 0,
+			injected: false,
+			summary: 'No design context was found for this story.',
+			details: [story.id],
+		});
 		return [];
 	}
 
@@ -1484,10 +1603,24 @@ function getDesignContextPromptLines(workspaceRoot: string, story: UserStory): s
 	const promptLines = summarizeDesignContextForPrompt(validation.artifact);
 	if (promptLines.length === 0) {
 		log(`  Design context loaded for story ${story.id}, but no prompt lines were produced.`);
+		activeRunLog?.recordContextInjection({
+			name: 'design-context',
+			lineCount: 0,
+			injected: false,
+			summary: 'Design context loaded but produced no prompt lines.',
+			details: [story.id],
+		});
 		return [];
 	}
 
 	log(`  Injecting ${promptLines.length} design context prompt lines for story ${story.id}.`);
+	activeRunLog?.recordContextInjection({
+		name: 'design-context',
+		lineCount: promptLines.length,
+		injected: true,
+		summary: `Injected ${promptLines.length} design context prompt lines.`,
+		details: validation.isValid ? [] : validation.errors,
+	});
 	return promptLines;
 }
 
@@ -1495,6 +1628,13 @@ function getPriorWorkPromptLines(workspaceRoot: string, story: UserStory): strin
 	const config = getConfig();
 	if (!config.AUTO_RECALL_TASK_MEMORY) {
 		log(`  Prior-work recall disabled by settings for story ${story.id}.`);
+		activeRunLog?.recordContextInjection({
+			name: 'prior-work',
+			lineCount: 0,
+			injected: false,
+			summary: 'Prior-work recall was disabled by settings.',
+			details: [story.id],
+		});
 		return [];
 	}
 
@@ -1503,11 +1643,25 @@ function getPriorWorkPromptLines(workspaceRoot: string, story: UserStory): strin
 	});
 	if (matches.length === 0) {
 		log(`  No related task memories found for story ${story.id}; continuing without prior-work context.`);
+		activeRunLog?.recordContextInjection({
+			name: 'prior-work',
+			lineCount: 0,
+			injected: false,
+			summary: 'No related task memories were recalled.',
+			details: [story.id],
+		});
 		return [];
 	}
 
 	const promptLines = summarizeRecalledTaskMemoriesForPrompt(matches, config.RECALLED_TASK_MEMORY_LIMIT);
 	log(`  Injecting ${matches.length} recalled task memories for story ${story.id}.`);
+	activeRunLog?.recordContextInjection({
+		name: 'prior-work',
+		lineCount: promptLines.length,
+		injected: true,
+		summary: `Injected ${matches.length} recalled task memories.`,
+		details: matches.slice(0, 3).map(match => match.memory.storyId),
+	});
 	return promptLines;
 }
 
@@ -1515,6 +1669,13 @@ function getSourceContextPromptLines(workspaceRoot: string, story: UserStory): s
 	const index = getSourceContextIndex(workspaceRoot);
 	if (!index) {
 		log(`  Source context index missing for story ${story.id}; continuing without source context recall.`);
+		activeRunLog?.recordContextInjection({
+			name: 'source-context',
+			lineCount: 0,
+			injected: false,
+			summary: 'Source context index was missing.',
+			details: [story.id],
+		});
 		return [];
 	}
 
@@ -1527,11 +1688,25 @@ function getSourceContextPromptLines(workspaceRoot: string, story: UserStory): s
 	});
 	if (matches.length === 0) {
 		log(`  No source context recall matches found for story ${story.id}; continuing without source context prompt lines.`);
+		activeRunLog?.recordContextInjection({
+			name: 'source-context',
+			lineCount: 0,
+			injected: false,
+			summary: 'No source-context recall matches were found.',
+			details: [story.id],
+		});
 		return [];
 	}
 
 	const promptLines = summarizeRecalledSourceContextForPrompt(matches, 4);
 	log(`  Injecting ${matches.length} recalled source context matches for story ${story.id}.`);
+	activeRunLog?.recordContextInjection({
+		name: 'source-context',
+		lineCount: promptLines.length,
+		injected: true,
+		summary: `Injected ${matches.length} recalled source-context matches.`,
+		details: matches.slice(0, 4).map(match => `${match.category}:${match.value}`),
+	});
 	return promptLines;
 }
 
@@ -1542,33 +1717,76 @@ function getKnowledgePromptLines(workspaceRoot: string, story: UserStory): strin
 	});
 	if (report.issues.length === 0) {
 		log(`  Knowledge checks found no freshness or coverage issues for story ${story.id}.`);
+		activeRunLog?.recordContextInjection({
+			name: 'knowledge-check',
+			lineCount: 0,
+			injected: false,
+			summary: 'Knowledge checks found no issues to inject.',
+			details: [story.id],
+		});
 		return [];
 	}
 
 	log(`  Knowledge checks found ${report.issues.length} issue(s) for story ${story.id}.`);
-	return summarizeKnowledgeCheckForPrompt(report);
+	const promptLines = summarizeKnowledgeCheckForPrompt(report);
+	activeRunLog?.recordContextInjection({
+		name: 'knowledge-check',
+		lineCount: promptLines.length,
+		injected: true,
+		summary: `Injected ${report.issues.length} knowledge-check issue(s).`,
+		details: report.issues.slice(0, 3).map(issue => issue.summary),
+	});
+	return promptLines;
 }
 
 function getRecentCheckpointPromptLines(workspaceRoot: string, story: UserStory): string[] {
 	const validCheckpointCount = listValidExecutionCheckpoints(workspaceRoot).length;
 	if (validCheckpointCount === 0) {
 		log(`  No execution checkpoints found for story ${story.id}; continuing with a fresh chat and no checkpoint handoff.`);
+		activeRunLog?.recordContextInjection({
+			name: 'recent-checkpoint',
+			lineCount: 0,
+			injected: false,
+			summary: 'No prior execution checkpoint was available to inject.',
+			details: [story.id],
+		});
 		return [];
 	}
 
 	const checkpoint = getRecentExecutionCheckpoint(workspaceRoot, { preferredStoryId: story.id });
 	if (!checkpoint) {
 		log(`  Execution checkpoints exist, but none were valid for story ${story.id}; skipping checkpoint injection.`);
+		activeRunLog?.recordContextInjection({
+			name: 'recent-checkpoint',
+			lineCount: 0,
+			injected: false,
+			summary: 'Execution checkpoints existed but none were valid for injection.',
+			details: [story.id],
+		});
 		return [];
 	}
 
 	const promptLines = summarizeExecutionCheckpointForPrompt(checkpoint);
 	if (promptLines.length === 0) {
 		log(`  Recent checkpoint for story ${story.id} produced no prompt lines; skipping checkpoint injection.`);
+		activeRunLog?.recordContextInjection({
+			name: 'recent-checkpoint',
+			lineCount: 0,
+			injected: false,
+			summary: 'Recent checkpoint resolved but produced no prompt lines.',
+			details: [checkpoint.storyId],
+		});
 		return [];
 	}
 
 	log(`  Injecting recent checkpoint from ${checkpoint.storyId} (${checkpoint.status}) for story ${story.id}.`);
+	activeRunLog?.recordContextInjection({
+		name: 'recent-checkpoint',
+		lineCount: promptLines.length,
+		injected: true,
+		summary: `Injected recent checkpoint from ${checkpoint.storyId}.`,
+		details: [checkpoint.status],
+	});
 	return promptLines;
 }
 
@@ -1576,6 +1794,21 @@ function getPolicyPromptLines(): string[] {
 	const promptLines = summarizePolicyConfigForPrompt(getEffectivePolicyConfig());
 	if (promptLines.length > 0) {
 		log(`  Injecting ${promptLines.length} machine policy prompt lines.`);
+		activeRunLog?.recordContextInjection({
+			name: 'policy-gates',
+			lineCount: promptLines.length,
+			injected: true,
+			summary: `Injected ${promptLines.length} machine policy prompt lines.`,
+			details: promptLines.slice(0, 3),
+		});
+	} else {
+		activeRunLog?.recordContextInjection({
+			name: 'policy-gates',
+			lineCount: 0,
+			injected: false,
+			summary: 'No machine policy prompt lines were active.',
+			details: [],
+		});
 	}
 	return promptLines;
 }
@@ -1779,6 +2012,7 @@ function ensureTaskMemoryPersistence(story: UserStory, workspaceRoot: string): T
 		};
 		upsertTaskMemoryIndexEntry(workspaceRoot, persistedArtifact, story.id);
 		log(`  Valid task memory artifact accepted for ${story.id}.`);
+		activeRunLog?.recordArtifact('task-memory', filePath, persistedArtifact.source ?? 'copilot');
 		return { filePath, source: persistedArtifact.source ?? 'copilot', artifact: persistedArtifact };
 	}
 
@@ -1792,6 +2026,7 @@ function ensureTaskMemoryPersistence(story: UserStory, workspaceRoot: string): T
 	const fallbackPath = writeTaskMemory(workspaceRoot, story.id, fallbackMemory);
 	upsertTaskMemoryIndexEntry(workspaceRoot, fallbackMemory, story.id);
 	log(`  Synthesized fallback task memory for ${story.id} at ${fallbackPath}.`);
+	activeRunLog?.recordArtifact('task-memory', fallbackPath, 'synthesized');
 	return { filePath: fallbackPath, source: 'synthesized', artifact: fallbackMemory };
 }
 
@@ -1818,6 +2053,7 @@ function ensureExecutionCheckpointPersistence(
 			source: validation.artifact.source ?? 'copilot',
 		};
 		log(`  Valid execution checkpoint accepted for ${story.id}.`);
+		activeRunLog?.recordArtifact('execution-checkpoint', filePath, persistedArtifact.source ?? 'copilot');
 		return {
 			filePath,
 			source: persistedArtifact.source ?? 'copilot',
@@ -1836,6 +2072,7 @@ function ensureExecutionCheckpointPersistence(
 	const fallbackCheckpoint = synthesizeExecutionCheckpointForStory(story, workspaceRoot, options);
 	const fallbackPath = writeExecutionCheckpoint(workspaceRoot, story.id, fallbackCheckpoint, options.status);
 	log(`  Synthesized fallback execution checkpoint for ${story.id} at ${fallbackPath}.`);
+	activeRunLog?.recordArtifact('execution-checkpoint', fallbackPath, 'synthesized');
 	return {
 		filePath: fallbackPath,
 		source: 'synthesized',
@@ -2078,6 +2315,7 @@ function evaluateCompletionPolicyGates(workspaceRoot: string, story: UserStory) 
 		}
 		vscode.window.showWarningMessage(getLanguagePack().runtime.policyBlockedAfterStory(story.id));
 	}
+	activeRunLog?.recordPolicyEvaluation('completion', result);
 
 	return result;
 }
@@ -2103,6 +2341,7 @@ function ensureStoryEvidencePersistence(
 			source: validation.artifact.source ?? 'copilot',
 		};
 		log(`  Valid story evidence artifact accepted for ${story.id}.`);
+		activeRunLog?.recordArtifact('story-evidence', filePath, persistedArtifact.source ?? 'copilot');
 		return { filePath, source: persistedArtifact.source ?? 'copilot', artifact: persistedArtifact };
 	}
 
@@ -2115,6 +2354,7 @@ function ensureStoryEvidencePersistence(
 	const fallbackEvidence = synthesizeStoryEvidenceForStory(story, workspaceRoot, options);
 	const fallbackPath = writeStoryEvidence(workspaceRoot, story.id, fallbackEvidence);
 	log(`  Synthesized fallback story evidence for ${story.id} at ${fallbackPath}.`);
+	activeRunLog?.recordArtifact('story-evidence', fallbackPath, 'synthesized');
 	return { filePath: fallbackPath, source: 'synthesized', artifact: fallbackEvidence };
 }
 
@@ -2136,6 +2376,15 @@ function synthesizeStoryEvidenceForStory(
 			success: true,
 			outputSummary: 'Recorded in task memory.',
 		}));
+	if (testEvidence.length > 0) {
+		activeRunLog?.recordTests(testEvidence.map(test => ({
+			command: test.command,
+			success: test.success,
+			summary: test.outputSummary ?? 'Recorded in synthesized story evidence.',
+			source: 'artifact',
+			phase: 'artifact-persistence',
+		})));
+	}
 	return createSynthesizedStoryEvidence(story, {
 		changedFiles,
 		changedModules,
@@ -4290,6 +4539,7 @@ function getWorkspaceRoot(): string | undefined {
 function log(message: string): void {
 	const timestamp = new Date().toISOString().slice(11, 19);
 	outputChannel.appendLine(`[${timestamp}] ${message}`);
+	activeRunLog?.recordOutput(message);
 }
 
 function sleep(ms: number): Promise<void> {

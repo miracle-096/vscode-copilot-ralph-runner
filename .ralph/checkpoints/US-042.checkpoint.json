@@ -1,0 +1,28 @@
+{
+  "storyId": "US-042",
+  "title": "构建 ralph run 的结构化关键信号日志系统",
+  "status": "completed",
+  "summary": "已在故事主执行链中接入结构化 run log recorder，能记录阶段流转、上下文注入、policy gate、测试摘要、reviewer 结果、自动重构动作与失败信号，并把轮询类输出压缩为噪音计数。",
+  "stageGoal": "让每次 ralph run 产出独立且可检索的结构化运行日志，同时保留现有 output channel 给用户查看。",
+  "keyDecisions": [
+    "新增 src/runLog.ts 作为独立日志层，由 extension orchestration 直接写入 story-scoped run log artifact。",
+    "上下文注入、policy gate、artifact 持久化、review 和 refactor 事件都在执行链实时记录，而不是只依赖最终 evidence 回填。",
+    "输出分类按 signal、diagnostic、noise 三层处理，轮询噪音只累计 skippedNoise。"
+  ],
+  "confirmedConstraints": [
+    "prd.json remained read-only during task execution.",
+    "progress.txt and the VS Code output channel remained intact for human-facing progress and logs.",
+    "The change stayed within source, docs, and story artifacts without editing forbidden generated paths."
+  ],
+  "unresolvedRisks": [
+    "下游模块尚未直接消费 .ralph/run-logs 的 summary sections，当前主要由本次 story 建立数据面。",
+    "noise 分类依赖现有输出文案，如果未来文案调整，可能需要同步更新分类规则。"
+  ],
+  "nextStoryPrerequisites": [
+    "如果后续故事要直接消费 run log，请先复用 src/runLog.ts 的 artifact schema，而不是在各模块重复定义日志结构。",
+    "修改 extension 执行阶段名称时，同步更新 StoryRunLogPhase 与相关测试断言。"
+  ],
+  "resumeRecommendation": "后续若继续增强日志消费链，优先检查 src/runLog.ts 的 artifact schema 与分类规则，以及 src/extension.ts 中 preflight、completion、review、refactor 的事件挂接点。",
+  "updatedAt": "2026-04-03T09:21:30.000Z",
+  "source": "copilot"
+}

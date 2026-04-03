@@ -111,6 +111,12 @@ import {
 	deriveStoryChangedFiles,
 	evaluatePolicyGates,
 } from '../policyGate';
+import {
+	classifyOutputMessage,
+	createStoryRunLogRecorder,
+	readStoryRunLog,
+	summarizeCommandOutput,
+} from '../runLog';
 import { parseTaskSignalStatus } from '../taskStatus';
 import { shouldAbortCopilotWait } from '../extension';
 // import * as myExtension from '../../extension';
@@ -266,6 +272,66 @@ suite('Extension Test Suite', () => {
 		assert.strictEqual(shouldAbortCopilotWait(false, true, false), true);
 		assert.strictEqual(shouldAbortCopilotWait(false, false, false), false);
 		assert.strictEqual(shouldAbortCopilotWait(true, false, true), true);
+	});
+
+	test('Structured run log classifies polling output as noise and keeps actionable summaries', () => {
+		assert.strictEqual(classifyOutputMessage('  … still waiting for Copilot to complete task US-042 (status: inprogress, elapsed 20s)').category, 'noise');
+		assert.strictEqual(classifyOutputMessage('  WARNING: Task memory artifact missing for US-042; synthesizing fallback memory.').category, 'diagnostic');
+		assert.strictEqual(classifyOutputMessage('  Reviewer Agent scored US-042 at 91/100.').category, 'signal');
+		assert.ok(summarizeCommandOutput('line 1\n\nline 2\nline 3').includes('line 1 | line 2 | line 3'));
+	});
+
+	test('Structured run log persists context, policy, tests, and final status', () => {
+		const workspaceRoot = fs.mkdtempSync(path.join(os.tmpdir(), 'ralph-run-log-'));
+		try {
+			const recorder = createStoryRunLogRecorder(workspaceRoot, {
+				id: 'US-042',
+				title: '结构化运行日志',
+				description: 'Persist structured run signals.',
+				acceptanceCriteria: ['Run log artifact exists'],
+				priority: 42,
+			});
+
+			recorder.transitionPhase('preflight', 'Running preflight checks.');
+			recorder.recordOutput('  … still waiting for Copilot to complete task US-042 (status: inprogress, elapsed 20s)');
+			recorder.recordContextInjection({
+				name: 'source-context',
+				lineCount: 6,
+				injected: true,
+				summary: 'Injected 2 recalled source-context matches.',
+				details: ['entry-file:src/extension.ts'],
+			});
+			recorder.recordPolicyEvaluation('completion', {
+				ok: false,
+				violations: [{
+					ruleId: 'require-relevant-tests',
+					title: 'Require at least one relevant test command',
+					phase: 'completion',
+					summary: 'No relevant passing test command was recorded.',
+					details: ['npm run compile failed'],
+					nextSteps: ['Run one relevant passing test command'],
+				}],
+				executedCommands: [{
+					command: 'npm run compile',
+					success: false,
+					output: 'src/extension.ts(1,1): error TS1005: ; expected',
+				}],
+			});
+			recorder.finalize('failed', 'Story failed after completion gates blocked finalization.');
+
+			const artifact = readStoryRunLog(recorder.filePath);
+			assert.ok(artifact);
+			assert.strictEqual(artifact?.storyId, 'US-042');
+			assert.strictEqual(artifact?.status, 'failed');
+			assert.strictEqual(artifact?.persistedCounts.skippedNoise, 1);
+			assert.strictEqual(artifact?.contextInjections[0]?.name, 'source-context');
+			assert.strictEqual(artifact?.policyHits[0]?.blocking, true);
+			assert.strictEqual(artifact?.tests[0]?.command, 'npm run compile');
+			assert.ok(artifact?.events.some(event => event.kind === 'policy'));
+			assert.ok(artifact?.events.some(event => event.kind === 'summary' && event.title === 'final:failed'));
+		} finally {
+			fs.rmSync(workspaceRoot, { recursive: true, force: true });
+		}
 	});
 
 	test('Editable project constraints round-trip preserves sections', () => {
