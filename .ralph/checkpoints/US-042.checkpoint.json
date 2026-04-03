@@ -2,8 +2,8 @@
   "storyId": "US-042",
   "title": "构建 ralph run 的结构化关键信号日志系统",
   "status": "completed",
-  "summary": "已在故事主执行链中接入结构化 run log recorder，能记录阶段流转、上下文注入、policy gate、测试摘要、reviewer 结果、自动重构动作与失败信号，并把轮询类输出压缩为噪音计数。",
   "stageGoal": "让每次 ralph run 产出独立且可检索的结构化运行日志，同时保留现有 output channel 给用户查看。",
+  "summary": "已在故事主执行链中接入结构化 run log recorder，能记录阶段流转、上下文注入、policy gate、测试摘要、reviewer 结果、自动重构动作与失败信号，并把轮询类输出压缩为噪音计数。",
   "keyDecisions": [
     "新增 src/runLog.ts 作为独立日志层，由 extension orchestration 直接写入 story-scoped run log artifact。",
     "上下文注入、policy gate、artifact 持久化、review 和 refactor 事件都在执行链实时记录，而不是只依赖最终 evidence 回填。",

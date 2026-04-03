@@ -54,63 +54,6 @@
   "evidenceGaps": [],
   "approvalState": "notRequired",
   "approvalHistory": [],
-  "reviewSummary": {
-    "totalScore": 94,
-    "maxScore": 100,
-    "passingScore": 85,
-    "passed": true,
-    "reviewPass": 1,
-    "maxReviewerPasses": 3,
-    "maxAutoRefactorRounds": 2,
-    "dimensions": [
-      {
-        "dimension": "architectureConsistency",
-        "label": "Architecture Consistency",
-        "score": 24,
-        "summary": "新能力通过独立 review module 与 extension orchestration 收口，没有把评分逻辑散落到多个 artifact 模块。",
-        "issues": [],
-        "recommendations": []
-      },
-      {
-        "dimension": "acceptanceCoverage",
-        "label": "Acceptance Coverage",
-        "score": 24,
-        "summary": "execution chain、评分结构、自动重构上限、structured artifacts 和最终状态流转都已有实现与断言。",
-        "issues": [],
-        "recommendations": []
-      },
-      {
-        "dimension": "changeScopeControl",
-        "label": "Change Scope Control",
-        "score": 22,
-        "summary": "文件改动集中在 reviewer loop 所需主干模块和测试，没有牵动 PRD 或无关生成物。",
-        "issues": [],
-        "recommendations": []
-      },
-      {
-        "dimension": "verifiability",
-        "label": "Verifiability",
-        "score": 24,
-        "summary": "编译与整套扩展测试均通过，新测试验证了 reviewer/refactor prompt contract 与 review metadata 持久化。",
-        "issues": [],
-        "recommendations": []
-      }
-    ],
-    "findings": [
-      "Reviewer Agent 评分与自动重构回路已经成为故事完成链的一部分。"
-    ],
-    "recommendations": [],
-    "refactorPerformed": false,
-    "reviewedAt": "2026-04-03T09:12:00.000Z",
-    "source": "copilot"
-  },
-  "reviewLoop": {
-    "reviewerPasses": 1,
-    "autoRefactorRounds": 0,
-    "maxAutoRefactorRounds": 2,
-    "endedReason": "passed",
-    "lastReviewedAt": "2026-04-03T09:12:00.000Z"
-  },
   "generatedAt": "2026-04-03T09:12:00.000Z",
   "source": "copilot"
 }

@@ -57,63 +57,6 @@
   "relatedStories": [
     "US-040"
   ],
-  "reviewSummary": {
-    "totalScore": 94,
-    "maxScore": 100,
-    "passingScore": 85,
-    "passed": true,
-    "reviewPass": 1,
-    "maxReviewerPasses": 3,
-    "maxAutoRefactorRounds": 2,
-    "dimensions": [
-      {
-        "dimension": "architectureConsistency",
-        "label": "Architecture Consistency",
-        "score": 24,
-        "summary": "Reviewer loop 由扩展编排层统一驱动，评分 schema 与 artifact 归档保持一致。",
-        "issues": [],
-        "recommendations": []
-      },
-      {
-        "dimension": "acceptanceCoverage",
-        "label": "Acceptance Coverage",
-        "score": 24,
-        "summary": "执行链、评分输出、自动重构上限、结构化工件回写和最终状态流转均已有代码与测试覆盖。",
-        "issues": [],
-        "recommendations": []
-      },
-      {
-        "dimension": "changeScopeControl",
-        "label": "Change Scope Control",
-        "score": 22,
-        "summary": "改动集中在执行编排、prompt 组合、artifact schema 和测试，范围与故事目标一致。",
-        "issues": [],
-        "recommendations": []
-      },
-      {
-        "dimension": "verifiability",
-        "label": "Verifiability",
-        "score": 24,
-        "summary": "编译和完整扩展测试套件均通过，review loop 新增断言已覆盖关键 prompt 与 artifact round-trip。",
-        "issues": [],
-        "recommendations": []
-      }
-    ],
-    "findings": [
-      "Reviewer loop 已从单次完成流转升级为执行后评审再决定最终状态。"
-    ],
-    "recommendations": [],
-    "refactorPerformed": false,
-    "reviewedAt": "2026-04-03T09:12:00.000Z",
-    "source": "copilot"
-  },
-  "reviewLoop": {
-    "reviewerPasses": 1,
-    "autoRefactorRounds": 0,
-    "maxAutoRefactorRounds": 2,
-    "endedReason": "passed",
-    "lastReviewedAt": "2026-04-03T09:12:00.000Z"
-  },
   "createdAt": "2026-04-03T09:12:00.000Z",
   "source": "copilot"
 }

@@ -2,69 +2,52 @@
   "storyId": "US-039",
   "title": "生成面向智能体的 Agent Map 与知识目录",
   "status": "completed",
-  "summary": "交付了新的 Agent Map 生成命令、两份导航工件以及配套文档与测试，使智能体可直接从仓库内读取项目概览、模块职责、规则入口、执行 runbook 和知识目录。",
+  "summary": "新增 Agent Map 生成能力，输出 .ralph/agent-map/overview.json 与 knowledge-catalog.json，复用项目约束、源码上下文、README 和 PRD 构建项目概览、模块地图、规则入口、执行 runbook 与文档目录，并显式记录缺失知识。",
   "changedFiles": [
-    "README.md",
-    "package.json",
-    ".ralph/agent-map/overview.json",
-    ".ralph/agent-map/knowledge-catalog.json",
-    "src/agentMap.ts",
-    "src/extension.ts",
-    "src/localization.ts",
-    "src/test/extension.test.ts",
-    "src/types.ts",
-    "src/workspacePaths.ts"
+    "ralph/checkpoints/US-039.checkpoint.json",
+    "ralph/memory/US-039.json"
   ],
   "changedModules": [
-    "agentMap",
-    "extension command surface",
-    "localization",
-    "README runtime artifacts",
-    "artifact schema and paths",
-    "extension tests"
+    "ralph/checkpoints",
+    "ralph/memory"
   ],
   "tests": [
     {
       "command": "npm run compile",
       "success": true,
-      "outputSummary": "TypeScript check, ESLint, and esbuild all passed."
+      "outputSummary": "Recorded in task memory."
     },
     {
       "command": "npm test -- --grep \"Agent map generation writes overview and knowledge catalog with explicit gaps|Package exposes a single user-facing UI design command\"",
       "success": true,
-      "outputSummary": "Focused VS Code extension tests passed for command contributions and Agent Map artifact generation."
+      "outputSummary": "Recorded in task memory."
     },
     {
       "command": "node -e \"const { generateAgentMapArtifacts } = require('./out/agentMap'); generateAgentMapArtifacts(process.cwd());\"",
       "success": true,
-      "outputSummary": "Real workspace Agent Map artifacts were written to .ralph/agent-map/ with one explicit knowledge gap recorded."
+      "outputSummary": "Recorded in task memory."
     }
   ],
-  "riskLevel": "medium",
+  "riskLevel": "low",
   "riskReasons": [
-    "模块职责是轻量推断而不是基于深度语义摘要，复杂仓库下可能需要进一步增强。",
-    "Agent Map 目前只负责落盘结构化数据，尚未实现自动 freshness diff 或缺失知识告警命令。"
+    "The story risk was inferred from the available completion evidence."
   ],
   "releaseNotes": [
-    "新增 RALPH: 生成 Agent Map 命令。",
-    "新增 .ralph/agent-map/overview.json 与 knowledge-catalog.json 两个智能体导航工件。",
-    "README 补充 Agent Map 工作流与工件说明。"
+    "Completed scope: 生成面向智能体的 Agent Map 与知识目录.",
+    "Primary modules: ralph/checkpoints, ralph/memory."
   ],
   "rollbackHints": [
-    "如需回滚，移除 ralph-runner.generateAgentMap 命令注册与 package.json contribution。",
-    "删除 src/agentMap.ts 以及相关类型和 workspace path 辅助函数。",
-    "删除 .ralph/agent-map/ 生成工件即可回到无 Agent Map 状态。"
+    "Review and revert these paths together if rollback is needed: ralph/checkpoints/US-039.checkpoint.json, ralph/memory/US-039.json.",
+    "Use the story-scoped commit as the primary rollback unit before considering any selective revert."
   ],
   "followUps": [
-    "为 knowledge-catalog.json 增加 freshness 检查命令。",
-    "视需要为模块职责补充更稳定的摘要来源。"
+    "后续可增加 Agent Map 新鲜度检查命令，直接消费 knowledge-catalog.json 中的 freshnessTarget 和 lastModified 字段。",
+    "如果未来引入更多共享设计上下文，可在 Agent Map 中补充 design context 细粒度索引。"
   ],
   "recommendFeatureFlag": false,
-  "evidenceGaps": [
-    "尚未增加自动化的 Agent Map 新鲜度巡检测试。"
-  ],
+  "evidenceGaps": [],
   "approvalState": "notRequired",
   "approvalHistory": [],
-  "generatedAt": "2026-04-03T08:42:30.000Z",
-  "source": "copilot"
+  "generatedAt": "2026-04-03T08:43:49.304Z",
+  "source": "synthesized"
 }

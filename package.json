@@ -22,6 +22,14 @@
   "contributes": {
     "commands": [
       {
+        "command": "ralph-runner.showIntroduction",
+        "title": "RALPH: 插件介绍"
+      },
+      {
+        "command": "ralph-runner.showUsageGuide",
+        "title": "RALPH: 使用流程手册"
+      },
+      {
         "command": "ralph-runner.configurePolicyGates",
         "title": "RALPH: 配置执行检查"
       },

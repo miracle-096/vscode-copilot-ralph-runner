@@ -2,7 +2,6 @@
   "storyId": "US-042",
   "title": "构建 ralph run 的结构化关键信号日志系统",
   "status": "completed",
-  "auditableStatus": "completed",
   "summary": "交付了结构化 run log 系统：每次故事执行会在 .ralph/run-logs 生成独立日志，记录阶段流转、关键事件、上下文注入、策略命中、测试摘要、reviewer 评分、自动重构动作与失败信号，并对轮询输出做噪音压缩。",
   "changedFiles": [
     "README.md",

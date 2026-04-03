@@ -45,6 +45,7 @@ export interface ProjectConstraintInitializationPromptInput {
 	generatedPath: string;
 	editablePath: string;
 	completionSignalPath: string;
+	completionSignalKey: string;
 	scanResult: {
 		generatedConstraints: GeneratedProjectConstraints;
 		editableConstraints: EditableProjectConstraints;
@@ -232,7 +233,7 @@ export function buildProjectConstraintsInitializationPrompt(input: ProjectConstr
 		`Workspace root: ${input.workspaceRoot}`,
 		`Write the machine-readable generated constraints JSON directly to: ${input.generatedPath}`,
 		`Write the editable team-maintained markdown constraints directly to: ${input.editablePath}`,
-		`After both files are fully written, write the exact text completed (no newline) to: ${input.completionSignalPath}`,
+		`After both files are fully written, update the entry "${input.completionSignalKey}" in ${input.completionSignalPath} to the exact text completed and preserve valid JSON for the whole file.`,
 		'Do not create alternative constraint files or temporary summaries.',
 		languageInstruction,
 		'',

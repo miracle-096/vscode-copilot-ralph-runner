@@ -483,6 +483,7 @@ export interface StoryPromptContext {
 	executionCheckpointPath: string;
 	evidencePath: string;
 	completionSignalPath: string;
+	completionSignalKey: string;
 	additionalExecutionRules?: string[];
 }
 
@@ -497,6 +498,7 @@ export interface StoryReviewerPromptContext {
 	executionCheckpointPath: string;
 	evidencePath: string;
 	completionSignalPath: string;
+	completionSignalKey: string;
 	taskMemoryLines?: string[];
 	checkpointLines?: string[];
 	evidenceLines?: string[];
@@ -514,6 +516,7 @@ export interface StoryRefactorPromptContext {
 	executionCheckpointPath: string;
 	evidencePath: string;
 	completionSignalPath: string;
+	completionSignalKey: string;
 	taskMemoryLines?: string[];
 	checkpointLines?: string[];
 	evidenceLines?: string[];

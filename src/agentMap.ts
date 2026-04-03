@@ -318,7 +318,7 @@ function buildRunbook(projectConstraints: GeneratedProjectConstraints): AgentMap
 			title: 'Reset',
 			summary: 'End the story by clearing implicit session assumptions, relying on persisted artifacts, and using reset only for explicit recovery or reruns.',
 			inputs: ['Latest structured artifacts', 'Completion signal expectations'],
-			commands: ['RALPH: 重置故事', 'Write .ralph/task-US-xxx-status when the story is truly complete'],
+			commands: ['RALPH: 重置故事', 'Update the relevant entry in .ralph/story-status.json when the story is truly complete'],
 			outputs: ['Fresh next-session handoff with no hidden state dependency.'],
 		},
 	];

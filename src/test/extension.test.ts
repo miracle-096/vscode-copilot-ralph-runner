@@ -117,6 +117,7 @@ import {
 	readStoryRunLog,
 	summarizeCommandOutput,
 } from '../runLog';
+import { buildRalphHelpDocument, getRalphHelpContent } from '../helpManual';
 import { parseTaskSignalStatus } from '../taskStatus';
 import { shouldAbortCopilotWait } from '../extension';
 // import * as myExtension from '../../extension';
@@ -158,9 +159,13 @@ suite('Extension Test Suite', () => {
 		assert.deepStrictEqual(designCommands.map(command => command.command), ['ralph-runner.recordDesignContext']);
 		assert.strictEqual(designCommands[0]?.title, 'RALPH: 界面设计描述');
 		assert.strictEqual(contributedCommands.some(command => command.command === 'ralph-runner.recallTaskMemory'), false);
+		assert.strictEqual(contributedCommands.some(command => command.command === 'ralph-runner.showIntroduction'), true);
+		assert.strictEqual(contributedCommands.some(command => command.command === 'ralph-runner.showUsageGuide'), true);
 		assert.strictEqual(contributedCommands.some(command => command.command === 'ralph-runner.previewSourceContextRecall'), true);
 		assert.strictEqual(contributedCommands.some(command => command.command === 'ralph-runner.generateAgentMap'), true);
 		assert.strictEqual(contributedCommands.find(command => command.command === 'ralph-runner.generateAgentMap')?.title, 'RALPH: 生成 Agent Map');
+		assert.strictEqual(contributedCommands.find(command => command.command === 'ralph-runner.showIntroduction')?.title, 'RALPH: 插件介绍');
+		assert.strictEqual(contributedCommands.find(command => command.command === 'ralph-runner.showUsageGuide')?.title, 'RALPH: 使用流程手册');
 		assert.strictEqual(contributedCommands.some(command => command.command === 'ralph-runner.reviewStoryApproval'), true);
 		assert.strictEqual(contributedCommands.some(command => command.command === 'ralph-runner.configurePolicyGates'), true);
 		assert.strictEqual(contributedCommands.find(command => command.command === 'ralph-runner.configurePolicyGates')?.title, 'RALPH: 配置执行检查');
@@ -180,6 +185,20 @@ suite('Extension Test Suite', () => {
 		assert.strictEqual(contributedParticipants.some(participant => participant.name === 'ralph' && participant.commands?.some(command => command.name === 'ralph-spec')), true);
 		assert.strictEqual(contributedParticipants.some(participant => participant.description?.includes('auto-send the final prompt to Copilot Chat')), true);
 		assert.strictEqual(contributedParticipants.some(participant => participant.commands?.some(command => command.name === 'ralph-spec' && command.description?.includes('auto-send the ready-to-use final version to Copilot Chat'))), true);
+	});
+
+	test('RALPH help documents cover introduction and split manual flows', () => {
+		const chineseIntro = getRalphHelpContent('Chinese', 'introduction');
+		const chineseManual = getRalphHelpContent('Chinese', 'manual');
+		const englishManualDocument = buildRalphHelpDocument('English', 'manual');
+
+		assert.strictEqual(chineseIntro.title, 'RALPH 插件介绍');
+		assert.ok(chineseIntro.sections.some(section => section.title === 'RALPH 是什么'));
+		assert.ok(chineseManual.sections.some(section => section.title === '空项目流程'));
+		assert.ok(chineseManual.sections.some(section => section.title === '已存在项目流程'));
+		assert.ok(englishManualDocument.html.includes('Empty Project Workflow'));
+		assert.ok(englishManualDocument.html.includes('Existing Project Workflow'));
+		assert.ok(englishManualDocument.html.includes('<ol>'));
 	});
 
 	test('Agent map generation writes overview and knowledge catalog with explicit gaps', () => {
@@ -281,54 +300,32 @@ suite('Extension Test Suite', () => {
 		assert.ok(summarizeCommandOutput('line 1\n\nline 2\nline 3').includes('line 1 | line 2 | line 3'));
 	});
 
-	test('Structured run log persists context, policy, tests, and final status', () => {
+	test('Run log persists key output summaries as plain text', () => {
 		const workspaceRoot = fs.mkdtempSync(path.join(os.tmpdir(), 'ralph-run-log-'));
 		try {
 			const recorder = createStoryRunLogRecorder(workspaceRoot, {
 				id: 'US-042',
-				title: '结构化运行日志',
-				description: 'Persist structured run signals.',
+				title: '文本运行日志',
+				description: 'Persist key output summaries.',
 				acceptanceCriteria: ['Run log artifact exists'],
 				priority: 42,
 			});
 
 			recorder.transitionPhase('preflight', 'Running preflight checks.');
 			recorder.recordOutput('  … still waiting for Copilot to complete task US-042 (status: inprogress, elapsed 20s)');
-			recorder.recordContextInjection({
-				name: 'source-context',
-				lineCount: 6,
-				injected: true,
-				summary: 'Injected 2 recalled source-context matches.',
-				details: ['entry-file:src/extension.ts'],
-			});
-			recorder.recordPolicyEvaluation('completion', {
-				ok: false,
-				violations: [{
-					ruleId: 'require-relevant-tests',
-					title: 'Require at least one relevant test command',
-					phase: 'completion',
-					summary: 'No relevant passing test command was recorded.',
-					details: ['npm run compile failed'],
-					nextSteps: ['Run one relevant passing test command'],
-				}],
-				executedCommands: [{
-					command: 'npm run compile',
-					success: false,
-					output: 'src/extension.ts(1,1): error TS1005: ; expected',
-				}],
-			});
+			recorder.recordOutput('  WARNING: Task memory artifact missing for US-042; synthesizing fallback memory.');
+			recorder.recordOutput('  Reviewer Agent scored US-042 at 91/100.');
 			recorder.finalize('failed', 'Story failed after completion gates blocked finalization.');
 
-			const artifact = readStoryRunLog(recorder.filePath);
-			assert.ok(artifact);
-			assert.strictEqual(artifact?.storyId, 'US-042');
-			assert.strictEqual(artifact?.status, 'failed');
-			assert.strictEqual(artifact?.persistedCounts.skippedNoise, 1);
-			assert.strictEqual(artifact?.contextInjections[0]?.name, 'source-context');
-			assert.strictEqual(artifact?.policyHits[0]?.blocking, true);
-			assert.strictEqual(artifact?.tests[0]?.command, 'npm run compile');
-			assert.ok(artifact?.events.some(event => event.kind === 'policy'));
-			assert.ok(artifact?.events.some(event => event.kind === 'summary' && event.title === 'final:failed'));
+			const logText = readStoryRunLog(recorder.filePath);
+			assert.ok(logText);
+			assert.ok(recorder.filePath.endsWith('.run-log.txt'));
+			assert.ok(logText?.includes('Story: US-042 - 文本运行日志'));
+			assert.ok(logText?.includes('[preflight] [diagnostic] WARNING: Task memory artifact missing for US-042; synthesizing fallback memory.'));
+			assert.ok(logText?.includes('[preflight] [signal] Reviewer Agent scored US-042 at 91/100.'));
+			assert.ok(logText?.includes('Status: failed'));
+			assert.ok(logText?.includes('SkippedNoise: 1'));
+			assert.strictEqual(logText?.includes('still waiting for Copilot'), false);
 		} finally {
 			fs.rmSync(workspaceRoot, { recursive: true, force: true });
 		}
@@ -474,7 +471,8 @@ suite('Extension Test Suite', () => {
 			language: 'Chinese',
 			generatedPath: 'd:/workspace/vscode-copilot-ralph-runner/.ralph/project-constraints.generated.json',
 			editablePath: 'd:/workspace/vscode-copilot-ralph-runner/.github/ralph/project-constraints.md',
-			completionSignalPath: 'd:/workspace/vscode-copilot-ralph-runner/.ralph/task-project-constraints-init-status',
+			completionSignalPath: 'd:/workspace/vscode-copilot-ralph-runner/.ralph/story-status.json',
+			completionSignalKey: 'task-project-constraints-init',
 			scanResult: {
 				generatedConstraints: {
 					version: 1,
@@ -813,7 +811,8 @@ suite('Extension Test Suite', () => {
 			targetScope: 'screen',
 			targetScopeId: 'Dashboard',
 			targetFilePath: 'd:/workspace/vscode-copilot-ralph-runner/.prd/design-context/shared/screen-dashboard.design.json',
-			completionSignalPath: 'd:/workspace/vscode-copilot-ralph-runner/.ralph/task-design-context-draft-us-200-screen-dashboard-status',
+			completionSignalPath: 'd:/workspace/vscode-copilot-ralph-runner/.ralph/story-status.json',
+			completionSignalKey: 'task-design-context-draft-us-200-screen-dashboard',
 			story: {
 				id: 'US-200',
 				title: 'Refresh dashboard cards',
@@ -835,7 +834,7 @@ suite('Extension Test Suite', () => {
 		assert.ok(prompt.includes('Reference docs: docs/ui/dashboard.md'));
 		assert.ok(prompt.includes('Existing applicable design context:'));
 		assert.ok(prompt.includes('Additional instructions: Focus on reusable dashboard shell constraints.'));
-		assert.ok(prompt.includes('write the exact text completed'));
+		assert.ok(prompt.includes('update the entry "task-design-context-draft-us-200-screen-dashboard" in d:/workspace/vscode-copilot-ralph-runner/.ralph/story-status.json to the exact text completed'));
 	});
 
 	test('Visual design draft prompt supports reusable draft creation without a story', () => {
@@ -844,7 +843,8 @@ suite('Extension Test Suite', () => {
 			targetScope: 'module',
 			targetScopeId: 'checkout-shell',
 			targetFilePath: 'd:/workspace/vscode-copilot-ralph-runner/.prd/design-context/shared/module-checkout-shell.design.json',
-			completionSignalPath: 'd:/workspace/vscode-copilot-ralph-runner/.ralph/task-design-context-draft-checkout-shell-module-checkout-shell-status',
+			completionSignalPath: 'd:/workspace/vscode-copilot-ralph-runner/.ralph/story-status.json',
+			completionSignalKey: 'task-design-context-draft-checkout-shell-module-checkout-shell',
 			figmaUrl: 'https://figma.example/file/checkout-shell',
 			screenshotPaths: ['images/checkout-shell.png'],
 			referenceDocs: ['docs/ui/checkout.md'],
@@ -861,7 +861,8 @@ suite('Extension Test Suite', () => {
 			const prompt = buildStoryDesignContextBatchMatchPrompt({
 				workspaceRoot: 'd:/workspace/vscode-copilot-ralph-runner',
 				targetFilePath: 'd:/workspace/vscode-copilot-ralph-runner/.ralph/design-context-suggestions/design-context-match.json',
-				completionSignalPath: 'd:/workspace/vscode-copilot-ralph-runner/.ralph/task-design-context-match-status',
+				completionSignalPath: 'd:/workspace/vscode-copilot-ralph-runner/.ralph/story-status.json',
+				completionSignalKey: 'task-design-context-match',
 				candidateDrafts: [
 					{
 						reference: 'screen:Dashboard',
@@ -942,7 +943,8 @@ suite('Extension Test Suite', () => {
 		const prompt = buildStoryDesignContextSuggestionPrompt({
 			workspaceRoot: 'd:/workspace/vscode-copilot-ralph-runner',
 			targetFilePath: 'd:/workspace/vscode-copilot-ralph-runner/.ralph/design-context-suggestions/US-201.suggestion.json',
-			completionSignalPath: 'd:/workspace/vscode-copilot-ralph-runner/.ralph/task-design-context-suggest-us-201-status',
+			completionSignalPath: 'd:/workspace/vscode-copilot-ralph-runner/.ralph/story-status.json',
+			completionSignalKey: 'task-design-context-suggest-us-201',
 			story: {
 				id: 'US-201',
 				title: 'Refresh analytics card spacing',
@@ -1280,7 +1282,8 @@ suite('Extension Test Suite', () => {
 			taskMemoryPath: 'd:/workspace/vscode-copilot-ralph-runner/.ralph/memory/US-301.json',
 			executionCheckpointPath: 'd:/workspace/vscode-copilot-ralph-runner/.ralph/checkpoints/US-301.checkpoint.json',
 			evidencePath: 'd:/workspace/vscode-copilot-ralph-runner/.ralph/evidence/US-301.evidence.json',
-			completionSignalPath: 'd:/workspace/vscode-copilot-ralph-runner/.ralph/task-US-301-status',
+			completionSignalPath: 'd:/workspace/vscode-copilot-ralph-runner/.ralph/story-status.json',
+			completionSignalKey: 'US-301',
 		});
 
 		assert.ok(prompt.includes('Before writing the completion signal, write a structured task memory artifact as valid JSON to:'));
@@ -1314,7 +1317,8 @@ suite('Extension Test Suite', () => {
 			taskMemoryPath: 'd:/workspace/vscode-copilot-ralph-runner/.ralph/memory/US-304.json',
 			executionCheckpointPath: 'd:/workspace/vscode-copilot-ralph-runner/.ralph/checkpoints/US-304.checkpoint.json',
 			evidencePath: 'd:/workspace/vscode-copilot-ralph-runner/.ralph/evidence/US-304.evidence.json',
-			completionSignalPath: 'd:/workspace/vscode-copilot-ralph-runner/.ralph/task-US-304-status',
+			completionSignalPath: 'd:/workspace/vscode-copilot-ralph-runner/.ralph/story-status.json',
+			completionSignalKey: 'US-304',
 			taskMemoryLines: ['Summary: Initial execution completed.'],
 			checkpointLines: ['Stage Goal: Reviewer handoff'],
 			evidenceLines: ['Status: completed'],
@@ -1337,7 +1341,8 @@ suite('Extension Test Suite', () => {
 			taskMemoryPath: 'd:/workspace/vscode-copilot-ralph-runner/.ralph/memory/US-304.json',
 			executionCheckpointPath: 'd:/workspace/vscode-copilot-ralph-runner/.ralph/checkpoints/US-304.checkpoint.json',
 			evidencePath: 'd:/workspace/vscode-copilot-ralph-runner/.ralph/evidence/US-304.evidence.json',
-			completionSignalPath: 'd:/workspace/vscode-copilot-ralph-runner/.ralph/task-US-304-status',
+			completionSignalPath: 'd:/workspace/vscode-copilot-ralph-runner/.ralph/story-status.json',
+			completionSignalKey: 'US-304',
 		});
 
 		assert.ok(reviewerPrompt.includes('Reviewer Agent Rules:'));
@@ -1372,7 +1377,8 @@ suite('Extension Test Suite', () => {
 			taskMemoryPath: 'd:/workspace/vscode-copilot-ralph-runner/.ralph/memory/US-302.json',
 			executionCheckpointPath: 'd:/workspace/vscode-copilot-ralph-runner/.ralph/checkpoints/US-302.checkpoint.json',
 			evidencePath: 'd:/workspace/vscode-copilot-ralph-runner/.ralph/evidence/US-302.evidence.json',
-			completionSignalPath: 'd:/workspace/vscode-copilot-ralph-runner/.ralph/task-US-302-status',
+			completionSignalPath: 'd:/workspace/vscode-copilot-ralph-runner/.ralph/story-status.json',
+			completionSignalKey: 'US-302',
 			additionalExecutionRules: ['Do not ask questions.', 'Execute directly.'],
 		});
 
@@ -1414,7 +1420,8 @@ suite('Extension Test Suite', () => {
 			taskMemoryPath: 'd:/workspace/vscode-copilot-ralph-runner/.ralph/memory/US-302A.json',
 			executionCheckpointPath: 'd:/workspace/vscode-copilot-ralph-runner/.ralph/checkpoints/US-302A.checkpoint.json',
 			evidencePath: 'd:/workspace/vscode-copilot-ralph-runner/.ralph/evidence/US-302A.evidence.json',
-			completionSignalPath: 'd:/workspace/vscode-copilot-ralph-runner/.ralph/task-US-302A-status',
+			completionSignalPath: 'd:/workspace/vscode-copilot-ralph-runner/.ralph/story-status.json',
+			completionSignalKey: 'US-302A',
 		});
 
 		assert.ok(prompt.includes('Machine Policy Gates:'));
@@ -1438,7 +1445,8 @@ suite('Extension Test Suite', () => {
 			taskMemoryPath: 'd:/workspace/vscode-copilot-ralph-runner/.ralph/memory/US-302B.json',
 			executionCheckpointPath: 'd:/workspace/vscode-copilot-ralph-runner/.ralph/checkpoints/US-302B.checkpoint.json',
 			evidencePath: 'd:/workspace/vscode-copilot-ralph-runner/.ralph/evidence/US-302B.evidence.json',
-			completionSignalPath: 'd:/workspace/vscode-copilot-ralph-runner/.ralph/task-US-302B-status',
+			completionSignalPath: 'd:/workspace/vscode-copilot-ralph-runner/.ralph/story-status.json',
+			completionSignalKey: 'US-302B',
 		});
 
 		assert.ok(prompt.includes('Knowledge Freshness Checks:'));
@@ -1459,7 +1467,8 @@ suite('Extension Test Suite', () => {
 			taskMemoryPath: 'd:/workspace/vscode-copilot-ralph-runner/.ralph/memory/US-303.json',
 			executionCheckpointPath: 'd:/workspace/vscode-copilot-ralph-runner/.ralph/checkpoints/US-303.checkpoint.json',
 				evidencePath: 'd:/workspace/vscode-copilot-ralph-runner/.ralph/evidence/US-303.evidence.json',
-			completionSignalPath: 'd:/workspace/vscode-copilot-ralph-runner/.ralph/task-US-303-status',
+			completionSignalPath: 'd:/workspace/vscode-copilot-ralph-runner/.ralph/story-status.json',
+			completionSignalKey: 'US-303',
 		});
 
 		assert.ok(prompt.includes('System Execution Rules:'));
@@ -2538,7 +2547,8 @@ suite('Extension Test Suite', () => {
 				evidencePath: path.join(workspaceRoot, '.ralph', 'evidence', 'US-501.evidence.json'),
 				taskMemoryPath: path.join(workspaceRoot, '.ralph', 'memory', 'US-501.json'),
 				executionCheckpointPath: path.join(workspaceRoot, '.ralph', 'checkpoints', 'US-501.checkpoint.json'),
-				completionSignalPath: path.join(workspaceRoot, '.ralph', 'task-US-501-status'),
+				completionSignalPath: path.join(workspaceRoot, '.ralph', 'story-status.json'),
+				completionSignalKey: 'US-501',
 			});
 
 			assert.ok(prompt.includes('Project Constraints:'));

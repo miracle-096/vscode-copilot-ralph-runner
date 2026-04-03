@@ -361,6 +361,10 @@ export interface RalphLanguagePack {
 		placeholder: string;
 		items: Array<{ command: string; label: string; description: string; }>;
 	};
+	help: {
+		introductionTitle: string;
+		manualTitle: string;
+	};
 	quickStart: {
 		existingPrd: string;
 		start: string;
@@ -754,6 +758,8 @@ const CHINESE_PACK: RalphLanguagePack = {
 	menu: {
 		placeholder: 'RALPH Runner：选择一个命令',
 		items: [
+			{ command: 'ralph-runner.showIntroduction', label: '$(hubot)  插件介绍', description: '查看 RALPH 的定位、能力边界和适用场景' },
+			{ command: 'ralph-runner.showUsageGuide', label: '$(library)  使用流程手册', description: '查看空项目和已存在项目两种起点下的推荐流程' },
 			{ command: 'ralph-runner.configurePolicyGates', label: '$(settings-gear)  配置执行检查', description: '通过可视化界面启用或关闭内置检查项和审批提示模式' },
 			{ command: 'ralph-runner.initProjectConstraints', label: '$(symbol-key)  初始化项目约束', description: '扫描仓库并生成可编辑和机器可读的项目规则' },
 			{ command: 'ralph-runner.refreshSourceContextIndex', label: '$(repo)  刷新源码上下文索引', description: '扫描仓库并更新轻量 source context 索引工件' },
@@ -769,6 +775,10 @@ const CHINESE_PACK: RalphLanguagePack = {
 			{ command: 'ralph-runner.resetStep', label: '$(debug-restart)  重置故事', description: '重置某个已完成的用户故事' },
 			{ command: 'ralph-runner.openSettings', label: '$(gear)  打开设置', description: '配置 RALPH Runner 选项' },
 		],
+	},
+	help: {
+		introductionTitle: 'RALPH 插件介绍',
+		manualTitle: 'RALPH 使用流程手册',
 	},
 	quickStart: {
 		existingPrd: 'RALPH：工作区根目录中已存在 prd.json。',
@@ -1167,6 +1177,8 @@ const ENGLISH_PACK: RalphLanguagePack = {
 	menu: {
 		placeholder: 'RALPH Runner: choose a command',
 		items: [
+			{ command: 'ralph-runner.showIntroduction', label: '$(hubot)  Introduction', description: 'Read what RALPH does, where it fits, and what the menu is for' },
+			{ command: 'ralph-runner.showUsageGuide', label: '$(library)  Usage Guide', description: 'Read the recommended flow for empty projects and existing repositories' },
 			{ command: 'ralph-runner.configurePolicyGates', label: '$(settings-gear)  Configure Run Checks', description: 'Use a visual flow to enable built-in checks and choose the approval prompt mode' },
 			{ command: 'ralph-runner.initProjectConstraints', label: '$(symbol-key)  Initialize Project Constraints', description: 'Scan the repository and generate editable and machine-readable project rules' },
 			{ command: 'ralph-runner.refreshSourceContextIndex', label: '$(repo)  Refresh Source Context Index', description: 'Scan the repository and update the lightweight source-context index artifact' },
@@ -1182,6 +1194,10 @@ const ENGLISH_PACK: RalphLanguagePack = {
 			{ command: 'ralph-runner.resetStep', label: '$(debug-restart)  Reset Story', description: 'Reset a completed or failed user story' },
 			{ command: 'ralph-runner.openSettings', label: '$(gear)  Open Settings', description: 'Configure Ralph Runner options' },
 		],
+	},
+	help: {
+		introductionTitle: 'RALPH Introduction',
+		manualTitle: 'RALPH Usage Guide',
 	},
 	quickStart: {
 		existingPrd: 'RALPH: prd.json already exists in the workspace root.',

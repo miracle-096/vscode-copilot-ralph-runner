@@ -22,63 +22,6 @@
     "新增 artifact 字段时，记得同步 taskMemory/executionCheckpoint/storyEvidence 的 normalize 路径与测试。"
   ],
   "resumeRecommendation": "后续若继续增强评审闭环，优先检查 src/storyReview.ts 的评分/归一化逻辑、src/promptContext.ts 的 reviewer/refactor prompt，以及 src/extension.ts 中的多轮状态编排。",
-  "reviewSummary": {
-    "totalScore": 94,
-    "maxScore": 100,
-    "passingScore": 85,
-    "passed": true,
-    "reviewPass": 1,
-    "maxReviewerPasses": 3,
-    "maxAutoRefactorRounds": 2,
-    "dimensions": [
-      {
-        "dimension": "architectureConsistency",
-        "label": "Architecture Consistency",
-        "score": 24,
-        "summary": "执行编排、prompt contract 和 artifact schema 通过共享模块收口。",
-        "issues": [],
-        "recommendations": []
-      },
-      {
-        "dimension": "acceptanceCoverage",
-        "label": "Acceptance Coverage",
-        "score": 24,
-        "summary": "五条验收标准都已在流程或 artifact 层得到明确实现。",
-        "issues": [],
-        "recommendations": []
-      },
-      {
-        "dimension": "changeScopeControl",
-        "label": "Change Scope Control",
-        "score": 22,
-        "summary": "改动集中在 reviewer loop 所需模块，没有扩散到 PRD 或无关工作流。",
-        "issues": [],
-        "recommendations": []
-      },
-      {
-        "dimension": "verifiability",
-        "label": "Verifiability",
-        "score": 24,
-        "summary": "编译与完整测试均已通过，新增测试覆盖 reviewer prompt 与 review metadata round-trip。",
-        "issues": [],
-        "recommendations": []
-      }
-    ],
-    "findings": [
-      "Reviewer pass 已成为故事完成前的显式阶段，而不是仅依赖最终 completed 信号。"
-    ],
-    "recommendations": [],
-    "refactorPerformed": false,
-    "reviewedAt": "2026-04-03T09:12:00.000Z",
-    "source": "copilot"
-  },
-  "reviewLoop": {
-    "reviewerPasses": 1,
-    "autoRefactorRounds": 0,
-    "maxAutoRefactorRounds": 2,
-    "endedReason": "passed",
-    "lastReviewedAt": "2026-04-03T09:12:00.000Z"
-  },
   "updatedAt": "2026-04-03T09:12:00.000Z",
   "source": "copilot"
 }

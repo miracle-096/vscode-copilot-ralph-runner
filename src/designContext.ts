@@ -20,6 +20,7 @@ export interface VisualDesignContextDraftPromptInput {
 	targetScopeId: string;
 	targetFilePath: string;
 	completionSignalPath: string;
+	completionSignalKey: string;
 	story?: UserStory;
 	figmaUrl?: string;
 	screenshotPaths: string[];
@@ -32,6 +33,7 @@ export interface StoryDesignContextSuggestionPromptInput {
 	workspaceRoot: string;
 	targetFilePath: string;
 	completionSignalPath: string;
+	completionSignalKey: string;
 	story: UserStory;
 	sharedContextLines: string[];
 	existingStoryContextLines?: string[];
@@ -42,6 +44,7 @@ export interface StoryDesignContextBatchMatchPromptInput {
 	workspaceRoot: string;
 	targetFilePath: string;
 	completionSignalPath: string;
+	completionSignalKey: string;
 	candidateStories: UserStory[];
 	candidateDrafts: Array<{
 		reference: string;
@@ -424,7 +427,7 @@ export function buildVisualDesignContextDraftPrompt(input: VisualDesignContextDr
 		`Target scope: ${input.targetScope}`,
 		`Target scope id: ${input.targetScopeId}`,
 		`Write the JSON artifact directly to: ${input.targetFilePath}`,
-		`After the artifact is fully written, write the exact text completed (no newline) to: ${input.completionSignalPath}`,
+		`After the artifact is fully written, update the entry "${input.completionSignalKey}" in ${input.completionSignalPath} to the exact text completed and preserve valid JSON for the whole file.`,
 		'',
 	];
 
@@ -500,7 +503,7 @@ export function buildStoryDesignContextSuggestionPrompt(input: StoryDesignContex
 		'Use the current user story plus the inherited shared design context to generate a suggested story-level design-context override as valid JSON.',
 		`Workspace root: ${input.workspaceRoot}`,
 		`Write the suggested story-level artifact directly to: ${input.targetFilePath}`,
-		`After the artifact is fully written, write the exact text completed (no newline) to: ${input.completionSignalPath}`,
+		`After the artifact is fully written, update the entry "${input.completionSignalKey}" in ${input.completionSignalPath} to the exact text completed and preserve valid JSON for the whole file.`,
 		'Do not modify prd.json.',
 		'',
 		'Current story context:',
@@ -560,7 +563,7 @@ export function buildStoryDesignContextBatchMatchPrompt(input: StoryDesignContex
 		'Use the selected reusable design-context resources plus the candidate user stories to decide which stories should inherit which resources.',
 		`Workspace root: ${input.workspaceRoot}`,
 		`Write the JSON match result directly to: ${input.targetFilePath}`,
-		`After the artifact is fully written, write the exact text completed (no newline) to: ${input.completionSignalPath}`,
+		`After the artifact is fully written, update the entry "${input.completionSignalKey}" in ${input.completionSignalPath} to the exact text completed and preserve valid JSON for the whole file.`,
 		'Do not modify prd.json or any story design-context files directly.',
 		'',
 		'Goal:',
