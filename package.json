@@ -2,7 +2,7 @@
   "name": "ralph-runner",
   "displayName": "Ralph Runner",
   "description": "Autonomous task runner — reads prd.json user stories, tracks progress inline, and drives Copilot Chat to execute each story in an automated loop",
-  "version": "0.0.7",
+  "version": "0.0.8",
   "publisher": "recent-graduates",
   "repository": {
     "type": "git",
@@ -21,6 +21,10 @@
   "main": "./dist/extension.js",
   "contributes": {
     "commands": [
+      {
+        "command": "ralph-runner.configurePolicyGates",
+        "title": "RALPH: 配置执行检查"
+      },
       {
         "command": "ralph-runner.start",
         "title": "RALPH: 开始执行"
@@ -54,6 +58,10 @@
         "title": "RALPH: 预览故事源上下文"
       },
       {
+        "command": "ralph-runner.generateAgentMap",
+        "title": "RALPH: 生成 Agent Map"
+      },
+      {
         "command": "ralph-runner.recordDesignContext",
         "title": "RALPH: 界面设计描述"
       },
@@ -72,6 +80,12 @@
       {
         "command": "ralph-runner.appendUserStories",
         "title": "RALPH: 追加用户故事"
+      }
+    ],
+    "keybindings": [
+      {
+        "command": "ralph-runner.showMenu",
+        "key": "alt+r"
       }
     ],
     "chatParticipants": [
@@ -127,11 +141,6 @@
           "default": true,
           "description": "启用后，在构建任务提示词时自动注入已初始化的项目约束。"
         },
-        "ralph-runner.requireProjectConstraintsBeforeRun": {
-          "type": "boolean",
-          "default": false,
-          "description": "启用后，必须先初始化项目约束，RALPH 才能开始执行故事。"
-        },
         "ralph-runner.autoInjectDesignContext": {
           "type": "boolean",
           "default": true,
@@ -154,11 +163,6 @@
           "maximum": 10,
           "description": "每个故事最多注入或预览的相关任务记忆条目数量。"
         },
-        "ralph-runner.requireDesignContextForTaggedStories": {
-          "type": "boolean",
-          "default": false,
-          "description": "启用后，被识别为设计敏感的故事必须先补充界面设计描述才可执行。"
-        },
         "ralph-runner.policyGates": {
           "type": "object",
           "default": {
@@ -166,7 +170,7 @@
             "preflightRules": [
               {
                 "id": "require-project-constraints",
-                "title": "Require project constraints before execution",
+                "title": "Require project rules before start",
                 "phase": "preflight",
                 "type": "required-artifact",
                 "artifact": "project-constraints",
@@ -175,7 +179,7 @@
               },
               {
                 "id": "require-design-context",
-                "title": "Require design context for design-sensitive stories",
+                "title": "Require design notes for UI-sensitive stories",
                 "phase": "preflight",
                 "type": "required-artifact",
                 "artifact": "design-context",
@@ -186,7 +190,7 @@
             "completionRules": [
               {
                 "id": "protect-dangerous-paths",
-                "title": "Block dangerous path edits",
+                "title": "Block risky file changes",
                 "phase": "completion",
                 "type": "restricted-paths",
                 "paths": [
@@ -205,7 +209,7 @@
               },
               {
                 "id": "require-relevant-tests",
-                "title": "Require at least one relevant test command",
+                "title": "Require at least one relevant test",
                 "phase": "completion",
                 "type": "require-command",
                 "commandsFrom": "projectConstraints.testCommands",
@@ -221,7 +225,7 @@
               },
               {
                 "id": "require-task-memory-artifact",
-                "title": "Require task memory artifact before completion",
+                "title": "Require task memory before completion",
                 "phase": "completion",
                 "type": "required-artifact",
                 "artifact": "task-memory",
@@ -239,7 +243,7 @@
               },
               {
                 "id": "require-story-evidence-artifact",
-                "title": "Require story evidence artifact before completion",
+                "title": "Require story evidence before completion",
                 "phase": "completion",
                 "type": "required-artifact",
                 "artifact": "story-evidence",
@@ -248,13 +252,24 @@
               }
             ]
           },
-          "markdownDescription": "机器可执行的策略门禁配置。开启后，RALPH 会在故事开始前和完成前执行 schema 中定义的 preflight/completion 规则；同时会自然并入 `requireProjectConstraintsBeforeRun` 与 `requireDesignContextForTaggedStories` 兼容规则。"
+          "markdownDescription": "自动检查规则。开启后，RALPH 会在故事开始前和完成前按这里的 preflight/completion 规则检查。旧的 `requireProjectConstraintsBeforeRun` 和 `requireDesignContextForTaggedStories` 仍会兼容读取，但不再单独展示。"
         },
         "ralph-runner.policyGateCommandTimeoutMs": {
           "type": "number",
           "default": 600000,
           "minimum": 1000,
-          "description": "机器策略门禁执行测试或构建命令时的超时时间，单位为毫秒。"
+          "description": "自动检查在执行测试或构建命令时的超时时间，单位为毫秒。"
+        },
+        "ralph-runner.approvalPromptMode": {
+          "type": "string",
+          "default": "default",
+          "enum": ["default", "bypass", "autopilot"],
+          "enumDescriptions": [
+            "高风险故事完成后显示审批提示，可选择打开审批流或证据包。",
+            "高风险故事完成后直接进入审批流，跳过中间提示。",
+            "高风险故事完成后不依赖弹窗，而是通过日志、状态栏和菜单持续提示待审批故事。"
+          ],
+          "description": "审批提示模式。可用于让 Ralph Runner 的审批交互与当前 chat 的 default / bypass / autopilot 使用习惯保持一致。"
         },
         "ralph-runner.language": {
           "type": "string",

@@ -23,6 +23,7 @@ import {
 	writeDesignContext,
 	writeDesignContextForScope,
 } from './designContext';
+import { generateAgentMapArtifacts } from './agentMap';
 import { composeStoryExecutionPrompt } from './promptContext';
 import {
 	createSynthesizedTaskMemory,
@@ -75,8 +76,10 @@ import {
 import {
 	buildEffectivePolicyConfig,
 	clearPolicyBaseline,
+	createDefaultPolicyConfig,
 	deriveStoryChangedFiles,
 	evaluatePolicyGates,
+	normalizePolicyConfig,
 	readPolicyBaseline,
 	summarizePolicyConfigForPrompt,
 	summarizePolicyViolations,
@@ -152,8 +155,15 @@ function getConfig() {
 		REQUIRE_DESIGN_CONTEXT_FOR_TAGGED_STORIES: cfg.get<boolean>('requireDesignContextForTaggedStories', false),
 		POLICY_GATES: cfg.get<unknown>('policyGates', undefined),
 		POLICY_GATE_COMMAND_TIMEOUT_MS: cfg.get<number>('policyGateCommandTimeoutMs', 600000),
+		APPROVAL_PROMPT_MODE: normalizeApprovalPromptMode(cfg.get<string>('approvalPromptMode', 'default')),
 		LANGUAGE: normalizeRalphLanguage(cfg.get<string>('language', 'Chinese')),
 	};
+}
+
+type ApprovalPromptMode = 'default' | 'bypass' | 'autopilot';
+
+function normalizeApprovalPromptMode(value: unknown): ApprovalPromptMode {
+	return value === 'bypass' || value === 'autopilot' ? value : 'default';
 }
 
 function getLanguagePack() {
@@ -607,14 +617,19 @@ export function activate(context: vscode.ExtensionContext) {
 	statusBarItem.show();
 	context.subscriptions.push(statusBarItem);
 	context.subscriptions.push(vscode.workspace.onDidChangeConfiguration(event => {
-		if (!event.affectsConfiguration('ralph-runner.language')) {
+		if (!event.affectsConfiguration('ralph-runner.language')
+			&& !event.affectsConfiguration('ralph-runner.policyGates')
+			&& !event.affectsConfiguration('ralph-runner.approvalPromptMode')) {
 			return;
 		}
 		updateStatusBar(isRunning ? 'running' : 'idle');
-		vscode.window.showInformationMessage(getLanguagePack().initProjectConstraints.languageChanged);
+		if (event.affectsConfiguration('ralph-runner.language')) {
+			vscode.window.showInformationMessage(getLanguagePack().initProjectConstraints.languageChanged);
+		}
 	}));
 
 	context.subscriptions.push(
+		vscode.commands.registerCommand('ralph-runner.configurePolicyGates', () => configurePolicyGates()),
 		vscode.commands.registerCommand('ralph-runner.start', () => startRalph()),
 		vscode.commands.registerCommand('ralph-runner.stop', () => stopRalph()),
 		vscode.commands.registerCommand('ralph-runner.status', () => showStatus()),
@@ -623,6 +638,7 @@ export function activate(context: vscode.ExtensionContext) {
 		vscode.commands.registerCommand('ralph-runner.initProjectConstraints', () => initializeProjectConstraints()),
 		vscode.commands.registerCommand('ralph-runner.refreshSourceContextIndex', () => refreshSourceContextIndexCommand()),
 		vscode.commands.registerCommand('ralph-runner.previewSourceContextRecall', () => previewSourceContextRecall()),
+		vscode.commands.registerCommand('ralph-runner.generateAgentMap', () => generateAgentMapCommand()),
 		vscode.commands.registerCommand('ralph-runner.recordDesignContext', () => recordDesignContext()),
 		vscode.commands.registerCommand('ralph-runner.generateDesignContextDraft', () => generateVisualDesignContextDraft()),
 		vscode.commands.registerCommand('ralph-runner.suggestStoryDesignContext', () => suggestStoryDesignContext()),
@@ -945,6 +961,36 @@ async function previewSourceContextRecall(): Promise<void> {
 	vscode.window.showInformationMessage(languagePack.sourceContext.previewReady(selection.story.id, matches.length));
 }
 
+async function generateAgentMapCommand(): Promise<void> {
+	const languagePack = getLanguagePack();
+	const workspaceRoot = getWorkspaceRoot();
+	if (!workspaceRoot) {
+		vscode.window.showErrorMessage(languagePack.common.noWorkspaceFolder);
+		return;
+	}
+
+	try {
+		const result = generateAgentMapArtifacts(workspaceRoot);
+		log(`  Agent Map refreshed: ${result.overviewPath.replace(/\\/g, '/')} and ${result.knowledgeCatalogPath.replace(/\\/g, '/')}`);
+		const action = await vscode.window.showInformationMessage(
+			languagePack.agentMap.success(result.overview.gaps.length),
+			languagePack.agentMap.openOverview,
+			languagePack.agentMap.openKnowledgeCatalog,
+		);
+		if (action === languagePack.agentMap.openOverview) {
+			const document = await vscode.workspace.openTextDocument(result.overviewPath);
+			await vscode.window.showTextDocument(document);
+		} else if (action === languagePack.agentMap.openKnowledgeCatalog) {
+			const document = await vscode.workspace.openTextDocument(result.knowledgeCatalogPath);
+			await vscode.window.showTextDocument(document);
+		}
+	} catch (error: unknown) {
+		const message = error instanceof Error ? error.message : String(error);
+		log(`  WARNING: Failed to generate Agent Map: ${message}`);
+		vscode.window.showErrorMessage(languagePack.agentMap.failed(message));
+	}
+}
+
 function refreshSourceContextIndexArtifact(
 	workspaceRoot: string,
 	reason: string,
@@ -1096,6 +1142,10 @@ async function executeStory(story: UserStory, workspaceRoot: string): Promise<{
 	const prompt = buildCopilotPromptForStory(story, workspaceRoot);
 	log('  Delegating user story to Copilot...');
 	await sendToCopilot(prompt, story.id, workspaceRoot);
+	const completionPolicyResult = evaluateCompletionPolicyGates(workspaceRoot, story);
+	if (!completionPolicyResult.ok) {
+		throw new Error(`Policy gates blocked completion for ${story.id}`);
+	}
 	const taskMemoryResult = ensureTaskMemoryPersistence(story, workspaceRoot);
 	const checkpointResult = ensureExecutionCheckpointPersistence(story, workspaceRoot, {
 		status: 'completed',
@@ -1105,10 +1155,6 @@ async function executeStory(story: UserStory, workspaceRoot: string): Promise<{
 		taskMemory: taskMemoryResult.artifact,
 		checkpoint: checkpointResult.artifact,
 	});
-	const completionPolicyResult = evaluateCompletionPolicyGates(workspaceRoot, story);
-	if (!completionPolicyResult.ok) {
-		throw new Error(`Policy gates blocked completion for ${story.id}`);
-	}
 	log(`  Task memory ready for ${story.id}: ${taskMemoryResult.filePath} (${taskMemoryResult.source})`);
 	log(`  Execution checkpoint ready for ${story.id}: ${checkpointResult.filePath} (${checkpointResult.source})`);
 	log(`  Story evidence ready for ${story.id}: ${evidenceResult.filePath} (${evidenceResult.source})`);
@@ -2112,15 +2158,7 @@ async function reviewStoryApproval(targetStoryId?: string): Promise<void> {
 		return;
 	}
 
-	const candidates = prd.userStories
-		.map(story => ({
-			story,
-			evidence: readStoryEvidence(workspaceRoot, story.id),
-			status: RalphStateManager.getStoryExecutionStatus(workspaceRoot, story.id),
-		}))
-		.filter((item): item is { story: UserStory; evidence: StoryEvidenceArtifact; status: ReturnType<typeof RalphStateManager.getStoryExecutionStatus>; } =>
-			item.evidence !== null && isStoryAwaitingApproval(item.evidence)
-		);
+	const candidates = getPendingApprovalCandidates(workspaceRoot, prd);
 
 	if (candidates.length === 0) {
 		vscode.window.showInformationMessage(languagePack.approval.noReviewableStories);
@@ -2170,6 +2208,7 @@ async function reviewStoryApproval(targetStoryId?: string): Promise<void> {
 	if (response === languagePack.approval.openEvidence) {
 		await openStoryEvidenceArtifact(workspaceRoot, candidate.story.id);
 	}
+	updateStatusBar(isRunning ? 'running' : 'idle');
 }
 
 async function resetStory(): Promise<void> {
@@ -2220,6 +2259,7 @@ async function resetStory(): Promise<void> {
 		}
 		vscode.window.showInformationMessage(languagePack.reset.storyReset(selection.storyId));
 		log(`Story ${selection.storyId} reset by user.`);
+		updateStatusBar(isRunning ? 'running' : 'idle');
 	}
 }
 
@@ -2234,6 +2274,18 @@ async function maybePromptForManualApproval(
 
 	const languagePack = getLanguagePack();
 	const localizedStatus = getLocalizedStoryStatus(evidence.status, getConfig().LANGUAGE);
+	const approvalPromptMode = getConfig().APPROVAL_PROMPT_MODE;
+	if (approvalPromptMode === 'bypass') {
+		log(`Approval prompt mode=bypass; opening approval flow directly for ${story.id}.`);
+		await reviewStoryApproval(story.id);
+		return;
+	}
+	if (approvalPromptMode === 'autopilot') {
+		log(`Approval prompt mode=autopilot; ${story.id} is awaiting approval (${evidence.status}). Review it from the command menu or the approval command.`);
+		updateStatusBar(isRunning ? 'running' : 'idle');
+		return;
+	}
+
 	const choice = await vscode.window.showInformationMessage(
 		languagePack.approval.required(story.id, localizedStatus),
 		languagePack.approval.openFlow,
@@ -2247,6 +2299,76 @@ async function maybePromptForManualApproval(
 	if (choice === languagePack.approval.openEvidence) {
 		await openStoryEvidenceArtifact(workspaceRoot, story.id);
 	}
+	updateStatusBar(isRunning ? 'running' : 'idle');
+}
+
+function getPendingApprovalCandidates(
+	workspaceRoot: string,
+	prd = parsePrd(workspaceRoot),
+): Array<{ story: UserStory; evidence: StoryEvidenceArtifact; status: ReturnType<typeof RalphStateManager.getStoryExecutionStatus>; }> {
+	if (!prd) {
+		return [];
+	}
+
+	return prd.userStories
+		.map(story => ({
+			story,
+			evidence: readStoryEvidence(workspaceRoot, story.id),
+			status: RalphStateManager.getStoryExecutionStatus(workspaceRoot, story.id),
+		}))
+		.filter((item): item is { story: UserStory; evidence: StoryEvidenceArtifact; status: ReturnType<typeof RalphStateManager.getStoryExecutionStatus>; } =>
+			item.evidence !== null && isStoryAwaitingApproval(item.evidence)
+		);
+}
+
+function getEnabledBuiltinPolicyRuleIds(config: ReturnType<typeof normalizePolicyConfig>): string[] {
+	return [...config.preflightRules, ...config.completionRules]
+		.filter(rule => rule.enabled !== false)
+		.map(rule => rule.id)
+		.filter(ruleId => [
+			'require-project-constraints',
+			'require-design-context',
+			'protect-dangerous-paths',
+			'require-relevant-tests',
+			'require-task-memory-artifact',
+			'require-execution-checkpoint-artifact',
+			'require-story-evidence-artifact',
+		].includes(ruleId));
+}
+
+function applyBuiltinRuleSelections(
+	config: ReturnType<typeof normalizePolicyConfig>,
+	enabled: boolean,
+	selectedRuleIds: Set<string>,
+) {
+	const base = normalizePolicyConfig(config);
+	const defaults = createDefaultPolicyConfig();
+	const builtinRuleIds = new Set([
+		'require-project-constraints',
+		'require-design-context',
+		'protect-dangerous-paths',
+		'require-relevant-tests',
+		'require-task-memory-artifact',
+		'require-execution-checkpoint-artifact',
+		'require-story-evidence-artifact',
+	]);
+	const mergeRuleArray = (rules: typeof base.preflightRules, defaultRules: typeof defaults.preflightRules | typeof defaults.completionRules) => {
+		const merged = [...rules];
+		for (const defaultRule of defaultRules) {
+			if (!merged.some(rule => rule.id === defaultRule.id)) {
+				merged.push(defaultRule);
+			}
+		}
+		return merged.map(rule => builtinRuleIds.has(rule.id)
+			? { ...rule, enabled: selectedRuleIds.has(rule.id) }
+			: rule);
+	};
+
+	return {
+		enabled,
+		preflightRules: mergeRuleArray(base.preflightRules, defaults.preflightRules),
+		completionRules: mergeRuleArray(base.completionRules, defaults.completionRules),
+	};
 }
 
 function isStoryAwaitingApproval(evidence: StoryEvidenceArtifact): boolean {
@@ -3800,9 +3922,17 @@ function updateStatusBar(state: 'idle' | 'running'): void {
 		statusBarItem.tooltip = languagePack.statusBar.runningTooltip;
 		statusBarItem.backgroundColor = new vscode.ThemeColor('statusBarItem.warningBackground');
 	} else {
-		statusBarItem.text = languagePack.statusBar.idleText;
-		statusBarItem.tooltip = languagePack.statusBar.idleTooltip;
-		statusBarItem.backgroundColor = undefined;
+		const workspaceRoot = getWorkspaceRoot();
+		const pendingApprovals = workspaceRoot ? getPendingApprovalCandidates(workspaceRoot).length : 0;
+		if (pendingApprovals > 0) {
+			statusBarItem.text = languagePack.statusBar.pendingApprovalsText(pendingApprovals);
+			statusBarItem.tooltip = languagePack.statusBar.pendingApprovalsTooltip(pendingApprovals);
+			statusBarItem.backgroundColor = new vscode.ThemeColor('statusBarItem.warningBackground');
+		} else {
+			statusBarItem.text = languagePack.statusBar.idleText;
+			statusBarItem.tooltip = languagePack.statusBar.idleTooltip;
+			statusBarItem.backgroundColor = undefined;
+		}
 	}
 }
 
@@ -3822,6 +3952,108 @@ async function showCommandMenu(): Promise<void> {
 	if (selected.command) {
 		vscode.commands.executeCommand(selected.command);
 	}
+}
+
+async function configurePolicyGates(): Promise<void> {
+	const languagePack = getLanguagePack();
+	const workspaceRoot = getWorkspaceRoot();
+	if (!workspaceRoot) {
+		vscode.window.showErrorMessage(languagePack.common.noWorkspaceFolder);
+		return;
+	}
+
+	const cfg = vscode.workspace.getConfiguration('ralph-runner');
+	const scopeSelection = await vscode.window.showQuickPick([
+		{
+			label: languagePack.policyConfig.scopeUserLabel,
+			description: languagePack.policyConfig.scopeUserDescription,
+			target: vscode.ConfigurationTarget.Global,
+		},
+		{
+			label: languagePack.policyConfig.scopeWorkspaceLabel,
+			description: languagePack.policyConfig.scopeWorkspaceDescription,
+			target: vscode.ConfigurationTarget.Workspace,
+		},
+	], {
+		title: languagePack.policyConfig.title,
+		placeHolder: languagePack.policyConfig.scopePlaceholder,
+	});
+	if (!scopeSelection) {
+		return;
+	}
+
+	const rawPolicyConfig = normalizePolicyConfig(cfg.get<unknown>('policyGates', undefined));
+	const effectivePolicyConfig = buildEffectivePolicyConfig(cfg.get<unknown>('policyGates', undefined), {
+		requireProjectConstraintsBeforeRun: cfg.get<boolean>('requireProjectConstraintsBeforeRun', false),
+		requireDesignContextForTaggedStories: cfg.get<boolean>('requireDesignContextForTaggedStories', false),
+	});
+	const enabledSelection = await vscode.window.showQuickPick([
+		{ label: languagePack.policyConfig.enabledLabel, description: languagePack.policyConfig.enabledDescription, value: true },
+		{ label: languagePack.policyConfig.disabledLabel, description: languagePack.policyConfig.disabledDescription, value: false },
+	], {
+		title: languagePack.policyConfig.title,
+		placeHolder: languagePack.policyConfig.enablePlaceholder,
+	});
+	if (!enabledSelection) {
+		return;
+	}
+
+	const currentEnabledRuleIds = new Set(getEnabledBuiltinPolicyRuleIds(effectivePolicyConfig));
+	const ruleSelections = await vscode.window.showQuickPick(buildPolicyRuleQuickPickItems(languagePack, currentEnabledRuleIds), {
+		title: languagePack.policyConfig.title,
+		placeHolder: languagePack.policyConfig.rulesPlaceholder,
+		canPickMany: true,
+		ignoreFocusOut: true,
+	});
+	if (!ruleSelections) {
+		return;
+	}
+
+	const approvalModeSelection = await vscode.window.showQuickPick([
+		{ label: languagePack.policyConfig.approvalModes.default.label, description: languagePack.policyConfig.approvalModes.default.description, value: 'default' as ApprovalPromptMode },
+		{ label: languagePack.policyConfig.approvalModes.bypass.label, description: languagePack.policyConfig.approvalModes.bypass.description, value: 'bypass' as ApprovalPromptMode },
+		{ label: languagePack.policyConfig.approvalModes.autopilot.label, description: languagePack.policyConfig.approvalModes.autopilot.description, value: 'autopilot' as ApprovalPromptMode },
+	], {
+		title: languagePack.policyConfig.title,
+		placeHolder: languagePack.policyConfig.approvalModePlaceholder,
+	});
+	if (!approvalModeSelection) {
+		return;
+	}
+
+	const updatedPolicyConfig = applyBuiltinRuleSelections(
+		rawPolicyConfig,
+		enabledSelection.value,
+		new Set(ruleSelections.map(item => item.ruleId))
+	);
+	await cfg.update('policyGates', updatedPolicyConfig, scopeSelection.target);
+	await cfg.update('requireProjectConstraintsBeforeRun', undefined, scopeSelection.target);
+	await cfg.update('requireDesignContextForTaggedStories', undefined, scopeSelection.target);
+	await cfg.update('approvalPromptMode', approvalModeSelection.value, scopeSelection.target);
+	if (scopeSelection.target === vscode.ConfigurationTarget.Global) {
+		await cfg.update('policyGates', undefined, vscode.ConfigurationTarget.Workspace);
+		await cfg.update('requireProjectConstraintsBeforeRun', undefined, vscode.ConfigurationTarget.Workspace);
+		await cfg.update('requireDesignContextForTaggedStories', undefined, vscode.ConfigurationTarget.Workspace);
+		await cfg.update('approvalPromptMode', undefined, vscode.ConfigurationTarget.Workspace);
+	}
+	updateStatusBar(isRunning ? 'running' : 'idle');
+
+	const action = await vscode.window.showInformationMessage(languagePack.policyConfig.saved, languagePack.policyConfig.openSettings);
+	if (action === languagePack.policyConfig.openSettings) {
+		await vscode.commands.executeCommand('workbench.action.openSettings', 'ralph-runner.policyGates');
+	}
+}
+
+function buildPolicyRuleQuickPickItems(languagePack: ReturnType<typeof getLanguagePack>, enabledRuleIds: Set<string>) {
+	return [
+		{ label: languagePack.policyConfig.ruleLabels.requireProjectConstraints, description: languagePack.policyConfig.ruleDescriptions.requireProjectConstraints, picked: enabledRuleIds.has('require-project-constraints'), ruleId: 'require-project-constraints' },
+		{ label: languagePack.policyConfig.ruleLabels.requireDesignContext, description: languagePack.policyConfig.ruleDescriptions.requireDesignContext, picked: enabledRuleIds.has('require-design-context'), ruleId: 'require-design-context' },
+		{ label: languagePack.policyConfig.ruleLabels.protectDangerousPaths, description: languagePack.policyConfig.ruleDescriptions.protectDangerousPaths, picked: enabledRuleIds.has('protect-dangerous-paths'), ruleId: 'protect-dangerous-paths' },
+		{ label: languagePack.policyConfig.ruleLabels.requireRelevantTests, description: languagePack.policyConfig.ruleDescriptions.requireRelevantTests, picked: enabledRuleIds.has('require-relevant-tests'), ruleId: 'require-relevant-tests' },
+		{ label: languagePack.policyConfig.ruleLabels.requireTaskMemory, description: languagePack.policyConfig.ruleDescriptions.requireTaskMemory, picked: enabledRuleIds.has('require-task-memory-artifact'), ruleId: 'require-task-memory-artifact' },
+		{ label: languagePack.policyConfig.ruleLabels.requireExecutionCheckpoint, description: languagePack.policyConfig.ruleDescriptions.requireExecutionCheckpoint, picked: enabledRuleIds.has('require-execution-checkpoint-artifact'), ruleId: 'require-execution-checkpoint-artifact' },
+		{ label: languagePack.policyConfig.ruleLabels.requireStoryEvidence, description: languagePack.policyConfig.ruleDescriptions.requireStoryEvidence, picked: enabledRuleIds.has('require-story-evidence-artifact'), ruleId: 'require-story-evidence-artifact' },
+	] as Array<vscode.QuickPickItem & { picked: boolean; ruleId: string; }>;
 }
 
 // ── Quick Start ─────────────────────────────────────────────────────────────

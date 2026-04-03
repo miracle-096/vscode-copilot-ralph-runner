@@ -23,6 +23,9 @@ export const STORY_EVIDENCE_FILE_SUFFIX = '.evidence.json';
 export const SOURCE_CONTEXT_INDEX_FILENAME = 'source-context-index.json';
 export const POLICY_BASELINE_DIR = 'policy-baselines';
 export const POLICY_BASELINE_FILE_SUFFIX = '.policy-baseline.json';
+export const AGENT_MAP_DIR = 'agent-map';
+export const AGENT_MAP_OVERVIEW_FILENAME = 'overview.json';
+export const AGENT_MAP_KNOWLEDGE_CATALOG_FILENAME = 'knowledge-catalog.json';
 
 export function ensureDirectoryExists(dirPath: string): string {
 	if (!fs.existsSync(dirPath)) {
@@ -136,6 +139,18 @@ export function getSourceContextIndexPath(workspaceRoot: string): string {
 	return path.join(getRalphDir(workspaceRoot), SOURCE_CONTEXT_INDEX_FILENAME);
 }
 
+export function getAgentMapDirectoryPath(workspaceRoot: string): string {
+	return path.join(getRalphDir(workspaceRoot), AGENT_MAP_DIR);
+}
+
+export function getAgentMapOverviewPath(workspaceRoot: string): string {
+	return path.join(getAgentMapDirectoryPath(workspaceRoot), AGENT_MAP_OVERVIEW_FILENAME);
+}
+
+export function getAgentMapKnowledgeCatalogPath(workspaceRoot: string): string {
+	return path.join(getAgentMapDirectoryPath(workspaceRoot), AGENT_MAP_KNOWLEDGE_CATALOG_FILENAME);
+}
+
 export function getPolicyBaselineDirectoryPath(workspaceRoot: string): string {
 	return path.join(getRalphDir(workspaceRoot), POLICY_BASELINE_DIR);
 }
@@ -175,6 +190,11 @@ export function ensureStoryEvidenceDirectory(workspaceRoot: string): string {
 export function ensurePolicyBaselineDirectory(workspaceRoot: string): string {
 	ensureDirectoryExists(getRalphDir(workspaceRoot));
 	return ensureDirectoryExists(getPolicyBaselineDirectoryPath(workspaceRoot));
+}
+
+export function ensureAgentMapDirectory(workspaceRoot: string): string {
+	ensureDirectoryExists(getRalphDir(workspaceRoot));
+	return ensureDirectoryExists(getAgentMapDirectoryPath(workspaceRoot));
 }
 
 export function ensureDesignContextSuggestionDirectory(workspaceRoot: string): string {

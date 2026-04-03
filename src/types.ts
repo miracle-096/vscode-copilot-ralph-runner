@@ -166,6 +166,108 @@ export interface SourceContextIndexArtifact {
 	metadata?: Record<string, unknown>;
 }
 
+export type AgentMapGapSeverity = 'info' | 'warning';
+
+export interface AgentMapGap {
+	id: string;
+	label: string;
+	detail: string;
+	severity: AgentMapGapSeverity;
+	expectedPath?: string;
+	sourceSignals: string[];
+}
+
+export interface AgentMapModuleEntry {
+	id: string;
+	label: string;
+	path: string;
+	exists: boolean;
+	responsibilities: string[];
+	sourceSignals: string[];
+	gaps: string[];
+}
+
+export type AgentMapRuleCategory = 'generated' | 'editable' | 'config' | 'workflow';
+
+export interface AgentMapRuleEntry {
+	id: string;
+	label: string;
+	path: string;
+	exists: boolean;
+	category: AgentMapRuleCategory;
+	summary: string;
+	sourceSignals: string[];
+}
+
+export interface AgentMapRunbookStep {
+	id: 'plan' | 'execute' | 'checkpoint' | 'reset';
+	title: string;
+	summary: string;
+	inputs: string[];
+	commands: string[];
+	outputs: string[];
+}
+
+export type AgentKnowledgeItemKind = 'document' | 'artifact' | 'directory' | 'command';
+export type AgentKnowledgeFreshnessTarget = 'manual' | 'on-demand' | 'per-story' | 'continuous';
+
+export interface AgentKnowledgeItem {
+	id: string;
+	label: string;
+	path: string;
+	kind: AgentKnowledgeItemKind;
+	exists: boolean;
+	summary: string;
+	requiredFor: string[];
+	freshnessTarget: AgentKnowledgeFreshnessTarget;
+	sourceSignals: string[];
+	lastModified?: string;
+	missingReason?: string;
+}
+
+export interface AgentKnowledgeSection {
+	id: string;
+	title: string;
+	items: AgentKnowledgeItem[];
+}
+
+export interface AgentMapOverviewArtifact {
+	version: number;
+	generatedAt: string;
+	workspaceRootName: string;
+	project: {
+		name: string;
+		description: string;
+		branchName: string;
+		packageManager: string;
+		primaryLanguage: string;
+		mainEntry: string;
+		storyCount: number;
+		sourceSignals: string[];
+	};
+	moduleMap: AgentMapModuleEntry[];
+	ruleEntries: AgentMapRuleEntry[];
+	runbook: AgentMapRunbookStep[];
+	documentIndex: AgentKnowledgeItem[];
+	gaps: AgentMapGap[];
+	source: 'copilot';
+}
+
+export interface AgentKnowledgeCatalogArtifact {
+	version: number;
+	generatedAt: string;
+	workspaceRootName: string;
+	sections: AgentKnowledgeSection[];
+	gaps: AgentMapGap[];
+	freshnessTargets: Array<{
+		label: string;
+		path: string;
+		freshnessTarget: AgentKnowledgeFreshnessTarget;
+		exists: boolean;
+	}>;
+	source: 'copilot';
+}
+
 export interface SourceContextRecallMatch {
 	label: string;
 	category: 'source-directory' | 'test-directory' | 'build-script' | 'entry-file' | 'module-hint' | 'type-hint' | 'hotspot';

@@ -1,0 +1,71 @@
+{
+  "storyId": "US-039",
+  "title": "生成面向智能体的 Agent Map 与知识目录",
+  "summary": "新增 Agent Map 生成能力，输出 .ralph/agent-map/overview.json 与 knowledge-catalog.json，复用项目约束、源码上下文、README 和 PRD 构建项目概览、模块地图、规则入口、执行 runbook 与文档目录，并显式记录缺失知识。",
+  "changedFiles": [
+    "README.md",
+    "package.json",
+    ".ralph/agent-map/overview.json",
+    ".ralph/agent-map/knowledge-catalog.json",
+    "src/agentMap.ts",
+    "src/extension.ts",
+    "src/localization.ts",
+    "src/test/extension.test.ts",
+    "src/types.ts",
+    "src/workspacePaths.ts"
+  ],
+  "changedModules": [
+    "agentMap generation",
+    "command registration",
+    "localization and menu entries",
+    "artifact path scaffolding",
+    "README workflow docs",
+    "extension tests"
+  ],
+  "keyDecisions": [
+    "将 Agent Map 工件固定写入 .ralph/agent-map/overview.json 与 .ralph/agent-map/knowledge-catalog.json，保持后续新鲜度检查与缺失检测可复用。",
+    "复用 loadMergedProjectConstraints、scanWorkspaceForProjectConstraints、getSourceContextIndex 和 refreshSourceContextIndex，而不是增加一套新的全仓扫描器。",
+    "把计划、执行、检查点、重置四步显式写入 runbook，满足每个故事交接的显式 handoff 工作流要求。",
+    "知识缺口通过 gaps、exists、missingReason、freshnessTarget 等字段显式落盘，而不是静默忽略缺失文档。"
+  ],
+  "patternsUsed": [
+    "workspace path helper module",
+    "structured artifact JSON",
+    "command + localization + package contribution wiring",
+    "artifact-first repository navigation"
+  ],
+  "constraintsConfirmed": [
+    "未修改 prd.json。",
+    "Agent Map 至少输出总览页和知识目录页。",
+    "输出内容覆盖项目概览、模块职责、规则入口、执行 runbook 与文档索引五类信息。",
+    "生成逻辑优先复用已有 project constraints 与 source context 工件。",
+    "保留显式 gaps 字段以标出缺失知识。"
+  ],
+  "testsRun": [
+    "npm run compile",
+    "npm test -- --grep \"Agent map generation writes overview and knowledge catalog with explicit gaps|Package exposes a single user-facing UI design command\"",
+    "node -e \"const { generateAgentMapArtifacts } = require('./out/agentMap'); generateAgentMapArtifacts(process.cwd());\""
+  ],
+  "risks": [
+    "模块职责目前主要基于文件名和 source-context 命中做轻量推断，未来如果仓库模块命名不直观，可能需要补更强的职责摘要来源。"
+  ],
+  "followUps": [
+    "后续可增加 Agent Map 新鲜度检查命令，直接消费 knowledge-catalog.json 中的 freshnessTarget 和 lastModified 字段。",
+    "如果未来引入更多共享设计上下文，可在 Agent Map 中补充 design context 细粒度索引。"
+  ],
+  "searchKeywords": [
+    "US-039",
+    "agent map",
+    "knowledge catalog",
+    "overview.json",
+    "runbook",
+    "gaps",
+    "source context"
+  ],
+  "relatedStories": [
+    "US-036",
+    "US-038"
+  ],
+  "createdAt": "2026-04-03T08:42:30.000Z",
+  "source": "copilot"
+}

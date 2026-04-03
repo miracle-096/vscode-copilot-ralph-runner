@@ -1,0 +1,70 @@
+{
+  "storyId": "US-039",
+  "title": "生成面向智能体的 Agent Map 与知识目录",
+  "status": "completed",
+  "summary": "交付了新的 Agent Map 生成命令、两份导航工件以及配套文档与测试，使智能体可直接从仓库内读取项目概览、模块职责、规则入口、执行 runbook 和知识目录。",
+  "changedFiles": [
+    "README.md",
+    "package.json",
+    ".ralph/agent-map/overview.json",
+    ".ralph/agent-map/knowledge-catalog.json",
+    "src/agentMap.ts",
+    "src/extension.ts",
+    "src/localization.ts",
+    "src/test/extension.test.ts",
+    "src/types.ts",
+    "src/workspacePaths.ts"
+  ],
+  "changedModules": [
+    "agentMap",
+    "extension command surface",
+    "localization",
+    "README runtime artifacts",
+    "artifact schema and paths",
+    "extension tests"
+  ],
+  "tests": [
+    {
+      "command": "npm run compile",
+      "success": true,
+      "outputSummary": "TypeScript check, ESLint, and esbuild all passed."
+    },
+    {
+      "command": "npm test -- --grep \"Agent map generation writes overview and knowledge catalog with explicit gaps|Package exposes a single user-facing UI design command\"",
+      "success": true,
+      "outputSummary": "Focused VS Code extension tests passed for command contributions and Agent Map artifact generation."
+    },
+    {
+      "command": "node -e \"const { generateAgentMapArtifacts } = require('./out/agentMap'); generateAgentMapArtifacts(process.cwd());\"",
+      "success": true,
+      "outputSummary": "Real workspace Agent Map artifacts were written to .ralph/agent-map/ with one explicit knowledge gap recorded."
+    }
+  ],
+  "riskLevel": "medium",
+  "riskReasons": [
+    "模块职责是轻量推断而不是基于深度语义摘要，复杂仓库下可能需要进一步增强。",
+    "Agent Map 目前只负责落盘结构化数据，尚未实现自动 freshness diff 或缺失知识告警命令。"
+  ],
+  "releaseNotes": [
+    "新增 RALPH: 生成 Agent Map 命令。",
+    "新增 .ralph/agent-map/overview.json 与 knowledge-catalog.json 两个智能体导航工件。",
+    "README 补充 Agent Map 工作流与工件说明。"
+  ],
+  "rollbackHints": [
+    "如需回滚，移除 ralph-runner.generateAgentMap 命令注册与 package.json contribution。",
+    "删除 src/agentMap.ts 以及相关类型和 workspace path 辅助函数。",
+    "删除 .ralph/agent-map/ 生成工件即可回到无 Agent Map 状态。"
+  ],
+  "followUps": [
+    "为 knowledge-catalog.json 增加 freshness 检查命令。",
+    "视需要为模块职责补充更稳定的摘要来源。"
+  ],
+  "recommendFeatureFlag": false,
+  "evidenceGaps": [
+    "尚未增加自动化的 Agent Map 新鲜度巡检测试。"
+  ],
+  "approvalState": "notRequired",
+  "approvalHistory": [],
+  "generatedAt": "2026-04-03T08:42:30.000Z",
+  "source": "copilot"
+}

@@ -1,0 +1,28 @@
+{
+  "storyId": "US-039",
+  "title": "生成面向智能体的 Agent Map 与知识目录",
+  "status": "completed",
+  "stageGoal": "为仓库生成可复用的 Agent Map 与知识目录工件，并接入 IDE 命令入口。",
+  "summary": "已新增 ralph-runner.generateAgentMap 命令和 .ralph/agent-map/ 工件路径，命令会生成 overview.json 与 knowledge-catalog.json，并复用现有项目约束、源码上下文和文档信号构建模块地图、规则入口、runbook 与知识目录。",
+  "keyDecisions": [
+    "将 Agent Map 设计为纯 JSON 工件，优先服务后续 freshness 检查与缺失检测复用。",
+    "在命令执行时自动尝试加载已有 source context，若不存在则即时刷新，避免要求用户先手动准备所有依赖。",
+    "通过 gaps 和 missingReason 显式标注缺失的共享设计上下文等知识入口。"
+  ],
+  "confirmedConstraints": [
+    "prd.json 保持只读。",
+    "实际生成了总览页和知识目录页两个工件。",
+    "完成前执行了相关编译与测试命令。",
+    "故事交接 workflow 已在 Agent Map runbook 中明确为 plan -> execute -> checkpoint -> reset。"
+  ],
+  "unresolvedRisks": [
+    "当前模块职责摘要仍依赖轻量启发式规则；若未来代码组织更复杂，可能需要引入更强的模块摘要来源。"
+  ],
+  "nextStoryPrerequisites": [
+    "如果后续故事新增设计上下文或新的规则文档，需要重新运行 Agent Map 生成命令以刷新 gaps 和文档目录。",
+    "继续沿用 .ralph/memory、.ralph/checkpoints、.ralph/evidence 的结构化交接方式。"
+  ],
+  "resumeRecommendation": "后续故事开始前先读取 .ralph/agent-map/overview.json 与 knowledge-catalog.json，确认最新规则入口、模块地图和缺失知识，再执行新的实现任务。",
+  "updatedAt": "2026-04-03T08:42:30.000Z",
+  "source": "copilot"
+}

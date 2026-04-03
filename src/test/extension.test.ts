@@ -6,6 +6,7 @@ import * as path from 'path';
 // You can import and use all API from the 'vscode' module
 // as well as import your extension to test it
 import * as vscode from 'vscode';
+import { generateAgentMapArtifacts } from '../agentMap';
 import { composeStoryExecutionPrompt } from '../promptContext';
 import {
 	buildProjectConstraintChatAdvicePrompt,
@@ -90,6 +91,7 @@ import {
 } from '../sourceContext';
 import {
 	buildEffectivePolicyConfig,
+	decodePolicyCommandOutput,
 	deriveStoryChangedFiles,
 	evaluatePolicyGates,
 } from '../policyGate';
@@ -110,6 +112,7 @@ suite('Extension Test Suite', () => {
 		const packageJson = JSON.parse(fs.readFileSync(packageJsonPath, 'utf8')) as {
 			contributes?: {
 				commands?: Array<{ command: string; title: string; }>;
+				keybindings?: Array<{ command: string; key?: string; }>;
 				configuration?: {
 					properties?: Record<string, unknown>;
 				};
@@ -134,8 +137,16 @@ suite('Extension Test Suite', () => {
 		assert.strictEqual(designCommands[0]?.title, 'RALPH: 界面设计描述');
 		assert.strictEqual(contributedCommands.some(command => command.command === 'ralph-runner.recallTaskMemory'), false);
 		assert.strictEqual(contributedCommands.some(command => command.command === 'ralph-runner.previewSourceContextRecall'), true);
+		assert.strictEqual(contributedCommands.some(command => command.command === 'ralph-runner.generateAgentMap'), true);
+		assert.strictEqual(contributedCommands.find(command => command.command === 'ralph-runner.generateAgentMap')?.title, 'RALPH: 生成 Agent Map');
 		assert.strictEqual(contributedCommands.some(command => command.command === 'ralph-runner.reviewStoryApproval'), true);
+		assert.strictEqual(contributedCommands.some(command => command.command === 'ralph-runner.configurePolicyGates'), true);
+		assert.strictEqual(contributedCommands.find(command => command.command === 'ralph-runner.configurePolicyGates')?.title, 'RALPH: 配置执行检查');
+		assert.strictEqual(packageJson.contributes?.keybindings?.some(binding => binding.command === 'ralph-runner.showMenu' && binding.key === 'alt+r'), true);
 		assert.strictEqual(typeof packageJson.contributes?.configuration?.properties?.['ralph-runner.policyGates'], 'object');
+		assert.strictEqual(typeof packageJson.contributes?.configuration?.properties?.['ralph-runner.approvalPromptMode'], 'object');
+		assert.strictEqual('ralph-runner.requireProjectConstraintsBeforeRun' in (packageJson.contributes?.configuration?.properties ?? {}), false);
+		assert.strictEqual('ralph-runner.requireDesignContextForTaggedStories' in (packageJson.contributes?.configuration?.properties ?? {}), false);
 		const policyGateDefault = packageJson.contributes?.configuration?.properties?.['ralph-runner.policyGates'] as {
 			default?: { completionRules?: Array<{ id?: string; }>; };
 		};
@@ -146,6 +157,65 @@ suite('Extension Test Suite', () => {
 		assert.strictEqual(contributedParticipants.some(participant => participant.name === 'ralph' && participant.commands?.some(command => command.name === 'ralph-spec')), true);
 		assert.strictEqual(contributedParticipants.some(participant => participant.description?.includes('auto-send the final prompt to Copilot Chat')), true);
 		assert.strictEqual(contributedParticipants.some(participant => participant.commands?.some(command => command.name === 'ralph-spec' && command.description?.includes('auto-send the ready-to-use final version to Copilot Chat'))), true);
+	});
+
+	test('Agent map generation writes overview and knowledge catalog with explicit gaps', () => {
+		const workspaceRoot = fs.mkdtempSync(path.join(os.tmpdir(), 'ralph-agent-map-'));
+		try {
+			fs.mkdirSync(path.join(workspaceRoot, 'src'), { recursive: true });
+			fs.writeFileSync(path.join(workspaceRoot, 'package.json'), JSON.stringify({
+				name: 'agent-map-sample',
+				description: 'Sample extension for agent map tests',
+				main: './dist/extension.js',
+				packageManager: 'npm@10.0.0',
+				scripts: {
+					compile: 'tsc --noEmit',
+					test: 'npm test'
+				},
+				devDependencies: {
+					typescript: '^5.0.0'
+				}
+			}, null, 2));
+			fs.writeFileSync(path.join(workspaceRoot, 'README.md'), '# Sample\n\nAgent map sample workspace.\n');
+			fs.writeFileSync(path.join(workspaceRoot, 'prd.json'), JSON.stringify({
+				project: 'Agent Map Sample',
+				branchName: 'feature/agent-map',
+				description: 'Generate repository navigation artifacts.',
+				userStories: [
+					{
+						id: 'US-001',
+						title: 'Generate map',
+						description: 'Produce an agent map',
+						acceptanceCriteria: ['overview exists'],
+						priority: 1
+					}
+				]
+			}, null, 2));
+			fs.writeFileSync(path.join(workspaceRoot, 'src', 'extension.ts'), 'export function activate() { return; }\n');
+			fs.writeFileSync(path.join(workspaceRoot, 'src', 'projectConstraints.ts'), 'export const marker = true;\n');
+
+			const result = generateAgentMapArtifacts(workspaceRoot);
+			const overview = JSON.parse(fs.readFileSync(result.overviewPath, 'utf8')) as {
+				runbook: Array<{ id: string; }>;
+				moduleMap: Array<{ id: string; }>;
+				ruleEntries: Array<{ id: string; }>;
+				gaps: Array<{ id: string; }>;
+			};
+			const knowledgeCatalog = JSON.parse(fs.readFileSync(result.knowledgeCatalogPath, 'utf8')) as {
+				sections: Array<{ id: string; items: Array<{ label: string; }>; }>;
+			};
+
+			assert.ok(fs.existsSync(result.overviewPath));
+			assert.ok(fs.existsSync(result.knowledgeCatalogPath));
+			assert.deepStrictEqual(overview.runbook.map(step => step.id), ['plan', 'execute', 'checkpoint', 'reset']);
+			assert.ok(overview.moduleMap.some(moduleEntry => moduleEntry.id === 'extension'));
+			assert.ok(overview.ruleEntries.some(ruleEntry => ruleEntry.id === 'generated-project-constraints'));
+			assert.ok(overview.gaps.some(gap => gap.id === 'missing-editable-rules'));
+			assert.ok(knowledgeCatalog.sections.some(section => section.id === 'project-entry'));
+			assert.ok(knowledgeCatalog.sections.some(section => section.items.some(item => item.label === 'README')));
+		} finally {
+			fs.rmSync(workspaceRoot, { recursive: true, force: true });
+		}
 	});
 
 	test('Pending design-match stories should come from prd story status, not runtime progress files', () => {
@@ -1323,6 +1393,12 @@ suite('Extension Test Suite', () => {
 
 		assert.strictEqual(result.ok, true);
 		assert.deepStrictEqual(result.executedCommands.map(command => command.command), ['npm test']);
+	});
+
+	test('Policy command output decoder recovers Chinese text from Windows shell bytes', () => {
+		const decoded = decodePolicyCommandOutput(Buffer.from([0xb5, 0xb1, 0xc7, 0xb0]), 'gbk');
+
+		assert.strictEqual(decoded, '当前');
 	});
 
 	test('Story evidence artifact can be synthesized, written, and validated for auditable completion', () => {
