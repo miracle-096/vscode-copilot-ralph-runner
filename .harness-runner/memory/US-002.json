@@ -1,0 +1,150 @@
+{
+  "storyId": "US-002",
+  "title": "重命名扩展元数据与配置命名空间",
+  "summary": "Renamed the extension contribution-point surface from ralph-runner to harness-runner across package metadata, command ids, chat participant ids/names, configuration keys, runtime registration, localized menu links, tests, and README guidance while preserving .harness-runner as the runtime artifact root.",
+  "changedFiles": [
+    "README.md",
+    "package.json",
+    "src/extension.ts",
+    "src/localization.ts",
+    "src/projectConstraints.ts",
+    "src/test/extension.test.ts",
+    ".harness-runner/memory/US-002.json",
+    ".harness-runner/checkpoints/US-002.checkpoint.json",
+    ".harness-runner/evidence/US-002.evidence.json",
+    ".harness-runner/story-status.json"
+  ],
+  "changedModules": [
+    "package contribution metadata",
+    "extension activation and command registration",
+    "chat participant and harness-spec flow",
+    "localized command menu bindings",
+    "extension package/runtime tests",
+    "operator-facing README guidance"
+  ],
+  "architectureNotes": [
+    "Package metadata, activation events, command ids, chat participant ids, and configuration keys are a single VS Code contribution-point cluster and were renamed together to avoid manifest/runtime drift.",
+    "The runtime artifact root stays .harness-runner; this story renames symbolic contribution points around that stable persistence boundary instead of moving artifact storage paths.",
+    "src/extension.ts remains the orchestration entrypoint, while the rename-sensitive prompt copy in src/projectConstraints.ts stays within its existing responsibility so /harness-spec wording remains cohesive without spreading chat-specific strings across new modules.",
+    "Localization, README, and tests were updated in the same pass because command-id and participant-name changes are only reviewable when UI copy and assertions move with the runtime values.",
+    "The rollback seam is a single story-scoped commit touching manifest/runtime/test/docs surfaces together; reverting only package.json without extension.ts and localization.ts would leave broken command routing."
+  ],
+  "keyDecisions": [
+    "Adopt harness-runner as the only active extension/package/configuration namespace in package.json and runtime registration code.",
+    "Rename the chat participant to recent-graduates.harness-runner with the @harness /harness-spec command so the manifest and runtime handler stay aligned.",
+    "Keep workspace settings migration narrow by deleting old ralph-runner workspace keys when persisting .vscode/settings.json overrides and writing only harness-runner keys going forward.",
+    "Keep the existing interrupted src/projectConstraints.ts rename work and align tests to it instead of reverting partially completed Harness Runner prompt copy."
+  ],
+  "patternsUsed": [],
+  "constraintsConfirmed": [
+    "prd.json was not modified.",
+    ".harness-runner remained the runtime artifact root.",
+    "No dist/ or out/ files were hand-edited.",
+    "At least one project constraint test command succeeded before completion.",
+    "Git commit title and description must use Chinese."
+  ],
+  "testsRun": [
+    {
+      "command": "npm run compile",
+      "success": true
+    },
+    {
+      "command": "npm run compile-tests",
+      "success": true
+    },
+    {
+      "command": "npm test",
+      "success": true,
+      "summary": "72 passing"
+    }
+  ],
+  "risks": [
+    "package.json repository.url and the checked-in VSIX filename still reference the legacy ralph-runner slug, so packaging/distribution branding is not fully normalized yet.",
+    "Broader RALPH-branded runtime copy still exists outside the contribution-point namespace surface and will need a later rebrand story to remove mixed terminology end to end.",
+    "The generated/manual project-constraints artifacts still mention the old package name and should be refreshed in a later maintenance pass if those artifacts are used as operator truth."
+  ],
+  "followUps": [
+    "Regenerate the packaged VSIX and decide whether the repository slug should be renamed or intentionally left as-is.",
+    "Refresh .harness-runner project-constraints and Agent Map artifacts so operator guidance reflects the new harness-runner package namespace.",
+    "Continue the broader user-visible brand sweep in later stories for remaining RALPH copy that is outside this contribution-point rename scope."
+  ],
+  "searchKeywords": [
+    "harness-runner",
+    "recent-graduates.harness-runner",
+    "@harness",
+    "/harness-spec",
+    "harness-runner.showMenu",
+    "harness-runner.policyGates",
+    "Harness Runner",
+    "RALPH Runner",
+    "ralph-runner"
+  ],
+  "relatedStories": [],
+  "reviewSummary": {
+    "totalScore": 100,
+    "maxScore": 100,
+    "passingScore": 65,
+    "passed": true,
+    "reviewPass": 1,
+    "maxReviewerPasses": 3,
+    "maxAutoRefactorRounds": 2,
+    "dimensions": [
+      {
+        "dimension": "architectureConsistency",
+        "label": "Architecture Consistency",
+        "score": 25,
+        "summary": "Reviewer loop disabled in workspace settings.",
+        "issues": [],
+        "recommendations": [
+          "Reviewer loop disabled in workspace settings."
+        ]
+      },
+      {
+        "dimension": "acceptanceCoverage",
+        "label": "Acceptance Coverage",
+        "score": 25,
+        "summary": "Reviewer loop disabled in workspace settings.",
+        "issues": [],
+        "recommendations": [
+          "Reviewer loop disabled in workspace settings."
+        ]
+      },
+      {
+        "dimension": "changeScopeControl",
+        "label": "Change Scope Control",
+        "score": 25,
+        "summary": "Reviewer loop disabled in workspace settings.",
+        "issues": [],
+        "recommendations": [
+          "Reviewer loop disabled in workspace settings."
+        ]
+      },
+      {
+        "dimension": "verifiability",
+        "label": "Verifiability",
+        "score": 25,
+        "summary": "Reviewer loop disabled in workspace settings.",
+        "issues": [],
+        "recommendations": [
+          "Reviewer loop disabled in workspace settings."
+        ]
+      }
+    ],
+    "findings": [],
+    "recommendations": [
+      "Reviewer loop disabled in workspace settings."
+    ],
+    "refactorPerformed": false,
+    "reviewedAt": "2026-04-04T20:39:48.248Z",
+    "source": "synthesized"
+  },
+  "reviewLoop": {
+    "reviewerPasses": 1,
+    "autoRefactorRounds": 0,
+    "maxAutoRefactorRounds": 2,
+    "endedReason": "passed",
+    "lastReviewedAt": "2026-04-04T20:39:48.248Z"
+  },
+  "createdAt": "2026-04-05T00:00:00.000Z",
+  "source": "copilot"
+}

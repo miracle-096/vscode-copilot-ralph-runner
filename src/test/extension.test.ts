@@ -124,6 +124,7 @@ import {
 	normalizeReviewerLoopEnabled,
 	normalizeReviewerPassingScore,
 	resolveWorkspaceApprovalPromptMode,
+	persistWorkspacePinnedRunnerSettingsFile,
 	resolveWorkspaceReviewerAutoRefactorLimit,
 	resolveWorkspaceReviewerLoopEnabled,
 	resolveWorkspaceReviewerPassingScore,
@@ -142,6 +143,8 @@ suite('Extension Test Suite', () => {
 	test('Package exposes a single user-facing UI design command', () => {
 		const packageJsonPath = path.resolve(__dirname, '../../package.json');
 		const packageJson = JSON.parse(fs.readFileSync(packageJsonPath, 'utf8')) as {
+				name?: string;
+				displayName?: string;
 			contributes?: {
 				commands?: Array<{ command: string; title: string; }>;
 				keybindings?: Array<{ command: string; key?: string; }>;
@@ -159,47 +162,49 @@ suite('Extension Test Suite', () => {
 		const contributedCommands = packageJson.contributes?.commands ?? [];
 		const designCommands = contributedCommands.filter(command =>
 			[
-				'ralph-runner.recordDesignContext',
-				'ralph-runner.generateDesignContextDraft',
-				'ralph-runner.suggestStoryDesignContext',
+					'harness-runner.recordDesignContext',
+					'harness-runner.generateDesignContextDraft',
+					'harness-runner.suggestStoryDesignContext',
 			].includes(command.command)
 		);
 
-		assert.deepStrictEqual(designCommands.map(command => command.command), ['ralph-runner.recordDesignContext']);
-		assert.strictEqual(designCommands[0]?.title, 'RALPH: 界面设计描述');
-		assert.strictEqual(contributedCommands.some(command => command.command === 'ralph-runner.recallTaskMemory'), false);
-		assert.strictEqual(contributedCommands.some(command => command.command === 'ralph-runner.showIntroduction'), true);
-		assert.strictEqual(contributedCommands.some(command => command.command === 'ralph-runner.showUsageGuide'), true);
-		assert.strictEqual(contributedCommands.some(command => command.command === 'ralph-runner.previewSourceContextRecall'), true);
-		assert.strictEqual(contributedCommands.some(command => command.command === 'ralph-runner.generateAgentMap'), true);
-		assert.strictEqual(contributedCommands.find(command => command.command === 'ralph-runner.generateAgentMap')?.title, 'RALPH: 生成 Agent Map');
-		assert.strictEqual(contributedCommands.find(command => command.command === 'ralph-runner.showIntroduction')?.title, 'RALPH: 插件介绍');
-		assert.strictEqual(contributedCommands.find(command => command.command === 'ralph-runner.showUsageGuide')?.title, 'RALPH: 使用流程手册');
-		assert.strictEqual(contributedCommands.some(command => command.command === 'ralph-runner.reviewStoryApproval'), true);
-		assert.strictEqual(contributedCommands.some(command => command.command === 'ralph-runner.configurePolicyGates'), true);
-		assert.strictEqual(contributedCommands.find(command => command.command === 'ralph-runner.configurePolicyGates')?.title, 'RALPH: 配置执行检查');
-		assert.strictEqual(packageJson.contributes?.keybindings?.some(binding => binding.command === 'ralph-runner.showMenu' && binding.key === 'alt+r'), true);
-		assert.strictEqual(typeof packageJson.contributes?.configuration?.properties?.['ralph-runner.policyGates'], 'object');
-		assert.strictEqual(typeof packageJson.contributes?.configuration?.properties?.['ralph-runner.approvalPromptMode'], 'object');
-		assert.strictEqual(typeof packageJson.contributes?.configuration?.properties?.['ralph-runner.enableReviewerLoop'], 'object');
-		assert.strictEqual(typeof packageJson.contributes?.configuration?.properties?.['ralph-runner.reviewPassingScore'], 'object');
-		assert.strictEqual(typeof packageJson.contributes?.configuration?.properties?.['ralph-runner.maxAutoRefactorRounds'], 'object');
-		assert.strictEqual('ralph-runner.requireProjectConstraintsBeforeRun' in (packageJson.contributes?.configuration?.properties ?? {}), false);
-		assert.strictEqual('ralph-runner.requireDesignContextForTaggedStories' in (packageJson.contributes?.configuration?.properties ?? {}), false);
-		const policyGateDefault = packageJson.contributes?.configuration?.properties?.['ralph-runner.policyGates'] as {
+			assert.strictEqual(packageJson.name, 'harness-runner');
+			assert.strictEqual(packageJson.displayName, 'Harness Runner');
+			assert.deepStrictEqual(designCommands.map(command => command.command), ['harness-runner.recordDesignContext']);
+			assert.strictEqual(designCommands[0]?.title, 'HARNESS: 界面设计描述');
+			assert.strictEqual(contributedCommands.some(command => command.command === 'harness-runner.recallTaskMemory'), false);
+			assert.strictEqual(contributedCommands.some(command => command.command === 'harness-runner.showIntroduction'), true);
+			assert.strictEqual(contributedCommands.some(command => command.command === 'harness-runner.showUsageGuide'), true);
+			assert.strictEqual(contributedCommands.some(command => command.command === 'harness-runner.previewSourceContextRecall'), true);
+			assert.strictEqual(contributedCommands.some(command => command.command === 'harness-runner.generateAgentMap'), true);
+			assert.strictEqual(contributedCommands.find(command => command.command === 'harness-runner.generateAgentMap')?.title, 'HARNESS: 生成 Agent Map');
+			assert.strictEqual(contributedCommands.find(command => command.command === 'harness-runner.showIntroduction')?.title, 'HARNESS: 插件介绍');
+			assert.strictEqual(contributedCommands.find(command => command.command === 'harness-runner.showUsageGuide')?.title, 'HARNESS: 使用流程手册');
+			assert.strictEqual(contributedCommands.some(command => command.command === 'harness-runner.reviewStoryApproval'), true);
+			assert.strictEqual(contributedCommands.some(command => command.command === 'harness-runner.configurePolicyGates'), true);
+			assert.strictEqual(contributedCommands.find(command => command.command === 'harness-runner.configurePolicyGates')?.title, 'HARNESS: 配置执行检查');
+			assert.strictEqual(packageJson.contributes?.keybindings?.some(binding => binding.command === 'harness-runner.showMenu' && binding.key === 'alt+r'), true);
+			assert.strictEqual(typeof packageJson.contributes?.configuration?.properties?.['harness-runner.policyGates'], 'object');
+			assert.strictEqual(typeof packageJson.contributes?.configuration?.properties?.['harness-runner.approvalPromptMode'], 'object');
+			assert.strictEqual(typeof packageJson.contributes?.configuration?.properties?.['harness-runner.enableReviewerLoop'], 'object');
+			assert.strictEqual(typeof packageJson.contributes?.configuration?.properties?.['harness-runner.reviewPassingScore'], 'object');
+			assert.strictEqual(typeof packageJson.contributes?.configuration?.properties?.['harness-runner.maxAutoRefactorRounds'], 'object');
+			assert.strictEqual('harness-runner.requireProjectConstraintsBeforeRun' in (packageJson.contributes?.configuration?.properties ?? {}), false);
+			assert.strictEqual('harness-runner.requireDesignContextForTaggedStories' in (packageJson.contributes?.configuration?.properties ?? {}), false);
+			const policyGateDefault = packageJson.contributes?.configuration?.properties?.['harness-runner.policyGates'] as {
 			default?: { completionRules?: Array<{ id?: string; }>; };
 		};
 		assert.strictEqual(policyGateDefault.default?.completionRules?.some(rule => rule.id === 'require-fresh-knowledge'), true);
 		assert.strictEqual(policyGateDefault.default?.completionRules?.some(rule => rule.id === 'require-story-evidence-artifact'), true);
 
 		const contributedParticipants = packageJson.contributes?.chatParticipants ?? [];
-		assert.strictEqual(contributedParticipants.some(participant => participant.id === 'recent-graduates.ralph-runner'), true);
-		assert.strictEqual(contributedParticipants.some(participant => participant.name === 'ralph' && participant.commands?.some(command => command.name === 'ralph-spec')), true);
+			assert.strictEqual(contributedParticipants.some(participant => participant.id === 'recent-graduates.harness-runner'), true);
+			assert.strictEqual(contributedParticipants.some(participant => participant.name === 'harness' && participant.commands?.some(command => command.name === 'harness-spec')), true);
 		assert.strictEqual(contributedParticipants.some(participant => participant.description?.includes('auto-send the final prompt to Copilot Chat')), true);
-		assert.strictEqual(contributedParticipants.some(participant => participant.commands?.some(command => command.name === 'ralph-spec' && command.description?.includes('auto-send the ready-to-use final version to Copilot Chat'))), true);
+			assert.strictEqual(contributedParticipants.some(participant => participant.commands?.some(command => command.name === 'harness-spec' && command.description?.includes('auto-send the ready-to-use final version to Copilot Chat'))), true);
 	});
 
-	test('approval prompt mode resolves from workspace settings only', () => {
+	test('approval prompt mode resolves with workspace override first, then global fallback', () => {
 		assert.strictEqual(resolveWorkspaceApprovalPromptMode(undefined), 'default');
 		assert.strictEqual(resolveWorkspaceApprovalPromptMode({
 			key: 'approvalPromptMode',
@@ -211,7 +216,7 @@ suite('Extension Test Suite', () => {
 			key: 'approvalPromptMode',
 			defaultValue: 'default',
 			globalValue: 'autopilot',
-		}), 'default');
+		}), 'autopilot');
 		assert.strictEqual(resolveWorkspaceApprovalPromptMode({
 			key: 'approvalPromptMode',
 			defaultValue: 'default',
@@ -220,19 +225,19 @@ suite('Extension Test Suite', () => {
 		}), 'autopilot');
 	});
 
-	test('reviewer settings resolve from workspace settings only', () => {
+	test('reviewer settings resolve with workspace override first, then global fallback', () => {
 		assert.strictEqual(resolveWorkspaceReviewerLoopEnabled(undefined), true);
 		assert.strictEqual(resolveWorkspaceReviewerLoopEnabled({ globalValue: true, workspaceValue: false }), false);
-		assert.strictEqual(resolveWorkspaceReviewerLoopEnabled({ globalValue: false }), true);
+		assert.strictEqual(resolveWorkspaceReviewerLoopEnabled({ globalValue: false }), false);
 
 		assert.strictEqual(resolveWorkspaceReviewerPassingScore(undefined), 85);
 		assert.strictEqual(resolveWorkspaceReviewerPassingScore({ globalValue: 91, workspaceValue: 70 }), 70);
-		assert.strictEqual(resolveWorkspaceReviewerPassingScore({ globalValue: 91 }), 85);
+		assert.strictEqual(resolveWorkspaceReviewerPassingScore({ globalValue: 91 }), 91);
 		assert.strictEqual(resolveWorkspaceReviewerPassingScore({ workspaceFolderValue: 101 }), 100);
 
 		assert.strictEqual(resolveWorkspaceReviewerAutoRefactorLimit(undefined), 2);
 		assert.strictEqual(resolveWorkspaceReviewerAutoRefactorLimit({ globalValue: 4, workspaceValue: 1 }), 1);
-		assert.strictEqual(resolveWorkspaceReviewerAutoRefactorLimit({ globalValue: 4 }), 2);
+		assert.strictEqual(resolveWorkspaceReviewerAutoRefactorLimit({ globalValue: 4 }), 4);
 		assert.strictEqual(resolveWorkspaceReviewerAutoRefactorLimit({ workspaceFolderValue: -3 }), 0);
 	});
 
@@ -245,6 +250,37 @@ suite('Extension Test Suite', () => {
 		assert.strictEqual(normalizeReviewerAutoRefactorLimit(undefined), 2);
 		assert.strictEqual(normalizeReviewerAutoRefactorLimit(-1), 0);
 		assert.strictEqual(normalizeReviewerAutoRefactorLimit(2.7), 3);
+	});
+
+	test('workspace-pinned reviewer settings are persisted into .vscode/settings.json', () => {
+		const workspaceRoot = fs.mkdtempSync(path.join(os.tmpdir(), 'ralph-reviewer-settings-'));
+		const vscodeDir = path.join(workspaceRoot, '.vscode');
+		fs.mkdirSync(vscodeDir, { recursive: true });
+		const settingsPath = path.join(vscodeDir, 'settings.json');
+		fs.writeFileSync(settingsPath, JSON.stringify({
+				'ralph-runner.approvalPromptMode': 'default',
+				'ralph-runner.enableReviewerLoop': true,
+				'ralph-runner.reviewPassingScore': 85,
+			'files.trimTrailingWhitespace': true,
+		}, null, 2));
+
+		const persistedPath = persistWorkspacePinnedRunnerSettingsFile(workspaceRoot, {
+			approvalPromptMode: 'autopilot',
+			enableReviewerLoop: false,
+			reviewPassingScore: 65,
+			maxAutoRefactorRounds: 1,
+		});
+
+		assert.strictEqual(persistedPath, settingsPath);
+		const persisted = JSON.parse(fs.readFileSync(settingsPath, 'utf8')) as Record<string, unknown>;
+		assert.strictEqual(persisted['files.trimTrailingWhitespace'], true);
+			assert.strictEqual(persisted['harness-runner.approvalPromptMode'], 'autopilot');
+			assert.strictEqual(persisted['harness-runner.enableReviewerLoop'], false);
+			assert.strictEqual(persisted['harness-runner.reviewPassingScore'], 65);
+			assert.strictEqual(persisted['harness-runner.maxAutoRefactorRounds'], 1);
+			assert.strictEqual('ralph-runner.approvalPromptMode' in persisted, false);
+			assert.strictEqual('ralph-runner.enableReviewerLoop' in persisted, false);
+			assert.strictEqual('ralph-runner.reviewPassingScore' in persisted, false);
 	});
 
 	test('RALPH help documents cover introduction and split manual flows', () => {
@@ -516,7 +552,7 @@ suite('Extension Test Suite', () => {
 			assert.ok(generated?.buildCommands.includes('npm run compile'));
 			assert.ok(editable?.sections.some(section => section.heading === 'Technology Summary'));
 			assert.ok(editable?.sections.some(section => section.heading === 'Git Rules' && section.items.includes('完成用户故事并准备 Git 提交时，提交标题和描述必须使用中文。')));
-			assert.strictEqual(editable?.title, 'RALPH 项目约束');
+			assert.strictEqual(editable?.title, 'RALPH Project Constraints');
 			assert.ok(promptLines.includes('Technology Summary'));
 			assert.ok(promptLines.includes('Git Rules'));
 			assert.ok(promptLines.some(line => line.includes('完成用户故事并准备 Git 提交时')));
@@ -550,7 +586,7 @@ suite('Extension Test Suite', () => {
 					deliveryChecklist: ['Run lint'],
 				},
 				editableConstraints: {
-					title: 'RALPH 项目约束',
+					title: 'RALPH Project Constraints',
 					lastUpdated: new Date().toISOString(),
 					sections: [
 						{ heading: 'Technology Summary', items: ['TypeScript'] },
@@ -600,7 +636,7 @@ suite('Extension Test Suite', () => {
 		});
 
 		assert.ok(prompt.includes('请帮我补充一个新命令'));
-		assert.ok(prompt.includes('You are RALPH Spec Finalizer for the current workspace.'));
+		assert.ok(prompt.includes('You are Harness Runner Spec Finalizer for the current workspace.'));
 		assert.ok(prompt.includes('Merged project constraints'));
 		assert.ok(prompt.includes('Build Commands'));
 		assert.ok(prompt.includes('npm run compile'));

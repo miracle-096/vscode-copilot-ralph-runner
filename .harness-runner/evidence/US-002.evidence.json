@@ -1,0 +1,108 @@
+{
+  "storyId": "US-002",
+  "title": "重命名扩展元数据与配置命名空间",
+  "status": "pendingReview",
+  "summary": "Renamed the extension contribution-point surface from ralph-runner to harness-runner across package metadata, command ids, chat participant ids/names, configuration keys, runtime registration, localized menu links, tests, and README guidance while preserving .harness-runner as the runtime artifact root.",
+  "changedFiles": [
+    "harness-runner/story-status.json",
+    "EADME.md"
+  ],
+  "changedModules": [
+    "harness-runner",
+    "EADME"
+  ],
+  "architectureNotes": [
+    "Multiple modules changed; confirm each edit belongs to a single responsibility and document reuse opportunities."
+  ],
+  "tests": [],
+  "riskLevel": "high",
+  "riskReasons": [
+    "Missing passing tests increases change risk."
+  ],
+  "releaseNotes": [
+    "Completed scope: 重命名扩展元数据与配置命名空间.",
+    "Primary modules: harness-runner, EADME."
+  ],
+  "rollbackHints": [
+    "Review and revert these paths together if rollback is needed: harness-runner/story-status.json, EADME.md.",
+    "Use the story-scoped commit as the primary rollback unit before considering any selective revert."
+  ],
+  "followUps": [
+    "Regenerate the packaged VSIX and decide whether the repository slug should be renamed or intentionally left as-is.",
+    "Refresh .harness-runner project-constraints and Agent Map artifacts so operator guidance reflects the new harness-runner package namespace.",
+    "Continue the broader user-visible brand sweep in later stories for remaining RALPH copy that is outside this contribution-point rename scope."
+  ],
+  "recommendFeatureFlag": false,
+  "evidenceGaps": [
+    "No passing tests were recorded for this story."
+  ],
+  "approvalState": "pending",
+  "approvalHistory": [],
+  "reviewSummary": {
+    "totalScore": 100,
+    "maxScore": 100,
+    "passingScore": 65,
+    "passed": true,
+    "reviewPass": 1,
+    "maxReviewerPasses": 3,
+    "maxAutoRefactorRounds": 2,
+    "dimensions": [
+      {
+        "dimension": "architectureConsistency",
+        "label": "Architecture Consistency",
+        "score": 25,
+        "summary": "Reviewer loop disabled in workspace settings.",
+        "issues": [],
+        "recommendations": [
+          "Reviewer loop disabled in workspace settings."
+        ]
+      },
+      {
+        "dimension": "acceptanceCoverage",
+        "label": "Acceptance Coverage",
+        "score": 25,
+        "summary": "Reviewer loop disabled in workspace settings.",
+        "issues": [],
+        "recommendations": [
+          "Reviewer loop disabled in workspace settings."
+        ]
+      },
+      {
+        "dimension": "changeScopeControl",
+        "label": "Change Scope Control",
+        "score": 25,
+        "summary": "Reviewer loop disabled in workspace settings.",
+        "issues": [],
+        "recommendations": [
+          "Reviewer loop disabled in workspace settings."
+        ]
+      },
+      {
+        "dimension": "verifiability",
+        "label": "Verifiability",
+        "score": 25,
+        "summary": "Reviewer loop disabled in workspace settings.",
+        "issues": [],
+        "recommendations": [
+          "Reviewer loop disabled in workspace settings."
+        ]
+      }
+    ],
+    "findings": [],
+    "recommendations": [
+      "Reviewer loop disabled in workspace settings."
+    ],
+    "refactorPerformed": false,
+    "reviewedAt": "2026-04-04T20:39:48.248Z",
+    "source": "synthesized"
+  },
+  "reviewLoop": {
+    "reviewerPasses": 1,
+    "autoRefactorRounds": 0,
+    "maxAutoRefactorRounds": 2,
+    "endedReason": "passed",
+    "lastReviewedAt": "2026-04-04T20:39:48.248Z"
+  },
+  "generatedAt": "2026-04-04T20:39:48.247Z",
+  "source": "synthesized"
+}

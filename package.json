@@ -1,7 +1,7 @@
 {
-  "name": "ralph-runner",
-  "displayName": "Ralph Runner",
-  "description": "Autonomous task runner — reads prd.json user stories, tracks progress inline, and drives Copilot Chat to execute each story in an automated loop",
+  "name": "harness-runner",
+  "displayName": "Harness Runner",
+  "description": "Autonomous task runner — reads prd.json user stories, tracks progress inline, and drives Copilot Chat to execute each story in an auditable execution loop",
   "version": "0.0.9",
   "publisher": "recent-graduates",
   "repository": {
@@ -16,162 +16,162 @@
   ],
   "activationEvents": [
     "onStartupFinished",
-    "onChatParticipant:recent-graduates.ralph-runner"
+    "onChatParticipant:recent-graduates.harness-runner"
   ],
   "main": "./dist/extension.js",
   "contributes": {
     "commands": [
       {
-        "command": "ralph-runner.showIntroduction",
-        "title": "RALPH: 插件介绍"
+        "command": "harness-runner.showIntroduction",
+        "title": "HARNESS: 插件介绍"
       },
       {
-        "command": "ralph-runner.showUsageGuide",
-        "title": "RALPH: 使用流程手册"
+        "command": "harness-runner.showUsageGuide",
+        "title": "HARNESS: 使用流程手册"
       },
       {
-        "command": "ralph-runner.configurePolicyGates",
-        "title": "RALPH: 配置执行检查"
+        "command": "harness-runner.configurePolicyGates",
+        "title": "HARNESS: 配置执行检查"
       },
       {
-        "command": "ralph-runner.start",
-        "title": "RALPH: 开始执行"
+        "command": "harness-runner.start",
+        "title": "HARNESS: 开始执行"
       },
       {
-        "command": "ralph-runner.stop",
-        "title": "RALPH: 停止执行"
+        "command": "harness-runner.stop",
+        "title": "HARNESS: 停止执行"
       },
       {
-        "command": "ralph-runner.status",
-        "title": "RALPH: 查看状态"
+        "command": "harness-runner.status",
+        "title": "HARNESS: 查看状态"
       },
       {
-        "command": "ralph-runner.reviewStoryApproval",
-        "title": "RALPH: 审批高风险故事"
+        "command": "harness-runner.reviewStoryApproval",
+        "title": "HARNESS: 审批高风险故事"
       },
       {
-        "command": "ralph-runner.resetStep",
-        "title": "RALPH: 重置故事"
+        "command": "harness-runner.resetStep",
+        "title": "HARNESS: 重置故事"
       },
       {
-        "command": "ralph-runner.initProjectConstraints",
-        "title": "RALPH: 初始化项目约束"
+        "command": "harness-runner.initProjectConstraints",
+        "title": "HARNESS: 初始化项目约束"
       },
       {
-        "command": "ralph-runner.refreshSourceContextIndex",
-        "title": "RALPH: 刷新源码上下文索引"
+        "command": "harness-runner.refreshSourceContextIndex",
+        "title": "HARNESS: 刷新源码上下文索引"
       },
       {
-        "command": "ralph-runner.previewSourceContextRecall",
-        "title": "RALPH: 预览故事源上下文"
+        "command": "harness-runner.previewSourceContextRecall",
+        "title": "HARNESS: 预览故事源上下文"
       },
       {
-        "command": "ralph-runner.generateAgentMap",
-        "title": "RALPH: 生成 Agent Map"
+        "command": "harness-runner.generateAgentMap",
+        "title": "HARNESS: 生成 Agent Map"
       },
       {
-        "command": "ralph-runner.recordDesignContext",
-        "title": "RALPH: 界面设计描述"
+        "command": "harness-runner.recordDesignContext",
+        "title": "HARNESS: 界面设计描述"
       },
       {
-        "command": "ralph-runner.openSettings",
-        "title": "RALPH: 打开设置"
+        "command": "harness-runner.openSettings",
+        "title": "HARNESS: 打开设置"
       },
       {
-        "command": "ralph-runner.showMenu",
-        "title": "RALPH: 显示菜单"
+        "command": "harness-runner.showMenu",
+        "title": "HARNESS: 显示菜单"
       },
       {
-        "command": "ralph-runner.quickStart",
-        "title": "RALPH: 生成 PRD"
+        "command": "harness-runner.quickStart",
+        "title": "HARNESS: 生成 PRD"
       },
       {
-        "command": "ralph-runner.appendUserStories",
-        "title": "RALPH: 追加用户故事"
+        "command": "harness-runner.appendUserStories",
+        "title": "HARNESS: 追加用户故事"
       }
     ],
     "keybindings": [
       {
-        "command": "ralph-runner.showMenu",
+        "command": "harness-runner.showMenu",
         "key": "alt+r"
       }
     ],
     "chatParticipants": [
       {
-        "id": "recent-graduates.ralph-runner",
-        "name": "ralph",
-        "fullName": "RALPH Runner",
-        "description": "Refine a change request against RALPH project constraints, then auto-send the final prompt to Copilot Chat.",
+        "id": "recent-graduates.harness-runner",
+        "name": "harness",
+        "fullName": "Harness Runner",
+        "description": "Refine a change request against Harness Runner project constraints, then auto-send the final prompt to Copilot Chat.",
         "isSticky": true,
         "commands": [
           {
-            "name": "ralph-spec",
-            "description": "Polish a request with the merged RALPH project constraints, then auto-send the ready-to-use final version to Copilot Chat."
+            "name": "harness-spec",
+            "description": "Polish a request with the merged Harness Runner project constraints, then auto-send the ready-to-use final version to Copilot Chat."
           }
         ]
       }
     ],
     "configuration": {
-      "title": "RALPH Runner",
+      "title": "Harness Runner",
       "properties": {
-        "ralph-runner.maxAutonomousLoops": {
+        "harness-runner.maxAutonomousLoops": {
           "type": "number",
           "default": 2,
           "minimum": 1,
           "description": "每次运行在暂停前最多连续执行的故事数量。"
         },
-        "ralph-runner.loopDelayMs": {
+        "harness-runner.loopDelayMs": {
           "type": "number",
           "default": 3000,
           "minimum": 0,
           "description": "每轮执行之间的等待时间，单位为毫秒。"
         },
-        "ralph-runner.copilotResponsePollMs": {
+        "harness-runner.copilotResponsePollMs": {
           "type": "number",
           "default": 5000,
           "minimum": 1000,
           "description": "轮询 Copilot 是否空闲的间隔时间，单位为毫秒。"
         },
-        "ralph-runner.copilotTimeoutMs": {
+        "harness-runner.copilotTimeoutMs": {
           "type": "number",
           "default": 3600000,
           "minimum": 30000,
           "description": "每个故事等待 Copilot 完成的最长时间，单位为毫秒，默认 1 小时。"
         },
-        "ralph-runner.copilotMinWaitMs": {
+        "harness-runner.copilotMinWaitMs": {
           "type": "number",
           "default": 15000,
           "minimum": 0,
           "description": "开始检查故事是否完成前，至少等待 Copilot 开始工作的时间，单位为毫秒。"
         },
-        "ralph-runner.autoInjectProjectConstraints": {
+        "harness-runner.autoInjectProjectConstraints": {
           "type": "boolean",
           "default": true,
           "description": "启用后，在构建任务提示词时自动注入已初始化的项目约束。"
         },
-        "ralph-runner.autoInjectDesignContext": {
+        "harness-runner.autoInjectDesignContext": {
           "type": "boolean",
           "default": true,
           "description": "启用后，在构建任务提示词时自动注入已记录的界面设计描述。"
         },
-        "ralph-runner.autoRecallTaskMemory": {
+        "harness-runner.autoRecallTaskMemory": {
           "type": "boolean",
           "default": true,
           "description": "启用后，在执行故事前自动回忆相关任务记忆，并注入有限长度的既往工作上下文。"
         },
-        "ralph-runner.autoCommitGit": {
+        "harness-runner.autoCommitGit": {
           "type": "boolean",
           "default": true,
-          "description": "启用后，若工作区检测到 Git 仓库，RALPH 会在执行单个用户故事时要求 Copilot 直接完成对应的 Git 提交，而不是额外生成单独的 Git 提交故事。"
+          "description": "启用后，若工作区检测到 Git 仓库，Harness Runner 会在执行单个用户故事时要求 Copilot 直接完成对应的 Git 提交，而不是额外生成单独的 Git 提交故事。"
         },
-        "ralph-runner.recalledTaskMemoryLimit": {
+        "harness-runner.recalledTaskMemoryLimit": {
           "type": "number",
           "default": 3,
           "minimum": 1,
           "maximum": 10,
           "description": "每个故事最多注入或预览的相关任务记忆条目数量。"
         },
-        "ralph-runner.policyGates": {
+        "harness-runner.policyGates": {
           "type": "object",
           "default": {
             "enabled": false,
@@ -271,44 +271,44 @@
               }
             ]
           },
-          "markdownDescription": "自动检查规则。开启后，RALPH 会在故事开始前和完成前按这里的 preflight/completion 规则检查；其中 `knowledge-check` 可把 Agent Map 新鲜度、模块知识缺口和运行说明覆盖缺口作为 advisory 或 gate 使用。旧的 `requireProjectConstraintsBeforeRun` 和 `requireDesignContextForTaggedStories` 仍会兼容读取，但不再单独展示。"
+          "markdownDescription": "自动检查规则。开启后，Harness Runner 会在故事开始前和完成前按这里的 preflight/completion 规则检查；其中 `knowledge-check` 可把 Agent Map 新鲜度、模块知识缺口和运行说明覆盖缺口作为 advisory 或 gate 使用。旧的 `requireProjectConstraintsBeforeRun` 和 `requireDesignContextForTaggedStories` 仍会兼容读取，但不再单独展示。"
         },
-        "ralph-runner.policyGateCommandTimeoutMs": {
+        "harness-runner.policyGateCommandTimeoutMs": {
           "type": "number",
           "default": 600000,
           "minimum": 1000,
           "description": "自动检查在执行测试或构建命令时的超时时间，单位为毫秒。"
         },
-        "ralph-runner.approvalPromptMode": {
+        "harness-runner.approvalPromptMode": {
           "type": "string",
           "default": "default",
           "enum": ["default", "bypass", "autopilot"],
           "enumDescriptions": [
-            "当前工作区固定在该模式；高风险故事完成后显示审批提示，可选择打开审批流或证据包。",
-            "当前工作区固定在该模式；高风险故事完成后直接进入审批流，跳过中间提示。",
-            "当前工作区固定在该模式；高风险故事完成后不依赖弹窗，而是通过日志、状态栏和菜单持续提示待审批故事。"
+            "当前工作区若存在覆盖则优先使用；否则回退到 User 全局设置。高风险故事完成后显示审批提示，可选择打开审批流或证据包。",
+            "当前工作区若存在覆盖则优先使用；否则回退到 User 全局设置。高风险故事完成后直接进入审批流，跳过中间提示。",
+            "当前工作区若存在覆盖则优先使用；否则回退到 User 全局设置。高风险故事完成后不依赖弹窗，而是通过日志、状态栏和菜单持续提示待审批故事。"
           ],
-          "description": "审批提示模式。RALPH Runner 只读取当前工作区中的该值，并在新开 Copilot Chat 时继续按这个固定模式处理审批交互。"
+          "description": "审批提示模式。Harness Runner 按“工作区覆盖优先、否则回退到 User 全局设置”的顺序读取该值，并在新开 Copilot Chat 时继续按该模式处理审批交互。"
         },
-        "ralph-runner.enableReviewerLoop": {
+        "harness-runner.enableReviewerLoop": {
           "type": "boolean",
           "default": true,
-          "description": "是否启用 Reviewer 评分流程。RALPH Runner 只读取当前工作区中的该值；关闭后，故事执行完成后不再进入 Reviewer pass 和自动修复回路。"
+          "description": "是否启用 Reviewer 评分流程。Harness Runner 按“工作区覆盖优先、否则回退到 User 全局设置”的顺序读取该值；关闭后，故事执行完成后不再进入 Reviewer pass 和自动修复回路。"
         },
-        "ralph-runner.reviewPassingScore": {
+        "harness-runner.reviewPassingScore": {
           "type": "number",
           "default": 85,
           "minimum": 1,
           "maximum": 100,
-          "description": "Reviewer 评分流程的通过分数。RALPH Runner 只读取当前工作区中的该值。"
+          "description": "Reviewer 评分流程的通过分数。Harness Runner 按“工作区覆盖优先、否则回退到 User 全局设置”的顺序读取该值。"
         },
-        "ralph-runner.maxAutoRefactorRounds": {
+        "harness-runner.maxAutoRefactorRounds": {
           "type": "number",
           "default": 2,
           "minimum": 0,
-          "description": "Reviewer 评分未通过时允许自动修复的最大轮数。RALPH Runner 只读取当前工作区中的该值。"
+          "description": "Reviewer 评分未通过时允许自动修复的最大轮数。Harness Runner 按“工作区覆盖优先、否则回退到 User 全局设置”的顺序读取该值。"
         },
-        "ralph-runner.language": {
+        "harness-runner.language": {
           "type": "string",
           "default": "Chinese",
           "enum": ["Chinese", "English"],
@@ -316,7 +316,7 @@
             "插件运行时操作文案使用中文，并在初始化项目约束时生成中文 Git 提交规则。",
             "Plugin runtime UI uses English, and project-constraint initialization generates English Git commit rules."
           ],
-          "description": "切换 Ralph Runner 的运行时语言。修改后若要更新项目约束中的语言相关规则，需要重新初始化项目约束。"
+          "description": "切换 Harness Runner 的运行时语言。修改后若要更新项目约束中的语言相关规则，需要重新初始化项目约束。"
         }
       }
     }

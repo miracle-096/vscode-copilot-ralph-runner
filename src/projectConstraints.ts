@@ -210,7 +210,7 @@ export function scanWorkspaceForProjectConstraints(
 		eslintConfigPath: eslintConfigPath ? path.basename(eslintConfigPath) : undefined,
 		sourceDirectories: srcDirectories,
 		topLevelDirectories,
-		ralphLanguage: languagePack.language,
+		harnessLanguage: languagePack.language,
 	};
 
 	return {
@@ -288,11 +288,11 @@ export function buildProjectConstraintChatAdvicePrompt(input: ProjectConstraintC
 		: 'Reply in English. Absorb the constraint-driven revisions first, then produce a final prompt the user can send directly to a large language model.';
 
 	const lines = [
-		'You are RALPH Spec Finalizer for the current workspace.',
+		'You are Harness Runner Spec Finalizer for the current workspace.',
 		`Workspace root: ${input.workspaceRoot}`,
 		`Merged project constraints are sourced from ${input.generatedPath} and ${input.editablePath}.`,
 		languageInstruction,
-		'Review the user request against the merged RALPH project constraints and internally improve it before answering.',
+		'Review the user request against the merged Harness Runner project constraints and internally improve it before answering.',
 		'If the request is vague, rewrite it into a sharper implementation brief that better matches the constraints.',
 		'If the request conflicts with the constraints, resolve the conflict in the final version and explain the adjustment briefly.',
 		'If the request already fits the constraints, still tighten it into a clearer execution-ready description.',

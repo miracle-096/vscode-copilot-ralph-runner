@@ -1,0 +1,102 @@
+{
+  "storyId": "US-002",
+  "title": "重命名扩展元数据与配置命名空间",
+  "status": "completed",
+  "stageGoal": "更新 package.json 中的扩展名称、展示名称、描述、激活入口、聊天参与者 id/name、配置标题和 configuration key 前缀，将 ralph-runner 命名空间完整替换为 harness-runner，并确保 VS Code 贡献点与运行时代码一致。",
+  "summary": "Completed the harness-runner namespace rename for package metadata, command ids, chat participant ids/names, configuration keys, runtime registrations, related localization bindings, tests, and README usage examples.",
+  "architectureNotes": [
+    "This story was kept inside the contribution-point boundary: package.json, extension command registration, chat participant wiring, localization command links, tests, and README guidance.",
+    "The stable runtime persistence boundary remains .harness-runner, so the rename does not require storage-path migrations or artifact-move logic.",
+    "The safest split point for future follow-up work is packaging/distribution branding versus broader user-visible runtime copy, because those concerns can evolve without re-breaking command registration."
+  ],
+  "keyDecisions": [
+    "Rename package and runtime command ids together so VS Code manifest registration stays exact.",
+    "Rename the chat participant and slash command to @harness /harness-spec and align the prompt-builder wording in src/projectConstraints.ts.",
+    "Write new workspace-pinned reviewer settings under harness-runner.* and delete old ralph-runner workspace keys when persisting overrides."
+  ],
+  "confirmedConstraints": [
+    "prd.json remained untouched.",
+    "The .harness-runner artifact root was preserved.",
+    "No dist/ or out/ files were hand-edited.",
+    "Validation ran through npm run compile, npm run compile-tests, and npm test.",
+    "Git commit metadata must use Chinese."
+  ],
+  "unresolvedRisks": [
+    "package.json repository.url and the checked-in VSIX filename still use the legacy ralph-runner slug.",
+    "Broader RALPH-branded runtime/help copy still exists outside this focused namespace rename surface.",
+    "Project-constraints and agent-map artifacts may need regeneration after the rebrand settles."
+  ],
+  "nextStoryPrerequisites": [
+    "Reviewer should verify package.json contribution ids against src/extension.ts registrations and src/localization.ts menu bindings.",
+    "Reviewer should decide whether packaging/distribution artifacts should be regenerated as part of the next pass.",
+    "If broader brand-copy cleanup continues, treat it as a separate story from command/config namespace stability."
+  ],
+  "resumeRecommendation": "Reviewer can continue from this completed state by checking the renamed contribution-point cluster, then deciding whether to queue a separate packaging/doc-refresh story for remaining legacy branding surfaces.",
+  "reviewSummary": {
+    "totalScore": 100,
+    "maxScore": 100,
+    "passingScore": 65,
+    "passed": true,
+    "reviewPass": 1,
+    "maxReviewerPasses": 3,
+    "maxAutoRefactorRounds": 2,
+    "dimensions": [
+      {
+        "dimension": "architectureConsistency",
+        "label": "Architecture Consistency",
+        "score": 25,
+        "summary": "Reviewer loop disabled in workspace settings.",
+        "issues": [],
+        "recommendations": [
+          "Reviewer loop disabled in workspace settings."
+        ]
+      },
+      {
+        "dimension": "acceptanceCoverage",
+        "label": "Acceptance Coverage",
+        "score": 25,
+        "summary": "Reviewer loop disabled in workspace settings.",
+        "issues": [],
+        "recommendations": [
+          "Reviewer loop disabled in workspace settings."
+        ]
+      },
+      {
+        "dimension": "changeScopeControl",
+        "label": "Change Scope Control",
+        "score": 25,
+        "summary": "Reviewer loop disabled in workspace settings.",
+        "issues": [],
+        "recommendations": [
+          "Reviewer loop disabled in workspace settings."
+        ]
+      },
+      {
+        "dimension": "verifiability",
+        "label": "Verifiability",
+        "score": 25,
+        "summary": "Reviewer loop disabled in workspace settings.",
+        "issues": [],
+        "recommendations": [
+          "Reviewer loop disabled in workspace settings."
+        ]
+      }
+    ],
+    "findings": [],
+    "recommendations": [
+      "Reviewer loop disabled in workspace settings."
+    ],
+    "refactorPerformed": false,
+    "reviewedAt": "2026-04-04T20:39:48.248Z",
+    "source": "synthesized"
+  },
+  "reviewLoop": {
+    "reviewerPasses": 1,
+    "autoRefactorRounds": 0,
+    "maxAutoRefactorRounds": 2,
+    "endedReason": "passed",
+    "lastReviewedAt": "2026-04-04T20:39:48.248Z"
+  },
+  "updatedAt": "2026-04-05T00:00:00.000Z",
+  "source": "copilot"
+}

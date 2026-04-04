@@ -148,7 +148,7 @@ import {
 import { getLocalizedStoryStatus, getRalphLanguagePack, normalizeRalphLanguage } from './localization';
 
 function getConfig() {
-	const cfg = vscode.workspace.getConfiguration('ralph-runner');
+	const cfg = vscode.workspace.getConfiguration('harness-runner');
 	const approvalPromptMode = resolveWorkspaceApprovalPromptMode(cfg.inspect<string>('approvalPromptMode'));
 	const reviewerLoopEnabled = resolveWorkspaceReviewerLoopEnabled(cfg.inspect<boolean>('enableReviewerLoop'));
 	const reviewerPassingScore = resolveWorkspaceReviewerPassingScore(cfg.inspect<number>('reviewPassingScore'));
@@ -177,6 +177,13 @@ function getConfig() {
 }
 
 type ApprovalPromptMode = 'default' | 'bypass' | 'autopilot';
+
+type WorkspacePinnedRunnerSettings = {
+	approvalPromptMode: ApprovalPromptMode;
+	enableReviewerLoop: boolean;
+	reviewPassingScore: number;
+	maxAutoRefactorRounds: number;
+};
 
 type WorkspacePinnedSettingInspection<T> = {
 	key?: string;
@@ -213,25 +220,25 @@ export function normalizeReviewerAutoRefactorLimit(value: unknown): number {
 export function resolveWorkspaceApprovalPromptMode(
 	inspection: WorkspacePinnedSettingInspection<string> | undefined,
 ): ApprovalPromptMode {
-	return normalizeApprovalPromptMode(inspection?.workspaceFolderValue ?? inspection?.workspaceValue);
+	return normalizeApprovalPromptMode(inspection?.workspaceFolderValue ?? inspection?.workspaceValue ?? inspection?.globalValue);
 }
 
 export function resolveWorkspaceReviewerLoopEnabled(
 	inspection: WorkspacePinnedSettingInspection<boolean> | undefined,
 ): boolean {
-	return normalizeReviewerLoopEnabled(inspection?.workspaceFolderValue ?? inspection?.workspaceValue);
+	return normalizeReviewerLoopEnabled(inspection?.workspaceFolderValue ?? inspection?.workspaceValue ?? inspection?.globalValue);
 }
 
 export function resolveWorkspaceReviewerPassingScore(
 	inspection: WorkspacePinnedSettingInspection<number> | undefined,
 ): number {
-	return normalizeReviewerPassingScore(inspection?.workspaceFolderValue ?? inspection?.workspaceValue);
+	return normalizeReviewerPassingScore(inspection?.workspaceFolderValue ?? inspection?.workspaceValue ?? inspection?.globalValue);
 }
 
 export function resolveWorkspaceReviewerAutoRefactorLimit(
 	inspection: WorkspacePinnedSettingInspection<number> | undefined,
 ): number {
-	return normalizeReviewerAutoRefactorLimit(inspection?.workspaceFolderValue ?? inspection?.workspaceValue);
+	return normalizeReviewerAutoRefactorLimit(inspection?.workspaceFolderValue ?? inspection?.workspaceValue ?? inspection?.globalValue);
 }
 
 function getLanguagePack() {
@@ -530,6 +537,36 @@ function readJsonFile<T>(filePath: string): T | null {
 	}
 }
 
+export function persistWorkspacePinnedRunnerSettingsFile(
+	workspaceRoot: string,
+	settings: WorkspacePinnedRunnerSettings,
+): string {
+	const settingsDir = path.join(workspaceRoot, '.vscode');
+	const settingsPath = path.join(settingsDir, 'settings.json');
+	if (!fs.existsSync(settingsDir)) {
+		fs.mkdirSync(settingsDir, { recursive: true });
+	}
+
+	const current = readJsonFile<Record<string, unknown>>(settingsPath) ?? {};
+	const next: Record<string, unknown> = { ...current };
+	delete next['ralph-runner.approvalPromptMode'];
+	delete next['ralph-runner.enableReviewerLoop'];
+	delete next['ralph-runner.reviewPassingScore'];
+	delete next['ralph-runner.maxAutoRefactorRounds'];
+	delete next['harness-runner.approvalPromptMode'];
+	delete next['harness-runner.enableReviewerLoop'];
+	delete next['harness-runner.reviewPassingScore'];
+	delete next['harness-runner.maxAutoRefactorRounds'];
+
+	next['harness-runner.approvalPromptMode'] = settings.approvalPromptMode;
+	next['harness-runner.enableReviewerLoop'] = settings.enableReviewerLoop;
+	next['harness-runner.reviewPassingScore'] = settings.reviewPassingScore;
+	next['harness-runner.maxAutoRefactorRounds'] = settings.maxAutoRefactorRounds;
+
+	writeJsonFile(settingsPath, next);
+	return settingsPath;
+}
+
 function compareStoriesByPriority(left: UserStory, right: UserStory): number {
 	if (left.priority !== right.priority) {
 		return left.priority - right.priority;
@@ -706,46 +743,46 @@ export function activate(context: vscode.ExtensionContext) {
 	statusBarItem = vscode.window.createStatusBarItem(vscode.StatusBarAlignment.Left, 100);
 	statusBarItem.text = languagePack.statusBar.idleText;
 	statusBarItem.tooltip = languagePack.statusBar.idleTooltip;
-	statusBarItem.command = 'ralph-runner.showMenu';
+	statusBarItem.command = 'harness-runner.showMenu';
 	statusBarItem.show();
 	context.subscriptions.push(statusBarItem);
 	context.subscriptions.push(vscode.workspace.onDidChangeConfiguration(event => {
-		if (!event.affectsConfiguration('ralph-runner.language')
-			&& !event.affectsConfiguration('ralph-runner.policyGates')
-			&& !event.affectsConfiguration('ralph-runner.approvalPromptMode')
-			&& !event.affectsConfiguration('ralph-runner.enableReviewerLoop')
-			&& !event.affectsConfiguration('ralph-runner.reviewPassingScore')
-			&& !event.affectsConfiguration('ralph-runner.maxAutoRefactorRounds')) {
+		if (!event.affectsConfiguration('harness-runner.language')
+			&& !event.affectsConfiguration('harness-runner.policyGates')
+			&& !event.affectsConfiguration('harness-runner.approvalPromptMode')
+			&& !event.affectsConfiguration('harness-runner.enableReviewerLoop')
+			&& !event.affectsConfiguration('harness-runner.reviewPassingScore')
+			&& !event.affectsConfiguration('harness-runner.maxAutoRefactorRounds')) {
 			return;
 		}
 		updateStatusBar(isRunning ? 'running' : 'idle');
-		if (event.affectsConfiguration('ralph-runner.language')) {
+		if (event.affectsConfiguration('harness-runner.language')) {
 			vscode.window.showInformationMessage(getLanguagePack().initProjectConstraints.languageChanged);
 		}
 	}));
 
 	context.subscriptions.push(
-		vscode.commands.registerCommand('ralph-runner.configurePolicyGates', () => configurePolicyGates()),
-		vscode.commands.registerCommand('ralph-runner.showIntroduction', () => showHelpDocument('introduction')),
-		vscode.commands.registerCommand('ralph-runner.showUsageGuide', () => showHelpDocument('manual')),
-		vscode.commands.registerCommand('ralph-runner.start', () => startRalph()),
-		vscode.commands.registerCommand('ralph-runner.stop', () => stopRalph()),
-		vscode.commands.registerCommand('ralph-runner.status', () => showStatus()),
-		vscode.commands.registerCommand('ralph-runner.reviewStoryApproval', () => reviewStoryApproval()),
-		vscode.commands.registerCommand('ralph-runner.resetStep', () => resetStory()),
-		vscode.commands.registerCommand('ralph-runner.initProjectConstraints', () => initializeProjectConstraints()),
-		vscode.commands.registerCommand('ralph-runner.refreshSourceContextIndex', () => refreshSourceContextIndexCommand()),
-		vscode.commands.registerCommand('ralph-runner.previewSourceContextRecall', () => previewSourceContextRecall()),
-		vscode.commands.registerCommand('ralph-runner.generateAgentMap', () => generateAgentMapCommand()),
-		vscode.commands.registerCommand('ralph-runner.recordDesignContext', () => recordDesignContext()),
-		vscode.commands.registerCommand('ralph-runner.generateDesignContextDraft', () => generateVisualDesignContextDraft()),
-		vscode.commands.registerCommand('ralph-runner.suggestStoryDesignContext', () => suggestStoryDesignContext()),
-		vscode.commands.registerCommand('ralph-runner.openSettings', () => {
-			vscode.commands.executeCommand('workbench.action.openSettings', 'ralph-runner');
+		vscode.commands.registerCommand('harness-runner.configurePolicyGates', () => configurePolicyGates()),
+		vscode.commands.registerCommand('harness-runner.showIntroduction', () => showHelpDocument('introduction')),
+		vscode.commands.registerCommand('harness-runner.showUsageGuide', () => showHelpDocument('manual')),
+		vscode.commands.registerCommand('harness-runner.start', () => startRalph()),
+		vscode.commands.registerCommand('harness-runner.stop', () => stopRalph()),
+		vscode.commands.registerCommand('harness-runner.status', () => showStatus()),
+		vscode.commands.registerCommand('harness-runner.reviewStoryApproval', () => reviewStoryApproval()),
+		vscode.commands.registerCommand('harness-runner.resetStep', () => resetStory()),
+		vscode.commands.registerCommand('harness-runner.initProjectConstraints', () => initializeProjectConstraints()),
+		vscode.commands.registerCommand('harness-runner.refreshSourceContextIndex', () => refreshSourceContextIndexCommand()),
+		vscode.commands.registerCommand('harness-runner.previewSourceContextRecall', () => previewSourceContextRecall()),
+		vscode.commands.registerCommand('harness-runner.generateAgentMap', () => generateAgentMapCommand()),
+		vscode.commands.registerCommand('harness-runner.recordDesignContext', () => recordDesignContext()),
+		vscode.commands.registerCommand('harness-runner.generateDesignContextDraft', () => generateVisualDesignContextDraft()),
+		vscode.commands.registerCommand('harness-runner.suggestStoryDesignContext', () => suggestStoryDesignContext()),
+		vscode.commands.registerCommand('harness-runner.openSettings', () => {
+			vscode.commands.executeCommand('workbench.action.openSettings', 'harness-runner');
 		}),
-		vscode.commands.registerCommand('ralph-runner.showMenu', () => showCommandMenu()),
-		vscode.commands.registerCommand('ralph-runner.quickStart', () => quickStart()),
-		vscode.commands.registerCommand('ralph-runner.appendUserStories', () => appendUserStories())
+		vscode.commands.registerCommand('harness-runner.showMenu', () => showCommandMenu()),
+		vscode.commands.registerCommand('harness-runner.quickStart', () => quickStart()),
+		vscode.commands.registerCommand('harness-runner.appendUserStories', () => appendUserStories())
 	);
 
 	log('RALPH Runner extension activated.');
@@ -1164,7 +1201,7 @@ function refreshSourceContextIndexArtifact(
 }
 
 function registerRalphChatParticipant(context: vscode.ExtensionContext): void {
-	const participant = vscode.chat.createChatParticipant('recent-graduates.ralph-runner', handleRalphChatRequest);
+	const participant = vscode.chat.createChatParticipant('recent-graduates.harness-runner', handleRalphChatRequest);
 	participant.iconPath = vscode.Uri.joinPath(context.extensionUri, 'images', 'ralph_runner.ico');
 	context.subscriptions.push(participant);
 }
@@ -1189,7 +1226,7 @@ const handleRalphChatRequest: vscode.ChatRequestHandler = async (
 	}
 
 	const userRequest = request.prompt.trim();
-	if (request.command === 'ralph-spec' && userRequest.length === 0) {
+	if (request.command === 'harness-spec' && userRequest.length === 0) {
 		stream.markdown(languagePack.chatSpec.emptyPrompt);
 		return;
 	}
@@ -1253,7 +1290,7 @@ function writeRalphSpecFinalRequestTempFile(
 ): { ok: true; filePath: string; } | { ok: false; message: string; } {
 	try {
 		RalphStateManager.ensureDir(workspaceRoot);
-		const filePath = path.join(resolveRalphDir(workspaceRoot), 'ralph-spec-final-request.md');
+		const filePath = path.join(resolveRalphDir(workspaceRoot), 'harness-spec-final-request.md');
 		fs.writeFileSync(filePath, `${content.trim()}\n`, 'utf-8');
 		return {
 			ok: true,
@@ -1261,7 +1298,7 @@ function writeRalphSpecFinalRequestTempFile(
 		};
 	} catch (error: unknown) {
 		const message = error instanceof Error ? error.message : String(error);
-		log(`WARNING: Failed to persist /ralph-spec final request: ${message}`);
+		log(`WARNING: Failed to persist /harness-spec final request: ${message}`);
 		return {
 			ok: false,
 			message,
@@ -4750,7 +4787,7 @@ async function configurePolicyGates(): Promise<void> {
 		return;
 	}
 
-	const cfg = vscode.workspace.getConfiguration('ralph-runner');
+	const cfg = vscode.workspace.getConfiguration('harness-runner');
 	const scopeSelection = await vscode.window.showQuickPick([
 		{
 			label: languagePack.policyConfig.scopeUserLabel,
@@ -4854,20 +4891,32 @@ async function configurePolicyGates(): Promise<void> {
 	await cfg.update('policyGates', updatedPolicyConfig, scopeSelection.target);
 	await cfg.update('requireProjectConstraintsBeforeRun', undefined, scopeSelection.target);
 	await cfg.update('requireDesignContextForTaggedStories', undefined, scopeSelection.target);
-	await cfg.update('approvalPromptMode', approvalModeSelection.value, vscode.ConfigurationTarget.Workspace);
-	await cfg.update('enableReviewerLoop', reviewerLoopSelection.value, vscode.ConfigurationTarget.Workspace);
-	await cfg.update('reviewPassingScore', reviewerPassingScore, vscode.ConfigurationTarget.Workspace);
-	await cfg.update('maxAutoRefactorRounds', reviewerAutoRefactorRounds, vscode.ConfigurationTarget.Workspace);
+	await cfg.update('approvalPromptMode', approvalModeSelection.value, scopeSelection.target);
+	await cfg.update('enableReviewerLoop', reviewerLoopSelection.value, scopeSelection.target);
+	await cfg.update('reviewPassingScore', reviewerPassingScore, scopeSelection.target);
+	await cfg.update('maxAutoRefactorRounds', reviewerAutoRefactorRounds, scopeSelection.target);
+	if (scopeSelection.target === vscode.ConfigurationTarget.Workspace) {
+		persistWorkspacePinnedRunnerSettingsFile(workspaceRoot, {
+			approvalPromptMode: approvalModeSelection.value,
+			enableReviewerLoop: reviewerLoopSelection.value,
+			reviewPassingScore: reviewerPassingScore,
+			maxAutoRefactorRounds: reviewerAutoRefactorRounds,
+		});
+	}
 	if (scopeSelection.target === vscode.ConfigurationTarget.Global) {
 		await cfg.update('policyGates', undefined, vscode.ConfigurationTarget.Workspace);
 		await cfg.update('requireProjectConstraintsBeforeRun', undefined, vscode.ConfigurationTarget.Workspace);
 		await cfg.update('requireDesignContextForTaggedStories', undefined, vscode.ConfigurationTarget.Workspace);
+		await cfg.update('approvalPromptMode', undefined, vscode.ConfigurationTarget.Workspace);
+		await cfg.update('enableReviewerLoop', undefined, vscode.ConfigurationTarget.Workspace);
+		await cfg.update('reviewPassingScore', undefined, vscode.ConfigurationTarget.Workspace);
+		await cfg.update('maxAutoRefactorRounds', undefined, vscode.ConfigurationTarget.Workspace);
 	}
 	updateStatusBar(isRunning ? 'running' : 'idle');
 
 	const action = await vscode.window.showInformationMessage(languagePack.policyConfig.saved, languagePack.policyConfig.openSettings);
 	if (action === languagePack.policyConfig.openSettings) {
-		await vscode.commands.executeCommand('workbench.action.openSettings', 'ralph-runner.policyGates');
+		await vscode.commands.executeCommand('workbench.action.openSettings', 'harness-runner.policyGates');
 	}
 }
 
@@ -4947,7 +4996,7 @@ async function quickStart(): Promise<void> {
 			languagePack.quickStart.start, languagePack.quickStart.openPrd
 		);
 		if (action === languagePack.quickStart.start) {
-			vscode.commands.executeCommand('ralph-runner.start');
+			vscode.commands.executeCommand('harness-runner.start');
 		} else if (action === languagePack.quickStart.openPrd) {
 			const doc = await vscode.workspace.openTextDocument(prdPath);
 			vscode.window.showTextDocument(doc);
