@@ -1,12 +1,10 @@
 import * as fs from 'fs';
 import * as path from 'path';
 
-export const RALPH_DIR = '.ralph';
+export const RALPH_DIR = '.harness-runner';
 export const PRD_DIR = '.prd';
 export const DESIGN_CONTEXT_DIR = 'design-context';
 export const DESIGN_CONTEXT_SHARED_DIR = 'shared';
-export const GITHUB_DIR = '.github';
-export const RALPH_CONFIG_DIR = 'ralph';
 export const PRD_FILENAME = 'prd.json';
 export const PROGRESS_FILENAME = 'progress.txt';
 export const STORY_STATUS_FILENAME = 'story-status.json';
@@ -133,12 +131,8 @@ export function getModuleDesignContextPath(workspaceRoot: string, moduleId: stri
 	return path.join(getSharedDesignContextDirectoryPath(workspaceRoot), `module-${toDesignContextKeySegment(moduleId)}${DESIGN_CONTEXT_FILE_SUFFIX}`);
 }
 
-export function getGithubRalphDirectoryPath(workspaceRoot: string): string {
-	return path.join(workspaceRoot, GITHUB_DIR, RALPH_CONFIG_DIR);
-}
-
 export function getEditableProjectConstraintsPath(workspaceRoot: string): string {
-	return path.join(getGithubRalphDirectoryPath(workspaceRoot), PROJECT_CONSTRAINTS_FILENAME);
+	return path.join(getRalphDir(workspaceRoot), PROJECT_CONSTRAINTS_FILENAME);
 }
 
 export function getGeneratedProjectConstraintsPath(workspaceRoot: string): string {
@@ -176,10 +170,9 @@ export function ensurePrdDirectories(workspaceRoot: string): { prdDir: string; d
 	return { prdDir, designContextDir, sharedDesignContextDir };
 }
 
-export function ensureProjectConstraintDirectories(workspaceRoot: string): { githubRalphDir: string; ralphDir: string } {
-	const githubRalphDir = ensureDirectoryExists(getGithubRalphDirectoryPath(workspaceRoot));
+export function ensureProjectConstraintDirectories(workspaceRoot: string): { ralphDir: string } {
 	const ralphDir = ensureDirectoryExists(getRalphDir(workspaceRoot));
-	return { githubRalphDir, ralphDir };
+	return { ralphDir };
 }
 
 export function ensureTaskMemoryDirectory(workspaceRoot: string): string {

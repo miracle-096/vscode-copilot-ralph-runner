@@ -100,6 +100,17 @@ export interface RalphLanguagePack {
 		rulesPlaceholder: string;
 		rulesHint: string;
 		approvalModePlaceholder: string;
+		reviewerLoopPlaceholder: string;
+		reviewerLoopEnabledLabel: string;
+		reviewerLoopEnabledDescription: string;
+		reviewerLoopDisabledLabel: string;
+		reviewerLoopDisabledDescription: string;
+		reviewerPassingScorePrompt: string;
+		reviewerPassingScorePlaceholder: string;
+		reviewerPassingScoreValidation: string;
+		autoRefactorRoundsPrompt: string;
+		autoRefactorRoundsPlaceholder: string;
+		autoRefactorRoundsValidation: string;
 		saved: string;
 		openSettings: string;
 		ruleLabels: {
@@ -497,8 +508,19 @@ const CHINESE_PACK: RalphLanguagePack = {
 		disabledDescription: '保留当前规则配置，但暂时不执行检查',
 		rulesPlaceholder: '勾选需要启用的内置检查项',
 		rulesHint: '未勾选的规则会写回为 disabled=false；高级自定义仍可在设置 JSON 中继续维护。',
-		approvalModePlaceholder: '选择审批提示模式，使其与当前 chat 使用习惯保持一致',
-		saved: 'RALPH：执行检查和审批提示模式已更新。',
+		approvalModePlaceholder: '选择当前工作区固定使用的审批模式',
+		reviewerLoopPlaceholder: '选择当前工作区是否启用 Reviewer 评分流程',
+		reviewerLoopEnabledLabel: '启用 Reviewer 评分流程',
+		reviewerLoopEnabledDescription: '执行后进入 Reviewer pass，并按评分阈值决定是否自动修复',
+		reviewerLoopDisabledLabel: '关闭 Reviewer 评分流程',
+		reviewerLoopDisabledDescription: '执行完成后直接结束，不再进入评分和自动修复回路',
+		reviewerPassingScorePrompt: '输入当前工作区固定使用的通过分数（1-100）',
+		reviewerPassingScorePlaceholder: '例如 85',
+		reviewerPassingScoreValidation: '请输入 1 到 100 之间的整数分数。',
+		autoRefactorRoundsPrompt: '输入当前工作区允许的自动修复轮数（0 或更大）',
+		autoRefactorRoundsPlaceholder: '例如 2',
+		autoRefactorRoundsValidation: '请输入大于等于 0 的整数轮数。',
+		saved: 'RALPH：执行检查、审批提示模式和 Reviewer 配置已更新；后两者已固定写入当前工作区。',
 		openSettings: '打开设置',
 		ruleLabels: {
 			requireProjectConstraints: '开始前先检查项目约束',
@@ -514,14 +536,14 @@ const CHINESE_PACK: RalphLanguagePack = {
 			requireDesignContext: '适合 UI/设计敏感项目；还没准备设计稿或设计说明时就先别开始',
 			protectDangerousPaths: '避免误改 prd.json、构建产物、node_modules 等高风险路径',
 			requireRelevantTests: '改动命中源码或配置时，要求至少一个相关测试命令成功',
-			requireTaskMemory: '完成前要写入 .ralph/memory/US-xxx.json',
-			requireExecutionCheckpoint: '完成前要写入 .ralph/checkpoints/US-xxx.checkpoint.json',
-			requireStoryEvidence: '完成前要写入 .ralph/evidence/US-xxx.evidence.json',
+			requireTaskMemory: '完成前要写入 .harness-runner/memory/US-xxx.json',
+			requireExecutionCheckpoint: '完成前要写入 .harness-runner/checkpoints/US-xxx.checkpoint.json',
+			requireStoryEvidence: '完成前要写入 .harness-runner/evidence/US-xxx.evidence.json',
 		},
 		approvalModes: {
-			default: { label: 'default：弹出审批提示', description: '适合普通交互模式；故事结束后弹出提示，让你打开审批流或证据包' },
+			default: { label: 'default：弹出审批提示', description: '当前工作区固定使用该模式；故事结束后弹出提示，让你打开审批流或证据包' },
 			bypass: { label: 'bypass：直接进入审批流', description: '适合希望跳过中间提示的人；高风险故事完成后直接进入审批界面' },
-			autopilot: { label: 'autopilot：仅落盘并挂到状态栏', description: '适合 chat autopilot；不依赖弹窗，改为日志、状态栏和菜单持续提示待审批故事' },
+			autopilot: { label: 'autopilot：仅落盘并挂到状态栏', description: '当前工作区固定使用该模式；不依赖弹窗，改为日志、状态栏和菜单持续提示待审批故事' },
 		},
 	},
 	initProjectConstraints: {
@@ -561,7 +583,7 @@ const CHINESE_PACK: RalphLanguagePack = {
 		noMatches: storyId => `RALPH：${storyId} 当前没有命中足够的仓库源上下文，将回退到现有提示构建流程。`,
 	},
 	agentMap: {
-		success: gapCount => `RALPH：Agent Map 已生成。总览页与知识目录页已写入 .ralph/agent-map/，当前显式记录 ${gapCount} 个知识缺口。`,
+		success: gapCount => `RALPH：Agent Map 已生成。总览页与知识目录页已写入 .harness-runner/agent-map/，当前显式记录 ${gapCount} 个知识缺口。`,
 		openOverview: '打开总览页',
 		openKnowledgeCatalog: '打开知识目录页',
 		failed: message => `RALPH：生成 Agent Map 失败：${message}`,
@@ -758,22 +780,22 @@ const CHINESE_PACK: RalphLanguagePack = {
 	menu: {
 		placeholder: 'RALPH Runner：选择一个命令',
 		items: [
-			{ command: 'ralph-runner.showIntroduction', label: '$(hubot)  插件介绍', description: '查看 RALPH 的定位、能力边界和适用场景' },
-			{ command: 'ralph-runner.showUsageGuide', label: '$(library)  使用流程手册', description: '查看空项目和已存在项目两种起点下的推荐流程' },
 			{ command: 'ralph-runner.configurePolicyGates', label: '$(settings-gear)  配置执行检查', description: '通过可视化界面启用或关闭内置检查项和审批提示模式' },
 			{ command: 'ralph-runner.initProjectConstraints', label: '$(symbol-key)  初始化项目约束', description: '扫描仓库并生成可编辑和机器可读的项目规则' },
-			{ command: 'ralph-runner.refreshSourceContextIndex', label: '$(repo)  刷新源码上下文索引', description: '扫描仓库并更新轻量 source context 索引工件' },
-			{ command: 'ralph-runner.previewSourceContextRecall', label: '$(search)  预览故事源上下文', description: '为选中的故事预览最相关的模块、文件和工程线索' },
-			{ command: 'ralph-runner.generateAgentMap', label: '$(book)  生成 Agent Map', description: '生成轻量仓库总览页和知识目录页，供智能体导航规则、模块与执行 runbook' },
 			{ command: 'ralph-runner.recordDesignContext', label: '$(device-camera-video)  界面设计描述', description: '一个入口处理当前故事和批量复用，支持自动整理、单独匹配和批量匹配' },
+			{ command: 'ralph-runner.previewSourceContextRecall', label: '$(search)  预览故事源上下文', description: '为选中的故事预览最相关的模块、文件和工程线索' },
+			{ command: 'ralph-runner.refreshSourceContextIndex', label: '$(repo)  刷新源码上下文索引', description: '扫描仓库并更新轻量 source context 索引工件' },
+			{ command: 'ralph-runner.generateAgentMap', label: '$(book)  生成 Agent Map', description: '生成轻量仓库总览页和知识目录页，供智能体导航规则、模块与执行 runbook' },
+			{ command: 'ralph-runner.reviewStoryApproval', label: '$(pass-filled)  审批高风险故事', description: '对待人工审批的高风险故事执行批准、拒绝或补充说明' },
 			{ command: 'ralph-runner.quickStart', label: '$(zap)  生成 PRD', description: '通过 Copilot 生成 prd.json' },
 			{ command: 'ralph-runner.appendUserStories', label: '$(diff-added)  追加用户故事', description: '通过 Copilot 基于现有 prd.json 追加新的用户故事' },
 			{ command: 'ralph-runner.start', label: '$(play)  开始执行', description: '开始或继续自动任务循环' },
 			{ command: 'ralph-runner.stop', label: '$(debug-stop)  停止执行', description: '取消当前运行' },
 			{ command: 'ralph-runner.status', label: '$(info)  查看状态', description: '显示用户故事进度摘要' },
-			{ command: 'ralph-runner.reviewStoryApproval', label: '$(pass-filled)  审批高风险故事', description: '对待人工审批的高风险故事执行批准、拒绝或补充说明' },
 			{ command: 'ralph-runner.resetStep', label: '$(debug-restart)  重置故事', description: '重置某个已完成的用户故事' },
 			{ command: 'ralph-runner.openSettings', label: '$(gear)  打开设置', description: '配置 RALPH Runner 选项' },
+			{ command: 'ralph-runner.showIntroduction', label: '$(hubot)  插件介绍', description: '查看 RALPH 的定位、能力边界和适用场景' },
+			{ command: 'ralph-runner.showUsageGuide', label: '$(library)  使用流程手册', description: '查看空项目和已存在项目两种起点下的推荐流程' },
 		],
 	},
 	help: {
@@ -916,8 +938,19 @@ const ENGLISH_PACK: RalphLanguagePack = {
 		disabledDescription: 'Keep the saved rules, but do not run the checks',
 		rulesPlaceholder: 'Select which built-in checks should stay enabled',
 		rulesHint: 'Unchecked rules are written back as disabled; advanced custom schema edits can still live in settings JSON.',
-		approvalModePlaceholder: 'Choose the approval prompt mode that best matches how you currently use chat execution',
-		saved: 'RALPH: Run checks and approval prompt mode were updated.',
+		approvalModePlaceholder: 'Choose the approval mode that this workspace should always use',
+		reviewerLoopPlaceholder: 'Choose whether this workspace should run the Reviewer scoring loop',
+		reviewerLoopEnabledLabel: 'Enable the Reviewer scoring loop',
+		reviewerLoopEnabledDescription: 'Run a reviewer pass after execution and use the score threshold to decide whether auto-refactor should continue',
+		reviewerLoopDisabledLabel: 'Disable the Reviewer scoring loop',
+		reviewerLoopDisabledDescription: 'Finish after execution without entering the scoring and auto-refactor loop',
+		reviewerPassingScorePrompt: 'Enter the passing score that this workspace should use (1-100)',
+		reviewerPassingScorePlaceholder: 'For example: 85',
+		reviewerPassingScoreValidation: 'Enter an integer score between 1 and 100.',
+		autoRefactorRoundsPrompt: 'Enter how many auto-refactor rounds this workspace should allow (0 or more)',
+		autoRefactorRoundsPlaceholder: 'For example: 2',
+		autoRefactorRoundsValidation: 'Enter an integer greater than or equal to 0.',
+		saved: 'RALPH: Run checks, approval mode, and Reviewer settings were updated; the approval and Reviewer values were pinned to this workspace.',
 		openSettings: 'Open Settings',
 		ruleLabels: {
 			requireProjectConstraints: 'Check project rules before start',
@@ -933,14 +966,14 @@ const ENGLISH_PACK: RalphLanguagePack = {
 			requireDesignContext: 'Use this when UI-sensitive work should wait for design notes',
 			protectDangerousPaths: 'Avoid edits to prd.json, generated outputs, node_modules, and other protected paths',
 			requireRelevantTests: 'When source or config files change, require at least one relevant test command to pass',
-			requireTaskMemory: 'Require .ralph/memory/US-xxx.json before completion',
-			requireExecutionCheckpoint: 'Require .ralph/checkpoints/US-xxx.checkpoint.json before completion',
-			requireStoryEvidence: 'Require .ralph/evidence/US-xxx.evidence.json before completion',
+			requireTaskMemory: 'Require .harness-runner/memory/US-xxx.json before completion',
+			requireExecutionCheckpoint: 'Require .harness-runner/checkpoints/US-xxx.checkpoint.json before completion',
+			requireStoryEvidence: 'Require .harness-runner/evidence/US-xxx.evidence.json before completion',
 		},
 		approvalModes: {
-			default: { label: 'default: show an approval notification', description: 'Best for normal interactive work; prompt to open the approval flow or evidence after a high-risk story finishes' },
+			default: { label: 'default: show an approval notification', description: 'This workspace stays on this mode; prompt to open the approval flow or evidence after a high-risk story finishes' },
 			bypass: { label: 'bypass: open the approval flow directly', description: 'Skip the intermediate prompt and jump straight into review when approval is needed' },
-			autopilot: { label: 'autopilot: persist only and surface via status bar', description: 'Do not rely on popups; keep approval work visible through logs, the status bar, and the command menu' },
+			autopilot: { label: 'autopilot: persist only and surface via status bar', description: 'This workspace stays on this mode; do not rely on popups, and keep approval work visible through logs, the status bar, and the command menu' },
 		},
 	},
 	initProjectConstraints: {
@@ -980,7 +1013,7 @@ const ENGLISH_PACK: RalphLanguagePack = {
 		noMatches: storyId => `RALPH: No strong repository source-context matches were found for ${storyId}. Falling back to the existing prompt flow.`,
 	},
 	agentMap: {
-		success: gapCount => `RALPH: Agent Map generated. The overview and knowledge catalog were written to .ralph/agent-map/ with ${gapCount} explicit knowledge gaps recorded.`,
+		success: gapCount => `RALPH: Agent Map generated. The overview and knowledge catalog were written to .harness-runner/agent-map/ with ${gapCount} explicit knowledge gaps recorded.`,
 		openOverview: 'Open Overview',
 		openKnowledgeCatalog: 'Open Knowledge Catalog',
 		failed: message => `RALPH: Failed to generate Agent Map: ${message}`,

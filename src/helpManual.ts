@@ -101,7 +101,7 @@ function getChineseHelpContent(kind: RalphHelpDocumentKind): RalphHelpContent {
 				bullets: [
 					'最小起步只需要工作区和 prd.json',
 					'项目约束、源码上下文和设计上下文可以逐步补，不必一次到位',
-					'开始执行后要关注 .ralph 下的 memory、checkpoints、evidence 和 run-logs'
+					'开始执行后要关注 .harness-runner 下的 memory、checkpoints、evidence 和 run-logs'
 				]
 			},
 			{
@@ -114,19 +114,19 @@ function getChineseHelpContent(kind: RalphHelpDocumentKind): RalphHelpContent {
 					'优先执行“初始化项目约束”，把已有脚本、目录规范、Git 规则和交付要求收进 RALPH。',
 					'执行“刷新源码上下文索引”，必要时再执行“生成 Agent Map”，让模块、规则入口和知识缺口可被后续故事引用。',
 					'如果部分故事有 UI 或交互变化，再为这些故事执行“界面设计描述”。',
-					'检查配置执行检查和审批模式是否符合团队要求，然后再执行“开始执行”。',
+					'检查配置执行检查、审批模式和 Reviewer 评分设置是否符合团队要求，然后再执行“开始执行”。',
 					'执行过程中结合“查看状态”“审批高风险故事”“重置故事”管理进度和风险。'
 				],
 				bullets: [
 					'已有项目更适合先补项目约束与上下文，而不是直接开跑',
 					'如果仓库改动面大，建议先让 Agent Map 和知识检查把规则入口暴露出来',
-					'完成后的核心事实来源在 .ralph/story-status.json、memory、checkpoint 和 evidence'
+					'完成后的核心事实来源在 .harness-runner/story-status.json、memory、checkpoint 和 evidence'
 				]
 			},
 			{
 				title: '日常使用建议',
 				paragraphs: [
-					'RALPH 最适合被当作“持续执行和治理层”。你可以把需求和故事管理交给 prd.json，把仓库规则和设计约束交给对应工件，把每次执行的结果沉淀到 .ralph 目录。'
+					'RALPH 最适合被当作“持续执行和治理层”。你可以把需求和故事管理交给 prd.json，把仓库规则和设计约束交给对应工件，把每次执行的结果沉淀到 .harness-runner 目录。'
 				],
 				bullets: [
 					'每次新增大需求时先更新 PRD，而不是直接跳过故事层',
@@ -203,14 +203,14 @@ function getEnglishHelpContent(kind: RalphHelpDocumentKind): RalphHelpContent {
 					'Initialize Project Constraints before large execution passes.',
 					'Refresh Source Context Index and, when useful, Generate Agent Map for module and rule discovery.',
 					'Add UI Design Notes only for stories that truly need design-sensitive guidance.',
-					'Configure run checks and approval mode if your team wants stronger governance before execution.',
+					'Configure run checks, approval mode, and Reviewer scoring settings if your team wants stronger governance before execution.',
 					'Use Start, Show Status, Review Approval, and Reset Story as the operational loop.'
 				]
 			},
 			{
 				title: 'Daily Operating Advice',
 				paragraphs: [
-					'Treat RALPH as the execution and governance layer on top of your repository. Keep the PRD current, keep context artifacts fresh, and use the .ralph artifacts as the main audit trail.'
+					'Treat RALPH as the execution and governance layer on top of your repository. Keep the PRD current, keep context artifacts fresh, and use the .harness-runner artifacts as the main audit trail.'
 				]
 			}
 		]

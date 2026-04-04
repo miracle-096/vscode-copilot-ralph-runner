@@ -18,3 +18,4 @@ prd.json
 **/*.map
 **/*.ts
 **/.vscode-test.*
+harness-engineering/**

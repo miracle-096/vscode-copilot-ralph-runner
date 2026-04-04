@@ -81,7 +81,7 @@ const MODULE_RESPONSIBILITY_HINTS: Readonly<Record<string, string[]>> = {
 		'Define shared story and artifact schemas used across the extension.',
 	],
 	workspacePaths: [
-		'Centralize workspace artifact paths and directory scaffolding for RALPH.',
+		'Centralize workspace artifact paths and directory scaffolding for Harness Runner.',
 	],
 };
 
@@ -281,16 +281,16 @@ function buildRunbook(projectConstraints: GeneratedProjectConstraints): AgentMap
 			inputs: [
 				'prd.json',
 				'README.md',
-				'.github/ralph/project-constraints.md',
-				'.ralph/project-constraints.generated.json',
-				'.ralph/source-context-index.json',
-				'.ralph/memory/US-xxx.json',
-				'.ralph/checkpoints/US-xxx.checkpoint.json',
+				'.harness-runner/project-constraints.md',
+				'.harness-runner/project-constraints.generated.json',
+				'.harness-runner/source-context-index.json',
+				'.harness-runner/memory/US-xxx.json',
+				'.harness-runner/checkpoints/US-xxx.checkpoint.json',
 			],
 			commands: [
-				'RALPH: 初始化项目约束',
-				'RALPH: 刷新源码上下文索引',
-				'RALPH: 生成 Agent Map',
+				'Harness Runner: 初始化项目约束',
+				'Harness Runner: 刷新源码上下文索引',
+				'Harness Runner: 生成 Agent Map',
 			],
 			outputs: ['Confirmed scope, reusable modules, allowed paths, and missing knowledge gaps.'],
 		},
@@ -310,7 +310,7 @@ function buildRunbook(projectConstraints: GeneratedProjectConstraints): AgentMap
 			title: 'Checkpoint',
 			summary: 'Before handing off, persist structured task memory, execution checkpoint, and evidence so the next session can resume from files instead of conversation history.',
 			inputs: ['Changed files', 'Tests run', 'Key decisions', 'Known risks'],
-			commands: ['Write .ralph/memory/US-xxx.json', 'Write .ralph/checkpoints/US-xxx.checkpoint.json', 'Write .ralph/evidence/US-xxx.evidence.json'],
+			commands: ['Write .harness-runner/memory/US-xxx.json', 'Write .harness-runner/checkpoints/US-xxx.checkpoint.json', 'Write .harness-runner/evidence/US-xxx.evidence.json'],
 			outputs: ['Task memory artifact', 'Execution checkpoint artifact', 'Story evidence artifact'],
 		},
 		{
@@ -318,7 +318,7 @@ function buildRunbook(projectConstraints: GeneratedProjectConstraints): AgentMap
 			title: 'Reset',
 			summary: 'End the story by clearing implicit session assumptions, relying on persisted artifacts, and using reset only for explicit recovery or reruns.',
 			inputs: ['Latest structured artifacts', 'Completion signal expectations'],
-			commands: ['RALPH: 重置故事', 'Update the relevant entry in .ralph/story-status.json when the story is truly complete'],
+			commands: ['Harness Runner: 重置故事', 'Update the relevant entry in .harness-runner/story-status.json when the story is truly complete'],
 			outputs: ['Fresh next-session handoff with no hidden state dependency.'],
 		},
 	];

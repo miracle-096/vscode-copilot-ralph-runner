@@ -47,11 +47,11 @@ const COVERAGE_HINTS: ReadonlyArray<CoverageHint> = [
 		label: 'RALPH run flow',
 	},
 	{
-		id: 'ralph-spec',
-		matchKeywords: ['/ralph-spec', 'ralph spec', 'chat participant', '提示词'],
+		id: 'harness-spec',
+		matchKeywords: ['/harness-spec', 'harness spec', 'chat participant', '提示词'],
 		modules: ['extension', 'projectConstraints', 'promptContext'],
-		runbookKeywords: ['/ralph-spec', 'ralph spec', 'copilot chat'],
-		label: '/ralph-spec flow',
+		runbookKeywords: ['/harness-spec', 'harness spec', 'copilot chat'],
+		label: '/harness-spec flow',
 	},
 	{
 		id: 'agent-map',
@@ -254,8 +254,8 @@ function collectStaleDocumentationIssues(
 		'Knowledge catalog or runbook documentation looks stale for the current change surface.',
 		staleDetails,
 		[
-			'Regenerate .ralph/agent-map/overview.json and knowledge-catalog.json after the workflow change settles.',
-			'Update README.md or other operator-facing guidance if the run flow, /ralph-spec flow, or delivery expectations changed.',
+			'Regenerate .harness-runner/agent-map/overview.json and knowledge-catalog.json after the workflow change settles.',
+			'Update README.md or other operator-facing guidance if the run flow, /harness-spec flow, or delivery expectations changed.',
 		],
 		relevantSourceFiles.map(filePath => relativePath(workspaceRoot, filePath)),
 	)];
@@ -367,7 +367,7 @@ function collectRunbookCoverageIssues(
 			'Extend README.md with the commands, artifacts, and expected advisory/gate behavior for this workflow area.',
 			'Regenerate the Agent Map after updating the runbook so downstream checks see the refreshed coverage.',
 		],
-		['README.md', '.ralph/agent-map/overview.json'],
+		['README.md', '.harness-runner/agent-map/overview.json'],
 	)];
 }
 

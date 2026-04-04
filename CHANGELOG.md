@@ -6,6 +6,11 @@ Check [Keep a Changelog](http://keepachangelog.com/) for recommendations on how 
 
 ## [Unreleased]
 
+## [0.0.9] - 2026-04-05
+
+- Moved runtime artifacts and project constraints from .ralph and .github into .harness-runner only.
+- Removed legacy .ralph and .github path compatibility from the extension, docs, tests, and checked-in artifacts.
+
 ## [0.0.8] - 2026-04-03
 
 - Added the new run-check configuration command and approval prompt mode.

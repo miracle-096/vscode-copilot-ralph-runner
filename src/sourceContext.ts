@@ -313,7 +313,7 @@ function collectHotspotPaths(workspaceRoot: string): string[] {
 		const counts = new Map<string, number>();
 		for (const rawLine of output.split(/\r?\n/)) {
 			const line = rawLine.trim().replace(/\\/g, '/');
-			if (!line || line === 'prd.json' || line.startsWith('.ralph/') || line.startsWith('.prd/')) {
+			if (!line || line === 'prd.json' || line.startsWith('.harness-runner/') || line.startsWith('.prd/')) {
 				continue;
 			}
 			counts.set(line, (counts.get(line) ?? 0) + 1);

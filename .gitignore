@@ -14,8 +14,8 @@ out
 dist-ssr
 *.local
 
-# RALPH Runner task state
-.ralph/
+# Harness Runner task state
+.harness-runner/
 
 # Editor directories and files
 .vscode/*
@@ -31,4 +31,4 @@ dist-ssr
 
 prd.json
 progress.txt
-.github/ralph/project-constraints.md
+harness-engineering

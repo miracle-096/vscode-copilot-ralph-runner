@@ -147,21 +147,12 @@ import {
 } from './workspacePaths';
 import { getLocalizedStoryStatus, getRalphLanguagePack, normalizeRalphLanguage } from './localization';
 
-// ────────────────────────────────────────────────────────────────────────────
-// RALPH Runner — Autonomous Task Runner for VS Code
-//
-// Reads prd.json for user story definitions and tracks progress inline.
-// Loops autonomously (up to MAX_AUTONOMOUS_LOOPS) injecting Copilot chat
-// tasks for each user story. Fully resumable.
-//
-// Task execution state is persisted in .ralph/story-status.json.
-// Both durable story states and transient completion signals are keyed there.
-// ────────────────────────────────────────────────────────────────────────────
-
-// ── Configuration helpers ───────────────────────────────────────────────────
-
 function getConfig() {
 	const cfg = vscode.workspace.getConfiguration('ralph-runner');
+	const approvalPromptMode = resolveWorkspaceApprovalPromptMode(cfg.inspect<string>('approvalPromptMode'));
+	const reviewerLoopEnabled = resolveWorkspaceReviewerLoopEnabled(cfg.inspect<boolean>('enableReviewerLoop'));
+	const reviewerPassingScore = resolveWorkspaceReviewerPassingScore(cfg.inspect<number>('reviewPassingScore'));
+	const reviewerAutoRefactorLimit = resolveWorkspaceReviewerAutoRefactorLimit(cfg.inspect<number>('maxAutoRefactorRounds'));
 	return {
 		MAX_AUTONOMOUS_LOOPS: cfg.get<number>('maxAutonomousLoops', 2),
 		LOOP_DELAY_MS: cfg.get<number>('loopDelayMs', 3000),
@@ -177,15 +168,70 @@ function getConfig() {
 		REQUIRE_DESIGN_CONTEXT_FOR_TAGGED_STORIES: cfg.get<boolean>('requireDesignContextForTaggedStories', false),
 		POLICY_GATES: cfg.get<unknown>('policyGates', undefined),
 		POLICY_GATE_COMMAND_TIMEOUT_MS: cfg.get<number>('policyGateCommandTimeoutMs', 600000),
-		APPROVAL_PROMPT_MODE: normalizeApprovalPromptMode(cfg.get<string>('approvalPromptMode', 'default')),
+		APPROVAL_PROMPT_MODE: approvalPromptMode,
+		ENABLE_REVIEWER_LOOP: reviewerLoopEnabled,
+		REVIEW_PASSING_SCORE: reviewerPassingScore,
+		MAX_AUTO_REFACTOR_ROUNDS: reviewerAutoRefactorLimit,
 		LANGUAGE: normalizeRalphLanguage(cfg.get<string>('language', 'Chinese')),
 	};
 }
 
 type ApprovalPromptMode = 'default' | 'bypass' | 'autopilot';
 
+type WorkspacePinnedSettingInspection<T> = {
+	key?: string;
+	defaultValue?: T;
+	globalValue?: T;
+	workspaceValue?: T;
+	workspaceFolderValue?: T;
+};
+
 function normalizeApprovalPromptMode(value: unknown): ApprovalPromptMode {
 	return value === 'bypass' || value === 'autopilot' ? value : 'default';
+}
+
+export function normalizeReviewerLoopEnabled(value: unknown): boolean {
+	return value !== false;
+}
+
+export function normalizeReviewerPassingScore(value: unknown): number {
+	if (typeof value !== 'number' || !Number.isFinite(value)) {
+		return DEFAULT_STORY_REVIEW_PASSING_SCORE;
+	}
+
+	return Math.min(100, Math.max(1, Math.round(value)));
+}
+
+export function normalizeReviewerAutoRefactorLimit(value: unknown): number {
+	if (typeof value !== 'number' || !Number.isFinite(value)) {
+		return DEFAULT_STORY_AUTO_REFACTOR_LIMIT;
+	}
+
+	return Math.max(0, Math.round(value));
+}
+
+export function resolveWorkspaceApprovalPromptMode(
+	inspection: WorkspacePinnedSettingInspection<string> | undefined,
+): ApprovalPromptMode {
+	return normalizeApprovalPromptMode(inspection?.workspaceFolderValue ?? inspection?.workspaceValue);
+}
+
+export function resolveWorkspaceReviewerLoopEnabled(
+	inspection: WorkspacePinnedSettingInspection<boolean> | undefined,
+): boolean {
+	return normalizeReviewerLoopEnabled(inspection?.workspaceFolderValue ?? inspection?.workspaceValue);
+}
+
+export function resolveWorkspaceReviewerPassingScore(
+	inspection: WorkspacePinnedSettingInspection<number> | undefined,
+): number {
+	return normalizeReviewerPassingScore(inspection?.workspaceFolderValue ?? inspection?.workspaceValue);
+}
+
+export function resolveWorkspaceReviewerAutoRefactorLimit(
+	inspection: WorkspacePinnedSettingInspection<number> | undefined,
+): number {
+	return normalizeReviewerAutoRefactorLimit(inspection?.workspaceFolderValue ?? inspection?.workspaceValue);
 }
 
 function getLanguagePack() {
@@ -193,23 +239,23 @@ function getLanguagePack() {
 }
 
 // ── Filesystem Task State Manager ────────────────────────────────────────────
-// Manages .ralph/story-status.json as the shared state and completion-signal
+// Manages .harness-runner/story-status.json as the shared state and completion-signal
 // registry. Legacy task-<id>-status files are migrated on read.
 
 class RalphStateManager {
 
-	/** Absolute path to the .ralph directory for the workspace. */
+	/** Absolute path to the .harness-runner directory for the workspace. */
 	static getRalphDir(workspaceRoot: string): string {
 		return resolveRalphDir(workspaceRoot);
 	}
 
-	/** Absolute path to the story status registry stored under .ralph/. */
+	/** Absolute path to the story status registry stored under .harness-runner/. */
 	static getStoryStatusRegistryPath(workspaceRoot: string): string {
 		return resolveStoryStatusRegistryPath(workspaceRoot);
 	}
 
 	/**
-	 * Ensure the .ralph directory exists.  Safe to call multiple times.
+	 * Ensure the .harness-runner directory exists. Safe to call multiple times.
 	 */
 	static ensureDir(workspaceRoot: string): void {
 		const dir = RalphStateManager.getRalphDir(workspaceRoot);
@@ -265,7 +311,7 @@ class RalphStateManager {
 
 	/**
 	 * Write "inprogress" for the given task.
-	 * Stores the transient signal inside .ralph/story-status.json.
+	 * Stores the transient signal inside .harness-runner/story-status.json.
 	 */
 	static setInProgress(workspaceRoot: string, taskId: string): void {
 		RalphStateManager.ensureDir(workspaceRoot);
@@ -373,7 +419,7 @@ class RalphStateManager {
 		}
 	}
 
-	/** Persist the per-story execution status map to .ralph/story-status.json. */
+	/** Persist the per-story execution status map to .harness-runner/story-status.json. */
 	static writeStoryStatusMap(workspaceRoot: string, statusMap: Record<string, StoryExecutionStatus>): void {
 		RalphStateManager.ensureDir(workspaceRoot);
 		const filePath = RalphStateManager.getStoryStatusRegistryPath(workspaceRoot);
@@ -426,12 +472,12 @@ class RalphStateManager {
 	}
 
 	/**
-	 * Ensure `.ralph/` is present in the workspace's .gitignore.
+	 * Ensure `.harness-runner/` is present in the workspace's .gitignore.
 	 * Creates .gitignore if it does not exist. Safe to call multiple times.
 	 */
 	static ensureGitignore(workspaceRoot: string): void {
 		const gitignorePath = path.join(workspaceRoot, '.gitignore');
-		const entriesToIgnore = ['.ralph/'];
+		const entriesToIgnore = ['.harness-runner/'];
 
 		try {
 			let content = '';
@@ -452,7 +498,7 @@ class RalphStateManager {
 
 			const separator = content.length > 0 && !content.endsWith('\n') ? '\n' : '';
 			const block = missing.join('\n');
-			fs.writeFileSync(gitignorePath, `${content}${separator}\n# RALPH Runner task state\n${block}\n`, 'utf-8');
+			fs.writeFileSync(gitignorePath, `${content}${separator}\n# Harness Runner task state\n${block}\n`, 'utf-8');
 			log(`  Added to .gitignore: ${missing.join(', ')}`);
 		} catch (e: unknown) {
 			const msg = e instanceof Error ? e.message : String(e);
@@ -666,7 +712,10 @@ export function activate(context: vscode.ExtensionContext) {
 	context.subscriptions.push(vscode.workspace.onDidChangeConfiguration(event => {
 		if (!event.affectsConfiguration('ralph-runner.language')
 			&& !event.affectsConfiguration('ralph-runner.policyGates')
-			&& !event.affectsConfiguration('ralph-runner.approvalPromptMode')) {
+			&& !event.affectsConfiguration('ralph-runner.approvalPromptMode')
+			&& !event.affectsConfiguration('ralph-runner.enableReviewerLoop')
+			&& !event.affectsConfiguration('ralph-runner.reviewPassingScore')
+			&& !event.affectsConfiguration('ralph-runner.maxAutoRefactorRounds')) {
 			return;
 		}
 		updateStatusBar(isRunning ? 'running' : 'idle');
@@ -729,7 +778,7 @@ async function startRalph(): Promise<void> {
 		return;
 	}
 
-	// ── Startup: ensure .ralph/ dir exists and is gitignored in the workspace ──
+	// ── Startup: ensure .harness-runner/ dir exists and is gitignored in the workspace ──
 	RalphStateManager.ensureDir(workspaceRoot);
 	RalphStateManager.ensureGitignore(workspaceRoot);
 
@@ -873,15 +922,15 @@ async function startRalph(): Promise<void> {
 			details: [baselinePath.replace(/\\/g, '/')],
 		});
 
-		// ── Persist "inprogress" state to .ralph/story-status.json ───────────
+		// ── Persist "inprogress" state to .harness-runner/story-status.json ───────────
 		RalphStateManager.setInProgress(workspaceRoot, nextStory.id);
 		RalphStateManager.setStoryExecutionStatus(workspaceRoot, nextStory.id, 'inprogress');
-		log(`  Task state written: .ralph/story-status.json[${nextStory.id}] = inprogress`);
+		log(`  Task state written: .harness-runner/story-status.json[${nextStory.id}] = inprogress`);
 
 		try {
 			activeRunLog?.transitionPhase('execution', `Delegating ${nextStory.id} to Copilot for implementation.`);
 			// executeStory returns only after Copilot has written "completed"
-			// to .ralph/story-status.json for this story id (or after a timeout).
+			// to .harness-runner/story-status.json for this story id (or after a timeout).
 			const executionResult = await executeStory(nextStory, workspaceRoot);
 
 			// Safety net: ensure the lock is always cleared on success
@@ -1252,9 +1301,6 @@ interface StoryExecutionArtifacts {
 	evidence: StoryEvidencePersistenceResult;
 }
 
-const MAX_AUTO_REFACTOR_ROUNDS = DEFAULT_STORY_AUTO_REFACTOR_LIMIT;
-const REVIEW_PASSING_SCORE = DEFAULT_STORY_REVIEW_PASSING_SCORE;
-
 async function executeStory(story: UserStory, workspaceRoot: string): Promise<{
 	taskMemory: TaskMemoryPersistenceResult;
 	checkpoint: ExecutionCheckpointPersistenceResult;
@@ -1262,6 +1308,7 @@ async function executeStory(story: UserStory, workspaceRoot: string): Promise<{
 	review: StoryReviewPersistenceResult;
 }> {
 	const prompt = buildCopilotPromptForStory(story, workspaceRoot);
+	const config = getConfig();
 	activeRunLog?.recordEvent({
 		phase: 'execution',
 		category: 'signal',
@@ -1281,12 +1328,30 @@ async function executeStory(story: UserStory, workspaceRoot: string): Promise<{
 	log(`  Task memory ready for ${story.id}: ${artifacts.taskMemory.filePath} (${artifacts.taskMemory.source})`);
 	log(`  Execution checkpoint ready for ${story.id}: ${artifacts.checkpoint.filePath} (${artifacts.checkpoint.source})`);
 	log(`  Story evidence ready for ${story.id}: ${artifacts.evidence.filePath} (${artifacts.evidence.source})`);
+	if (!config.ENABLE_REVIEWER_LOOP) {
+		log(`  Reviewer loop disabled for workspace; skipping reviewer pass for ${story.id}.`);
+		const reviewResult = ensureStoryReviewPersistence(story, workspaceRoot, artifacts, {
+			reviewPass: 1,
+			autoRefactorRounds: 0,
+			maxAutoRefactorRounds: config.MAX_AUTO_REFACTOR_ROUNDS,
+			passingScore: config.REVIEW_PASSING_SCORE,
+			allowMissingReview: true,
+			skipReason: 'Reviewer loop disabled in workspace settings.',
+		});
+		artifacts = reviewResult.artifacts;
+		return {
+			taskMemory: artifacts.taskMemory,
+			checkpoint: artifacts.checkpoint,
+			evidence: artifacts.evidence,
+			review: reviewResult.review,
+		};
+	}
 
 	RalphStateManager.setStoryExecutionStatus(workspaceRoot, story.id, 'pendingReview');
 	log(`  Story ${story.id} moved into Reviewer Agent pass.`);
 	activeRunLog?.transitionPhase('review', `Story ${story.id} moved into Reviewer Agent pass.`);
 
-	const reviewResult = await runReviewerAndAutoRefactorLoop(story, workspaceRoot, artifacts);
+	const reviewResult = await runReviewerAndAutoRefactorLoop(story, workspaceRoot, artifacts, config);
 	artifacts = reviewResult.artifacts;
 	return {
 		taskMemory: artifacts.taskMemory,
@@ -1314,6 +1379,7 @@ async function runReviewerAndAutoRefactorLoop(
 	story: UserStory,
 	workspaceRoot: string,
 	initialArtifacts: StoryExecutionArtifacts,
+	config = getConfig(),
 ): Promise<{
 	artifacts: StoryExecutionArtifacts;
 	review: StoryReviewPersistenceResult;
@@ -1321,7 +1387,7 @@ async function runReviewerAndAutoRefactorLoop(
 	let artifacts = initialArtifacts;
 	let autoRefactorRounds = 0;
 	let latestReview: StoryReviewPersistenceResult | null = null;
-	const maxReviewerPasses = deriveMaxReviewerPasses(MAX_AUTO_REFACTOR_ROUNDS);
+	const maxReviewerPasses = deriveMaxReviewerPasses(config.MAX_AUTO_REFACTOR_ROUNDS);
 
 	for (let reviewPass = 1; reviewPass <= maxReviewerPasses; reviewPass++) {
 		setTaskInProgressForFollowUpPass(workspaceRoot, story.id, 'pendingReview');
@@ -1337,7 +1403,8 @@ async function runReviewerAndAutoRefactorLoop(
 		const persistedReview = ensureStoryReviewPersistence(story, workspaceRoot, artifacts, {
 			reviewPass,
 			autoRefactorRounds,
-			maxAutoRefactorRounds: MAX_AUTO_REFACTOR_ROUNDS,
+			maxAutoRefactorRounds: config.MAX_AUTO_REFACTOR_ROUNDS,
+			passingScore: config.REVIEW_PASSING_SCORE,
 		});
 		artifacts = persistedReview.artifacts;
 		latestReview = persistedReview.review;
@@ -1349,18 +1416,18 @@ async function runReviewerAndAutoRefactorLoop(
 			return { artifacts, review: latestReview };
 		}
 
-		if (autoRefactorRounds >= MAX_AUTO_REFACTOR_ROUNDS || reviewPass >= maxReviewerPasses) {
+		if (autoRefactorRounds >= config.MAX_AUTO_REFACTOR_ROUNDS || reviewPass >= maxReviewerPasses) {
 			log(`  Reviewer Agent reached the maximum automatic refactor limit for ${story.id}.`);
 			return { artifacts, review: latestReview };
 		}
 
 		const nextRefactorRound = autoRefactorRounds + 1;
 		setTaskInProgressForFollowUpPass(workspaceRoot, story.id, 'inprogress');
-		log(`  Launching Executor Agent auto-refactor round ${nextRefactorRound}/${MAX_AUTO_REFACTOR_ROUNDS} for ${story.id}.`);
-		activeRunLog?.transitionPhase('refactor', `Launching auto-refactor round ${nextRefactorRound}/${MAX_AUTO_REFACTOR_ROUNDS} for ${story.id}.`);
-		activeRunLog?.recordRefactorRound(nextRefactorRound, MAX_AUTO_REFACTOR_ROUNDS, `Reviewer findings triggered an automatic refactor for ${story.id}.`);
+		log(`  Launching Executor Agent auto-refactor round ${nextRefactorRound}/${config.MAX_AUTO_REFACTOR_ROUNDS} for ${story.id}.`);
+		activeRunLog?.transitionPhase('refactor', `Launching auto-refactor round ${nextRefactorRound}/${config.MAX_AUTO_REFACTOR_ROUNDS} for ${story.id}.`);
+		activeRunLog?.recordRefactorRound(nextRefactorRound, config.MAX_AUTO_REFACTOR_ROUNDS, `Reviewer findings triggered an automatic refactor for ${story.id}.`);
 		await sendToCopilot(
-			buildRefactorPromptForStory(story, workspaceRoot, artifacts, latestReview, nextRefactorRound),
+			buildRefactorPromptForStory(story, workspaceRoot, artifacts, latestReview, nextRefactorRound, config),
 			story.id,
 			workspaceRoot,
 		);
@@ -1378,7 +1445,8 @@ async function runReviewerAndAutoRefactorLoop(
 		: ensureStoryReviewPersistence(story, workspaceRoot, artifacts, {
 		reviewPass: 1,
 		autoRefactorRounds,
-		maxAutoRefactorRounds: MAX_AUTO_REFACTOR_ROUNDS,
+		maxAutoRefactorRounds: config.MAX_AUTO_REFACTOR_ROUNDS,
+		passingScore: config.REVIEW_PASSING_SCORE,
 	});
 	return {
 		artifacts: fallbackResult.artifacts,
@@ -1440,14 +1508,15 @@ function buildReviewerPromptForStory(
 	workspaceRoot: string,
 	artifacts: StoryExecutionArtifacts,
 	reviewPass: number,
+	config = getConfig(),
 ): string {
 	return composeStoryReviewerPrompt({
 		story,
 		workspaceRoot,
 		reviewPass,
-		maxReviewerPasses: deriveMaxReviewerPasses(MAX_AUTO_REFACTOR_ROUNDS),
-		maxAutoRefactorRounds: MAX_AUTO_REFACTOR_ROUNDS,
-		passingScore: REVIEW_PASSING_SCORE,
+		maxReviewerPasses: deriveMaxReviewerPasses(config.MAX_AUTO_REFACTOR_ROUNDS),
+		maxAutoRefactorRounds: config.MAX_AUTO_REFACTOR_ROUNDS,
+		passingScore: config.REVIEW_PASSING_SCORE,
 		taskMemoryPath: resolveTaskMemoryPath(workspaceRoot, story.id).replace(/\\/g, '/'),
 		executionCheckpointPath: resolveExecutionCheckpointPath(workspaceRoot, story.id).replace(/\\/g, '/'),
 		evidencePath: resolveStoryEvidencePath(workspaceRoot, story.id).replace(/\\/g, '/'),
@@ -1466,12 +1535,13 @@ function buildRefactorPromptForStory(
 	artifacts: StoryExecutionArtifacts,
 	review: StoryReviewPersistenceResult,
 	refactorRound: number,
+	config = getConfig(),
 ): string {
 	return composeStoryRefactorPrompt({
 		story,
 		workspaceRoot,
 		refactorRound,
-		maxAutoRefactorRounds: MAX_AUTO_REFACTOR_ROUNDS,
+		maxAutoRefactorRounds: config.MAX_AUTO_REFACTOR_ROUNDS,
 		reviewPass: review.artifact.reviewPass,
 		reviewSummaryLines: summarizeStoryReviewForPrompt(review.artifact),
 		taskMemoryPath: resolveTaskMemoryPath(workspaceRoot, story.id).replace(/\\/g, '/'),
@@ -1979,7 +2049,7 @@ interface CopilotCompletionWaitOptions {
 }
 
 /**
- * Polls .ralph/story-status.json until Copilot writes "completed" to the task entry.
+ * Polls .harness-runner/story-status.json until Copilot writes "completed" to the task entry.
  * Enforces a minimum wait (copilotMinWaitMs) before checking so that Copilot
  * has time to begin working before the first read.
  * Throws if the timeout is exceeded without seeing "completed".
@@ -1991,7 +2061,7 @@ async function waitForCopilotCompletion(
 ): Promise<void> {
 	const config = getConfig();
 	const requireRunnerActive = options?.requireRunnerActive ?? true;
-	log(`  Waiting for Copilot to write "completed" to .ralph/story-status.json[${taskId}]...`);
+	log(`  Waiting for Copilot to write "completed" to .harness-runner/story-status.json[${taskId}]...`);
 
 	const startTime = Date.now();
 
@@ -2014,7 +2084,7 @@ async function waitForCopilotCompletion(
 
 		const status = RalphStateManager.getTaskSignalStatus(workspaceRoot, taskId);
 		if (status === 'completed') {
-			log(`  ✓ Copilot wrote "completed" to .ralph/story-status.json[${taskId}] (elapsed ${Math.round(elapsed / 1000)}s); validating artifacts next.`);
+			log(`  ✓ Copilot wrote "completed" to .harness-runner/story-status.json[${taskId}] (elapsed ${Math.round(elapsed / 1000)}s); validating artifacts next.`);
 			return;
 		}
 
@@ -2228,7 +2298,7 @@ function detectChangedFilesForWorkspace(workspaceRoot: string): string[] {
 			.filter((line: string) => line.length > 0)
 			.map((line: string) => line.slice(3).split(' -> ').pop() ?? '')
 			.map((filePath: string) => filePath.replace(/\\/g, '/'))
-			.filter((filePath: string) => filePath.length > 0 && !filePath.startsWith('.ralph/'));
+			.filter((filePath: string) => filePath.length > 0 && !filePath.startsWith('.harness-runner/'));
 
 		if (changedFiles.length > 0) {
 			return Array.from(new Set(changedFiles));
@@ -2245,10 +2315,10 @@ function getStoryChangedFiles(workspaceRoot: string, storyId: string): string[] 
 	const baseline = readPolicyBaseline(workspaceRoot, storyId);
 	if (baseline) {
 		return deriveStoryChangedFiles(currentChangedFiles, baseline)
-			.filter(filePath => !filePath.startsWith('.ralph/'));
+			.filter(filePath => !filePath.startsWith('.harness-runner/'));
 	}
 
-	return currentChangedFiles.filter(filePath => !filePath.startsWith('.ralph/'));
+	return currentChangedFiles.filter(filePath => !filePath.startsWith('.harness-runner/'));
 }
 
 function detectChangedFilesForTaskMemory(workspaceRoot: string, storyId: string): string[] {
@@ -2431,6 +2501,9 @@ function ensureStoryReviewPersistence(
 		reviewPass: number;
 		autoRefactorRounds: number;
 		maxAutoRefactorRounds: number;
+		passingScore: number;
+		allowMissingReview?: boolean;
+		skipReason?: string;
 	},
 ): {
 	artifacts: StoryExecutionArtifacts;
@@ -2452,7 +2525,7 @@ function ensureStoryReviewPersistence(
 		const validation = validateStoryReviewResult(candidate.value, {
 			reviewPass: options.reviewPass,
 			maxAutoRefactorRounds: options.maxAutoRefactorRounds,
-			passingScore: REVIEW_PASSING_SCORE,
+			passingScore: options.passingScore,
 			refactorPerformed: options.autoRefactorRounds > 0,
 			refactorSummary: options.autoRefactorRounds > 0 ? `Automatic refactor rounds executed: ${options.autoRefactorRounds}.` : undefined,
 		});
@@ -2465,11 +2538,38 @@ function ensureStoryReviewPersistence(
 		log(`  WARNING: Review summary from ${candidate.label} failed validation for ${story.id}: ${validation.errors.join(' | ')}`);
 	}
 
+	if (!reviewArtifact && options.allowMissingReview) {
+		reviewArtifact = createSynthesizedStoryReview(story, {
+			reviewPass: options.reviewPass,
+			maxAutoRefactorRounds: options.maxAutoRefactorRounds,
+			passingScore: options.passingScore,
+			refactorPerformed: false,
+			changedFiles: artifacts.evidence.artifact.changedFiles,
+			taskMemory: artifacts.taskMemory.artifact,
+			checkpoint: artifacts.checkpoint.artifact,
+			evidence: artifacts.evidence.artifact,
+			fallbackReason: options.skipReason ?? 'Reviewer loop skipped in workspace settings.',
+		});
+		reviewSource = 'synthesized';
+		reviewArtifact.passed = true;
+		reviewArtifact.totalScore = reviewArtifact.maxScore;
+		reviewArtifact.findings = [];
+		reviewArtifact.recommendations = options.skipReason ? [options.skipReason] : [];
+		const perDimensionScore = Math.floor(reviewArtifact.maxScore / Math.max(1, reviewArtifact.dimensions.length));
+		reviewArtifact.dimensions = reviewArtifact.dimensions.map(dimension => ({
+			...dimension,
+			score: perDimensionScore,
+			summary: options.skipReason ?? 'Reviewer loop skipped by workspace configuration.',
+			issues: [],
+			recommendations: options.skipReason ? [options.skipReason] : [],
+		}));
+	}
+
 	if (!reviewArtifact) {
 		reviewArtifact = createSynthesizedStoryReview(story, {
 			reviewPass: options.reviewPass,
 			maxAutoRefactorRounds: options.maxAutoRefactorRounds,
-			passingScore: REVIEW_PASSING_SCORE,
+			passingScore: options.passingScore,
 			refactorPerformed: options.autoRefactorRounds > 0,
 			refactorSummary: options.autoRefactorRounds > 0 ? `Automatic refactor rounds executed: ${options.autoRefactorRounds}.` : undefined,
 			changedFiles: artifacts.evidence.artifact.changedFiles,
@@ -2486,6 +2586,7 @@ function ensureStoryReviewPersistence(
 		reviewerPasses: options.reviewPass,
 		autoRefactorRounds: options.autoRefactorRounds,
 		maxAutoRefactorRounds: options.maxAutoRefactorRounds,
+		endedReason: options.allowMissingReview ? 'passed' : undefined,
 	});
 	const finalEvidenceStatus = reviewArtifact.passed
 		? artifacts.evidence.artifact.status
@@ -2700,7 +2801,7 @@ function extractRelatedStoryIds(story: UserStory): string[] {
 }
 
 /**
- * Block until no transient signal entry in .ralph/story-status.json is "inprogress".
+ * Block until no transient signal entry in .harness-runner/story-status.json is "inprogress".
  * Under normal sequential operation this resolves immediately.
  * Polls every COPILOT_RESPONSE_POLL_MS and times out after COPILOT_TIMEOUT_MS.
  */
@@ -2712,7 +2813,7 @@ async function ensureNoActiveTask(workspaceRoot: string): Promise<void> {
 	}
 
 	const activeId = RalphStateManager.getInProgressTaskId(workspaceRoot);
-	log(`  ⏳ Task ${activeId} is still marked inprogress in .ralph/story-status.json — waiting for it to complete...`);
+	log(`  ⏳ Task ${activeId} is still marked inprogress in .harness-runner/story-status.json — waiting for it to complete...`);
 
 	const waitStart = Date.now();
 
@@ -2907,7 +3008,7 @@ async function resetStory(): Promise<void> {
 
 	if (selection) {
 		removeProgressEntry(workspaceRoot, selection.storyId);
-		// Also clear the .ralph status file if present
+		// Also clear the .harness-runner status file if present
 		RalphStateManager.clearStalledTask(workspaceRoot, selection.storyId);
 		RalphStateManager.clearStoryExecutionStatus(workspaceRoot, selection.storyId);
 		try {
@@ -4674,6 +4775,7 @@ async function configurePolicyGates(): Promise<void> {
 		requireProjectConstraintsBeforeRun: cfg.get<boolean>('requireProjectConstraintsBeforeRun', false),
 		requireDesignContextForTaggedStories: cfg.get<boolean>('requireDesignContextForTaggedStories', false),
 	});
+	const currentConfig = getConfig();
 	const enabledSelection = await vscode.window.showQuickPick([
 		{ label: languagePack.policyConfig.enabledLabel, description: languagePack.policyConfig.enabledDescription, value: true },
 		{ label: languagePack.policyConfig.disabledLabel, description: languagePack.policyConfig.disabledDescription, value: false },
@@ -4708,6 +4810,42 @@ async function configurePolicyGates(): Promise<void> {
 		return;
 	}
 
+	const reviewerLoopSelection = await vscode.window.showQuickPick([
+		{ label: languagePack.policyConfig.reviewerLoopEnabledLabel, description: languagePack.policyConfig.reviewerLoopEnabledDescription, value: true },
+		{ label: languagePack.policyConfig.reviewerLoopDisabledLabel, description: languagePack.policyConfig.reviewerLoopDisabledDescription, value: false },
+	], {
+		title: languagePack.policyConfig.title,
+		placeHolder: languagePack.policyConfig.reviewerLoopPlaceholder,
+	});
+	if (!reviewerLoopSelection) {
+		return;
+	}
+
+	const reviewerPassingScore = await promptForWorkspacePinnedInteger({
+		title: languagePack.policyConfig.title,
+		prompt: languagePack.policyConfig.reviewerPassingScorePrompt,
+		placeHolder: languagePack.policyConfig.reviewerPassingScorePlaceholder,
+		initialValue: String(currentConfig.REVIEW_PASSING_SCORE),
+		minimum: 1,
+		maximum: 100,
+		validationMessage: languagePack.policyConfig.reviewerPassingScoreValidation,
+	});
+	if (reviewerPassingScore === undefined) {
+		return;
+	}
+
+	const reviewerAutoRefactorRounds = await promptForWorkspacePinnedInteger({
+		title: languagePack.policyConfig.title,
+		prompt: languagePack.policyConfig.autoRefactorRoundsPrompt,
+		placeHolder: languagePack.policyConfig.autoRefactorRoundsPlaceholder,
+		initialValue: String(currentConfig.MAX_AUTO_REFACTOR_ROUNDS),
+		minimum: 0,
+		validationMessage: languagePack.policyConfig.autoRefactorRoundsValidation,
+	});
+	if (reviewerAutoRefactorRounds === undefined) {
+		return;
+	}
+
 	const updatedPolicyConfig = applyBuiltinRuleSelections(
 		rawPolicyConfig,
 		enabledSelection.value,
@@ -4716,12 +4854,14 @@ async function configurePolicyGates(): Promise<void> {
 	await cfg.update('policyGates', updatedPolicyConfig, scopeSelection.target);
 	await cfg.update('requireProjectConstraintsBeforeRun', undefined, scopeSelection.target);
 	await cfg.update('requireDesignContextForTaggedStories', undefined, scopeSelection.target);
-	await cfg.update('approvalPromptMode', approvalModeSelection.value, scopeSelection.target);
+	await cfg.update('approvalPromptMode', approvalModeSelection.value, vscode.ConfigurationTarget.Workspace);
+	await cfg.update('enableReviewerLoop', reviewerLoopSelection.value, vscode.ConfigurationTarget.Workspace);
+	await cfg.update('reviewPassingScore', reviewerPassingScore, vscode.ConfigurationTarget.Workspace);
+	await cfg.update('maxAutoRefactorRounds', reviewerAutoRefactorRounds, vscode.ConfigurationTarget.Workspace);
 	if (scopeSelection.target === vscode.ConfigurationTarget.Global) {
 		await cfg.update('policyGates', undefined, vscode.ConfigurationTarget.Workspace);
 		await cfg.update('requireProjectConstraintsBeforeRun', undefined, vscode.ConfigurationTarget.Workspace);
 		await cfg.update('requireDesignContextForTaggedStories', undefined, vscode.ConfigurationTarget.Workspace);
-		await cfg.update('approvalPromptMode', undefined, vscode.ConfigurationTarget.Workspace);
 	}
 	updateStatusBar(isRunning ? 'running' : 'idle');
 
@@ -4741,6 +4881,39 @@ function buildPolicyRuleQuickPickItems(languagePack: ReturnType<typeof getLangua
 		{ label: languagePack.policyConfig.ruleLabels.requireExecutionCheckpoint, description: languagePack.policyConfig.ruleDescriptions.requireExecutionCheckpoint, picked: enabledRuleIds.has('require-execution-checkpoint-artifact'), ruleId: 'require-execution-checkpoint-artifact' },
 		{ label: languagePack.policyConfig.ruleLabels.requireStoryEvidence, description: languagePack.policyConfig.ruleDescriptions.requireStoryEvidence, picked: enabledRuleIds.has('require-story-evidence-artifact'), ruleId: 'require-story-evidence-artifact' },
 	] as Array<vscode.QuickPickItem & { picked: boolean; ruleId: string; }>;
+}
+
+async function promptForWorkspacePinnedInteger(options: {
+	title: string;
+	prompt: string;
+	placeHolder: string;
+	initialValue: string;
+	minimum: number;
+	maximum?: number;
+	validationMessage: string;
+}): Promise<number | undefined> {
+	const rawValue = await vscode.window.showInputBox({
+		title: options.title,
+		prompt: options.prompt,
+		placeHolder: options.placeHolder,
+		value: options.initialValue,
+		ignoreFocusOut: true,
+		validateInput: value => {
+			const parsed = Number(value.trim());
+			if (!Number.isInteger(parsed) || parsed < options.minimum) {
+				return options.validationMessage;
+			}
+			if (options.maximum !== undefined && parsed > options.maximum) {
+				return options.validationMessage;
+			}
+			return undefined;
+		},
+	});
+	if (rawValue === undefined) {
+		return undefined;
+	}
+
+	return Number(rawValue.trim());
 }
 
 // ── Quick Start ─────────────────────────────────────────────────────────────

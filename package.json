@@ -2,7 +2,7 @@
   "name": "ralph-runner",
   "displayName": "Ralph Runner",
   "description": "Autonomous task runner — reads prd.json user stories, tracks progress inline, and drives Copilot Chat to execute each story in an automated loop",
-  "version": "0.0.8",
+  "version": "0.0.9",
   "publisher": "recent-graduates",
   "repository": {
     "type": "git",
@@ -284,11 +284,29 @@
           "default": "default",
           "enum": ["default", "bypass", "autopilot"],
           "enumDescriptions": [
-            "高风险故事完成后显示审批提示，可选择打开审批流或证据包。",
-            "高风险故事完成后直接进入审批流，跳过中间提示。",
-            "高风险故事完成后不依赖弹窗，而是通过日志、状态栏和菜单持续提示待审批故事。"
+            "当前工作区固定在该模式；高风险故事完成后显示审批提示，可选择打开审批流或证据包。",
+            "当前工作区固定在该模式；高风险故事完成后直接进入审批流，跳过中间提示。",
+            "当前工作区固定在该模式；高风险故事完成后不依赖弹窗，而是通过日志、状态栏和菜单持续提示待审批故事。"
           ],
-          "description": "审批提示模式。可用于让 Ralph Runner 的审批交互与当前 chat 的 default / bypass / autopilot 使用习惯保持一致。"
+          "description": "审批提示模式。RALPH Runner 只读取当前工作区中的该值，并在新开 Copilot Chat 时继续按这个固定模式处理审批交互。"
+        },
+        "ralph-runner.enableReviewerLoop": {
+          "type": "boolean",
+          "default": true,
+          "description": "是否启用 Reviewer 评分流程。RALPH Runner 只读取当前工作区中的该值；关闭后，故事执行完成后不再进入 Reviewer pass 和自动修复回路。"
+        },
+        "ralph-runner.reviewPassingScore": {
+          "type": "number",
+          "default": 85,
+          "minimum": 1,
+          "maximum": 100,
+          "description": "Reviewer 评分流程的通过分数。RALPH Runner 只读取当前工作区中的该值。"
+        },
+        "ralph-runner.maxAutoRefactorRounds": {
+          "type": "number",
+          "default": 2,
+          "minimum": 0,
+          "description": "Reviewer 评分未通过时允许自动修复的最大轮数。RALPH Runner 只读取当前工作区中的该值。"
         },
         "ralph-runner.language": {
           "type": "string",

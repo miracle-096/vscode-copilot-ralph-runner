@@ -119,7 +119,16 @@ import {
 } from '../runLog';
 import { buildRalphHelpDocument, getRalphHelpContent } from '../helpManual';
 import { parseTaskSignalStatus } from '../taskStatus';
-import { shouldAbortCopilotWait } from '../extension';
+import {
+	normalizeReviewerAutoRefactorLimit,
+	normalizeReviewerLoopEnabled,
+	normalizeReviewerPassingScore,
+	resolveWorkspaceApprovalPromptMode,
+	resolveWorkspaceReviewerAutoRefactorLimit,
+	resolveWorkspaceReviewerLoopEnabled,
+	resolveWorkspaceReviewerPassingScore,
+	shouldAbortCopilotWait,
+} from '../extension';
 // import * as myExtension from '../../extension';
 
 suite('Extension Test Suite', () => {
@@ -172,6 +181,9 @@ suite('Extension Test Suite', () => {
 		assert.strictEqual(packageJson.contributes?.keybindings?.some(binding => binding.command === 'ralph-runner.showMenu' && binding.key === 'alt+r'), true);
 		assert.strictEqual(typeof packageJson.contributes?.configuration?.properties?.['ralph-runner.policyGates'], 'object');
 		assert.strictEqual(typeof packageJson.contributes?.configuration?.properties?.['ralph-runner.approvalPromptMode'], 'object');
+		assert.strictEqual(typeof packageJson.contributes?.configuration?.properties?.['ralph-runner.enableReviewerLoop'], 'object');
+		assert.strictEqual(typeof packageJson.contributes?.configuration?.properties?.['ralph-runner.reviewPassingScore'], 'object');
+		assert.strictEqual(typeof packageJson.contributes?.configuration?.properties?.['ralph-runner.maxAutoRefactorRounds'], 'object');
 		assert.strictEqual('ralph-runner.requireProjectConstraintsBeforeRun' in (packageJson.contributes?.configuration?.properties ?? {}), false);
 		assert.strictEqual('ralph-runner.requireDesignContextForTaggedStories' in (packageJson.contributes?.configuration?.properties ?? {}), false);
 		const policyGateDefault = packageJson.contributes?.configuration?.properties?.['ralph-runner.policyGates'] as {
@@ -185,6 +197,54 @@ suite('Extension Test Suite', () => {
 		assert.strictEqual(contributedParticipants.some(participant => participant.name === 'ralph' && participant.commands?.some(command => command.name === 'ralph-spec')), true);
 		assert.strictEqual(contributedParticipants.some(participant => participant.description?.includes('auto-send the final prompt to Copilot Chat')), true);
 		assert.strictEqual(contributedParticipants.some(participant => participant.commands?.some(command => command.name === 'ralph-spec' && command.description?.includes('auto-send the ready-to-use final version to Copilot Chat'))), true);
+	});
+
+	test('approval prompt mode resolves from workspace settings only', () => {
+		assert.strictEqual(resolveWorkspaceApprovalPromptMode(undefined), 'default');
+		assert.strictEqual(resolveWorkspaceApprovalPromptMode({
+			key: 'approvalPromptMode',
+			defaultValue: 'default',
+			globalValue: 'autopilot',
+			workspaceValue: 'bypass',
+		}), 'bypass');
+		assert.strictEqual(resolveWorkspaceApprovalPromptMode({
+			key: 'approvalPromptMode',
+			defaultValue: 'default',
+			globalValue: 'autopilot',
+		}), 'default');
+		assert.strictEqual(resolveWorkspaceApprovalPromptMode({
+			key: 'approvalPromptMode',
+			defaultValue: 'default',
+			globalValue: 'default',
+			workspaceFolderValue: 'autopilot',
+		}), 'autopilot');
+	});
+
+	test('reviewer settings resolve from workspace settings only', () => {
+		assert.strictEqual(resolveWorkspaceReviewerLoopEnabled(undefined), true);
+		assert.strictEqual(resolveWorkspaceReviewerLoopEnabled({ globalValue: true, workspaceValue: false }), false);
+		assert.strictEqual(resolveWorkspaceReviewerLoopEnabled({ globalValue: false }), true);
+
+		assert.strictEqual(resolveWorkspaceReviewerPassingScore(undefined), 85);
+		assert.strictEqual(resolveWorkspaceReviewerPassingScore({ globalValue: 91, workspaceValue: 70 }), 70);
+		assert.strictEqual(resolveWorkspaceReviewerPassingScore({ globalValue: 91 }), 85);
+		assert.strictEqual(resolveWorkspaceReviewerPassingScore({ workspaceFolderValue: 101 }), 100);
+
+		assert.strictEqual(resolveWorkspaceReviewerAutoRefactorLimit(undefined), 2);
+		assert.strictEqual(resolveWorkspaceReviewerAutoRefactorLimit({ globalValue: 4, workspaceValue: 1 }), 1);
+		assert.strictEqual(resolveWorkspaceReviewerAutoRefactorLimit({ globalValue: 4 }), 2);
+		assert.strictEqual(resolveWorkspaceReviewerAutoRefactorLimit({ workspaceFolderValue: -3 }), 0);
+	});
+
+	test('reviewer setting normalizers clamp invalid values safely', () => {
+		assert.strictEqual(normalizeReviewerLoopEnabled(undefined), true);
+		assert.strictEqual(normalizeReviewerLoopEnabled(false), false);
+		assert.strictEqual(normalizeReviewerPassingScore(undefined), 85);
+		assert.strictEqual(normalizeReviewerPassingScore(0), 1);
+		assert.strictEqual(normalizeReviewerPassingScore(120), 100);
+		assert.strictEqual(normalizeReviewerAutoRefactorLimit(undefined), 2);
+		assert.strictEqual(normalizeReviewerAutoRefactorLimit(-1), 0);
+		assert.strictEqual(normalizeReviewerAutoRefactorLimit(2.7), 3);
 	});
 
 	test('RALPH help documents cover introduction and split manual flows', () => {
@@ -469,9 +529,9 @@ suite('Extension Test Suite', () => {
 		const prompt = buildProjectConstraintsInitializationPrompt({
 			workspaceRoot: 'd:/workspace/vscode-copilot-ralph-runner',
 			language: 'Chinese',
-			generatedPath: 'd:/workspace/vscode-copilot-ralph-runner/.ralph/project-constraints.generated.json',
-			editablePath: 'd:/workspace/vscode-copilot-ralph-runner/.github/ralph/project-constraints.md',
-			completionSignalPath: 'd:/workspace/vscode-copilot-ralph-runner/.ralph/story-status.json',
+			generatedPath: 'd:/workspace/vscode-copilot-ralph-runner/.harness-runner/project-constraints.generated.json',
+			editablePath: 'd:/workspace/vscode-copilot-ralph-runner/.harness-runner/project-constraints.md',
+			completionSignalPath: 'd:/workspace/vscode-copilot-ralph-runner/.harness-runner/story-status.json',
 			completionSignalKey: 'task-project-constraints-init',
 			scanResult: {
 				generatedConstraints: {
@@ -504,8 +564,8 @@ suite('Extension Test Suite', () => {
 			additionalInstructions: '重点强调交付前的验证步骤。\n\n补充：不要覆盖团队现有术语。',
 		});
 
-		assert.ok(prompt.includes('Write the machine-readable generated constraints JSON directly to: d:/workspace/vscode-copilot-ralph-runner/.ralph/project-constraints.generated.json'));
-		assert.ok(prompt.includes('Write the editable team-maintained markdown constraints directly to: d:/workspace/vscode-copilot-ralph-runner/.github/ralph/project-constraints.md'));
+		assert.ok(prompt.includes('Write the machine-readable generated constraints JSON directly to: d:/workspace/vscode-copilot-ralph-runner/.harness-runner/project-constraints.generated.json'));
+		assert.ok(prompt.includes('Write the editable team-maintained markdown constraints directly to: d:/workspace/vscode-copilot-ralph-runner/.harness-runner/project-constraints.md'));
 		assert.ok(prompt.includes('User-provided project rules and reference material:'));
 		assert.ok(prompt.includes('### docs/team-rules.md'));
 		assert.ok(prompt.includes('Note: This file has higher priority than older README guidance.'));
@@ -520,8 +580,8 @@ suite('Extension Test Suite', () => {
 			workspaceRoot: 'd:/workspace/vscode-copilot-ralph-runner',
 			language: 'Chinese',
 			userRequest: '请帮我补充一个新命令，并尽量不要改动现有目录结构。',
-			generatedPath: 'd:/workspace/vscode-copilot-ralph-runner/.ralph/project-constraints.generated.json',
-			editablePath: 'd:/workspace/vscode-copilot-ralph-runner/.github/ralph/project-constraints.md',
+			generatedPath: 'd:/workspace/vscode-copilot-ralph-runner/.harness-runner/project-constraints.generated.json',
+			editablePath: 'd:/workspace/vscode-copilot-ralph-runner/.harness-runner/project-constraints.md',
 			constraints: {
 				version: 1,
 				generatedAt: new Date().toISOString(),
@@ -554,8 +614,8 @@ suite('Extension Test Suite', () => {
 			workspaceRoot: 'd:/workspace/vscode-copilot-ralph-runner',
 			language: 'Chinese',
 			userRequest: '请帮我完善 ralph run 的执行说明。',
-			generatedPath: 'd:/workspace/vscode-copilot-ralph-runner/.ralph/project-constraints.generated.json',
-			editablePath: 'd:/workspace/vscode-copilot-ralph-runner/.github/ralph/project-constraints.md',
+			generatedPath: 'd:/workspace/vscode-copilot-ralph-runner/.harness-runner/project-constraints.generated.json',
+			editablePath: 'd:/workspace/vscode-copilot-ralph-runner/.harness-runner/project-constraints.md',
 			knowledgeReminderLines: ['- [stale-documentation] README may lag behind the current run flow.'],
 			constraints: null,
 		});
@@ -811,7 +871,7 @@ suite('Extension Test Suite', () => {
 			targetScope: 'screen',
 			targetScopeId: 'Dashboard',
 			targetFilePath: 'd:/workspace/vscode-copilot-ralph-runner/.prd/design-context/shared/screen-dashboard.design.json',
-			completionSignalPath: 'd:/workspace/vscode-copilot-ralph-runner/.ralph/story-status.json',
+			completionSignalPath: 'd:/workspace/vscode-copilot-ralph-runner/.harness-runner/story-status.json',
 			completionSignalKey: 'task-design-context-draft-us-200-screen-dashboard',
 			story: {
 				id: 'US-200',
@@ -834,7 +894,7 @@ suite('Extension Test Suite', () => {
 		assert.ok(prompt.includes('Reference docs: docs/ui/dashboard.md'));
 		assert.ok(prompt.includes('Existing applicable design context:'));
 		assert.ok(prompt.includes('Additional instructions: Focus on reusable dashboard shell constraints.'));
-		assert.ok(prompt.includes('update the entry "task-design-context-draft-us-200-screen-dashboard" in d:/workspace/vscode-copilot-ralph-runner/.ralph/story-status.json to the exact text completed'));
+		assert.ok(prompt.includes('update the entry "task-design-context-draft-us-200-screen-dashboard" in d:/workspace/vscode-copilot-ralph-runner/.harness-runner/story-status.json to the exact text completed'));
 	});
 
 	test('Visual design draft prompt supports reusable draft creation without a story', () => {
@@ -843,7 +903,7 @@ suite('Extension Test Suite', () => {
 			targetScope: 'module',
 			targetScopeId: 'checkout-shell',
 			targetFilePath: 'd:/workspace/vscode-copilot-ralph-runner/.prd/design-context/shared/module-checkout-shell.design.json',
-			completionSignalPath: 'd:/workspace/vscode-copilot-ralph-runner/.ralph/story-status.json',
+			completionSignalPath: 'd:/workspace/vscode-copilot-ralph-runner/.harness-runner/story-status.json',
 			completionSignalKey: 'task-design-context-draft-checkout-shell-module-checkout-shell',
 			figmaUrl: 'https://figma.example/file/checkout-shell',
 			screenshotPaths: ['images/checkout-shell.png'],
@@ -860,8 +920,8 @@ suite('Extension Test Suite', () => {
 		test('Batch design matching prompt tells Copilot to omit unrelated stories', () => {
 			const prompt = buildStoryDesignContextBatchMatchPrompt({
 				workspaceRoot: 'd:/workspace/vscode-copilot-ralph-runner',
-				targetFilePath: 'd:/workspace/vscode-copilot-ralph-runner/.ralph/design-context-suggestions/design-context-match.json',
-				completionSignalPath: 'd:/workspace/vscode-copilot-ralph-runner/.ralph/story-status.json',
+				targetFilePath: 'd:/workspace/vscode-copilot-ralph-runner/.harness-runner/design-context-suggestions/design-context-match.json',
+				completionSignalPath: 'd:/workspace/vscode-copilot-ralph-runner/.harness-runner/story-status.json',
 				completionSignalKey: 'task-design-context-match',
 				candidateDrafts: [
 					{
@@ -942,8 +1002,8 @@ suite('Extension Test Suite', () => {
 	test('Story design context suggestion prompt emphasizes shared context and delta-only output', () => {
 		const prompt = buildStoryDesignContextSuggestionPrompt({
 			workspaceRoot: 'd:/workspace/vscode-copilot-ralph-runner',
-			targetFilePath: 'd:/workspace/vscode-copilot-ralph-runner/.ralph/design-context-suggestions/US-201.suggestion.json',
-			completionSignalPath: 'd:/workspace/vscode-copilot-ralph-runner/.ralph/story-status.json',
+			targetFilePath: 'd:/workspace/vscode-copilot-ralph-runner/.harness-runner/design-context-suggestions/US-201.suggestion.json',
+			completionSignalPath: 'd:/workspace/vscode-copilot-ralph-runner/.harness-runner/story-status.json',
 			completionSignalKey: 'task-design-context-suggest-us-201',
 			story: {
 				id: 'US-201',
@@ -1279,10 +1339,10 @@ suite('Extension Test Suite', () => {
 				priority: 1,
 			},
 			workspaceRoot: 'd:/workspace/vscode-copilot-ralph-runner',
-			taskMemoryPath: 'd:/workspace/vscode-copilot-ralph-runner/.ralph/memory/US-301.json',
-			executionCheckpointPath: 'd:/workspace/vscode-copilot-ralph-runner/.ralph/checkpoints/US-301.checkpoint.json',
-			evidencePath: 'd:/workspace/vscode-copilot-ralph-runner/.ralph/evidence/US-301.evidence.json',
-			completionSignalPath: 'd:/workspace/vscode-copilot-ralph-runner/.ralph/story-status.json',
+			taskMemoryPath: 'd:/workspace/vscode-copilot-ralph-runner/.harness-runner/memory/US-301.json',
+			executionCheckpointPath: 'd:/workspace/vscode-copilot-ralph-runner/.harness-runner/checkpoints/US-301.checkpoint.json',
+			evidencePath: 'd:/workspace/vscode-copilot-ralph-runner/.harness-runner/evidence/US-301.evidence.json',
+			completionSignalPath: 'd:/workspace/vscode-copilot-ralph-runner/.harness-runner/story-status.json',
 			completionSignalKey: 'US-301',
 		});
 
@@ -1292,11 +1352,11 @@ suite('Extension Test Suite', () => {
 		assert.ok(prompt.includes('Apply architecture thinking during execution: keep module boundaries explicit'));
 		assert.ok(prompt.includes('Do not reduce governance to language-specific lint or static complexity rules'));
 		assert.ok(prompt.includes('persist reusable architecture conclusions in architectureNotes'));
-		assert.ok(prompt.includes('d:/workspace/vscode-copilot-ralph-runner/.ralph/memory/US-301.json'));
+		assert.ok(prompt.includes('d:/workspace/vscode-copilot-ralph-runner/.harness-runner/memory/US-301.json'));
 		assert.ok(prompt.includes('Also write a structured execution checkpoint artifact as valid JSON to:'));
-		assert.ok(prompt.includes('d:/workspace/vscode-copilot-ralph-runner/.ralph/checkpoints/US-301.checkpoint.json'));
+		assert.ok(prompt.includes('d:/workspace/vscode-copilot-ralph-runner/.harness-runner/checkpoints/US-301.checkpoint.json'));
 		assert.ok(prompt.includes('Also write a structured evidence artifact as valid JSON to:'));
-		assert.ok(prompt.includes('d:/workspace/vscode-copilot-ralph-runner/.ralph/evidence/US-301.evidence.json'));
+		assert.ok(prompt.includes('d:/workspace/vscode-copilot-ralph-runner/.harness-runner/evidence/US-301.evidence.json'));
 		assert.ok(prompt.includes('Only write the completion signal after the task memory artifact, execution checkpoint, and evidence artifact all exist and are complete.'));
 	});
 
@@ -1314,10 +1374,10 @@ suite('Extension Test Suite', () => {
 			maxReviewerPasses: 3,
 			maxAutoRefactorRounds: 2,
 			passingScore: 85,
-			taskMemoryPath: 'd:/workspace/vscode-copilot-ralph-runner/.ralph/memory/US-304.json',
-			executionCheckpointPath: 'd:/workspace/vscode-copilot-ralph-runner/.ralph/checkpoints/US-304.checkpoint.json',
-			evidencePath: 'd:/workspace/vscode-copilot-ralph-runner/.ralph/evidence/US-304.evidence.json',
-			completionSignalPath: 'd:/workspace/vscode-copilot-ralph-runner/.ralph/story-status.json',
+			taskMemoryPath: 'd:/workspace/vscode-copilot-ralph-runner/.harness-runner/memory/US-304.json',
+			executionCheckpointPath: 'd:/workspace/vscode-copilot-ralph-runner/.harness-runner/checkpoints/US-304.checkpoint.json',
+			evidencePath: 'd:/workspace/vscode-copilot-ralph-runner/.harness-runner/evidence/US-304.evidence.json',
+			completionSignalPath: 'd:/workspace/vscode-copilot-ralph-runner/.harness-runner/story-status.json',
 			completionSignalKey: 'US-304',
 			taskMemoryLines: ['Summary: Initial execution completed.'],
 			checkpointLines: ['Stage Goal: Reviewer handoff'],
@@ -1338,10 +1398,10 @@ suite('Extension Test Suite', () => {
 			maxAutoRefactorRounds: 2,
 			reviewPass: 1,
 			reviewSummaryLines: ['Score: 70/100', 'Finding: Missing tests', 'Recommendation: Add one relevant passing test'],
-			taskMemoryPath: 'd:/workspace/vscode-copilot-ralph-runner/.ralph/memory/US-304.json',
-			executionCheckpointPath: 'd:/workspace/vscode-copilot-ralph-runner/.ralph/checkpoints/US-304.checkpoint.json',
-			evidencePath: 'd:/workspace/vscode-copilot-ralph-runner/.ralph/evidence/US-304.evidence.json',
-			completionSignalPath: 'd:/workspace/vscode-copilot-ralph-runner/.ralph/story-status.json',
+			taskMemoryPath: 'd:/workspace/vscode-copilot-ralph-runner/.harness-runner/memory/US-304.json',
+			executionCheckpointPath: 'd:/workspace/vscode-copilot-ralph-runner/.harness-runner/checkpoints/US-304.checkpoint.json',
+			evidencePath: 'd:/workspace/vscode-copilot-ralph-runner/.harness-runner/evidence/US-304.evidence.json',
+			completionSignalPath: 'd:/workspace/vscode-copilot-ralph-runner/.harness-runner/story-status.json',
 			completionSignalKey: 'US-304',
 		});
 
@@ -1374,10 +1434,10 @@ suite('Extension Test Suite', () => {
 			sourceContextLines: Array.from({ length: 15 }, (_, index) => `Source context ${index + 1}`),
 			knowledgeLines: Array.from({ length: 16 }, (_, index) => `Knowledge check ${index + 1}`),
 			recentCheckpointLines: Array.from({ length: 15 }, (_, index) => `Recent checkpoint ${index + 1}`),
-			taskMemoryPath: 'd:/workspace/vscode-copilot-ralph-runner/.ralph/memory/US-302.json',
-			executionCheckpointPath: 'd:/workspace/vscode-copilot-ralph-runner/.ralph/checkpoints/US-302.checkpoint.json',
-			evidencePath: 'd:/workspace/vscode-copilot-ralph-runner/.ralph/evidence/US-302.evidence.json',
-			completionSignalPath: 'd:/workspace/vscode-copilot-ralph-runner/.ralph/story-status.json',
+			taskMemoryPath: 'd:/workspace/vscode-copilot-ralph-runner/.harness-runner/memory/US-302.json',
+			executionCheckpointPath: 'd:/workspace/vscode-copilot-ralph-runner/.harness-runner/checkpoints/US-302.checkpoint.json',
+			evidencePath: 'd:/workspace/vscode-copilot-ralph-runner/.harness-runner/evidence/US-302.evidence.json',
+			completionSignalPath: 'd:/workspace/vscode-copilot-ralph-runner/.harness-runner/story-status.json',
 			completionSignalKey: 'US-302',
 			additionalExecutionRules: ['Do not ask questions.', 'Execute directly.'],
 		});
@@ -1417,10 +1477,10 @@ suite('Extension Test Suite', () => {
 			workspaceRoot: 'd:/workspace/vscode-copilot-ralph-runner',
 			recentCheckpointLines: ['Checkpoint line'],
 			policyLines: ['Completion Gates', '- Block dangerous path edits'],
-			taskMemoryPath: 'd:/workspace/vscode-copilot-ralph-runner/.ralph/memory/US-302A.json',
-			executionCheckpointPath: 'd:/workspace/vscode-copilot-ralph-runner/.ralph/checkpoints/US-302A.checkpoint.json',
-			evidencePath: 'd:/workspace/vscode-copilot-ralph-runner/.ralph/evidence/US-302A.evidence.json',
-			completionSignalPath: 'd:/workspace/vscode-copilot-ralph-runner/.ralph/story-status.json',
+			taskMemoryPath: 'd:/workspace/vscode-copilot-ralph-runner/.harness-runner/memory/US-302A.json',
+			executionCheckpointPath: 'd:/workspace/vscode-copilot-ralph-runner/.harness-runner/checkpoints/US-302A.checkpoint.json',
+			evidencePath: 'd:/workspace/vscode-copilot-ralph-runner/.harness-runner/evidence/US-302A.evidence.json',
+			completionSignalPath: 'd:/workspace/vscode-copilot-ralph-runner/.harness-runner/story-status.json',
 			completionSignalKey: 'US-302A',
 		});
 
@@ -1442,10 +1502,10 @@ suite('Extension Test Suite', () => {
 			knowledgeLines: ['- [missing-module-knowledge] extension.ts has weak coverage.'],
 			recentCheckpointLines: ['Checkpoint line'],
 			policyLines: ['Completion Gates', '- Block dangerous path edits'],
-			taskMemoryPath: 'd:/workspace/vscode-copilot-ralph-runner/.ralph/memory/US-302B.json',
-			executionCheckpointPath: 'd:/workspace/vscode-copilot-ralph-runner/.ralph/checkpoints/US-302B.checkpoint.json',
-			evidencePath: 'd:/workspace/vscode-copilot-ralph-runner/.ralph/evidence/US-302B.evidence.json',
-			completionSignalPath: 'd:/workspace/vscode-copilot-ralph-runner/.ralph/story-status.json',
+			taskMemoryPath: 'd:/workspace/vscode-copilot-ralph-runner/.harness-runner/memory/US-302B.json',
+			executionCheckpointPath: 'd:/workspace/vscode-copilot-ralph-runner/.harness-runner/checkpoints/US-302B.checkpoint.json',
+			evidencePath: 'd:/workspace/vscode-copilot-ralph-runner/.harness-runner/evidence/US-302B.evidence.json',
+			completionSignalPath: 'd:/workspace/vscode-copilot-ralph-runner/.harness-runner/story-status.json',
 			completionSignalKey: 'US-302B',
 		});
 
@@ -1464,10 +1524,10 @@ suite('Extension Test Suite', () => {
 				priority: 3,
 			},
 			workspaceRoot: 'd:/workspace/vscode-copilot-ralph-runner',
-			taskMemoryPath: 'd:/workspace/vscode-copilot-ralph-runner/.ralph/memory/US-303.json',
-			executionCheckpointPath: 'd:/workspace/vscode-copilot-ralph-runner/.ralph/checkpoints/US-303.checkpoint.json',
-				evidencePath: 'd:/workspace/vscode-copilot-ralph-runner/.ralph/evidence/US-303.evidence.json',
-			completionSignalPath: 'd:/workspace/vscode-copilot-ralph-runner/.ralph/story-status.json',
+			taskMemoryPath: 'd:/workspace/vscode-copilot-ralph-runner/.harness-runner/memory/US-303.json',
+			executionCheckpointPath: 'd:/workspace/vscode-copilot-ralph-runner/.harness-runner/checkpoints/US-303.checkpoint.json',
+				evidencePath: 'd:/workspace/vscode-copilot-ralph-runner/.harness-runner/evidence/US-303.evidence.json',
+			completionSignalPath: 'd:/workspace/vscode-copilot-ralph-runner/.harness-runner/story-status.json',
 			completionSignalKey: 'US-303',
 		});
 
@@ -2057,7 +2117,7 @@ suite('Extension Test Suite', () => {
 
 			const persistedIndex = readTaskMemoryIndex(workspaceRoot);
 			assert.strictEqual(persistedIndex.entries.length, 1);
-			assert.ok(persistedIndex.entries[0].memoryPath.endsWith(path.join('.ralph', 'memory', 'US-201.json')));
+			assert.ok(persistedIndex.entries[0].memoryPath.endsWith(path.join('.harness-runner', 'memory', 'US-201.json')));
 		} finally {
 			fs.rmSync(workspaceRoot, { recursive: true, force: true });
 		}
@@ -2084,7 +2144,7 @@ suite('Extension Test Suite', () => {
 				changedFiles: ['src/taskMemory.ts'],
 				changedModules: ['taskMemory'],
 				keyDecisions: ['Store one artifact per story'],
-				constraintsConfirmed: ['Keep artifacts under .ralph'],
+				constraintsConfirmed: ['Keep artifacts under .harness-runner'],
 				testsRun: ['npm run compile'],
 				searchKeywords: ['task memory'],
 			});
@@ -2170,7 +2230,7 @@ suite('Extension Test Suite', () => {
 			assert.strictEqual(checkpoint?.status, 'failed');
 			assert.strictEqual(checkpoint?.summary, 'Stored the latest failed checkpoint for recovery.');
 
-			const damagedPath = path.join(workspaceRoot, '.ralph', 'checkpoints', 'US-206.checkpoint.json');
+			const damagedPath = path.join(workspaceRoot, '.harness-runner', 'checkpoints', 'US-206.checkpoint.json');
 			fs.mkdirSync(path.dirname(damagedPath), { recursive: true });
 			fs.writeFileSync(damagedPath, '{not-valid-json', 'utf-8');
 
@@ -2544,10 +2604,10 @@ suite('Extension Test Suite', () => {
 				priorWorkLines,
 				sourceContextLines,
 				recentCheckpointLines,
-				evidencePath: path.join(workspaceRoot, '.ralph', 'evidence', 'US-501.evidence.json'),
-				taskMemoryPath: path.join(workspaceRoot, '.ralph', 'memory', 'US-501.json'),
-				executionCheckpointPath: path.join(workspaceRoot, '.ralph', 'checkpoints', 'US-501.checkpoint.json'),
-				completionSignalPath: path.join(workspaceRoot, '.ralph', 'story-status.json'),
+				evidencePath: path.join(workspaceRoot, '.harness-runner', 'evidence', 'US-501.evidence.json'),
+				taskMemoryPath: path.join(workspaceRoot, '.harness-runner', 'memory', 'US-501.json'),
+				executionCheckpointPath: path.join(workspaceRoot, '.harness-runner', 'checkpoints', 'US-501.checkpoint.json'),
+				completionSignalPath: path.join(workspaceRoot, '.harness-runner', 'story-status.json'),
 				completionSignalKey: 'US-501',
 			});
 
