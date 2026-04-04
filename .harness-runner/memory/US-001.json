@@ -1,0 +1,131 @@
+{
+  "storyId": "US-001",
+  "title": "",
+  "summary": "Completed a repository-wide audit of Ralph/ralph/ralph-runner references and wrote an explicit rename-boundary inventory before the actual rebrand stories continue.",
+  "changedFiles": [
+    ".harness-runner/analysis/brand-boundaries.US-001.json",
+    ".harness-runner/memory/US-001.json",
+    ".harness-runner/checkpoints/US-001.checkpoint.json",
+    ".harness-runner/evidence/US-001.evidence.json",
+    ".harness-runner/story-status.json"
+  ],
+  "changedModules": [
+    ".harness-runner/analysis",
+    ".harness-runner/memory",
+    ".harness-runner/checkpoints",
+    ".harness-runner/evidence"
+  ],
+  "architectureNotes": [
+    "This story intentionally keeps all edits inside .harness-runner governance artifacts so the rename inventory is reviewable without mixing with ongoing source-code migration work.",
+    "The runtime artifact root .harness-runner is already the architectural source of truth and must remain stable while symbolic and contribution-point names are renamed around it.",
+    "workspacePaths.ts is the primary reuse seam for later rename stories because it centralizes artifact locations; future refactors should rename helper symbols there first and fan out through imports.",
+    "The chat participant, command ids, configuration prefix, and package metadata form one contribution-point cluster and should be changed together to avoid VS Code manifest/runtime drift.",
+    "Documentation, localization, and tests form a second cluster that should move with runtime-visible naming changes so the reviewer can verify consistency from one surface to another."
+  ],
+  "keyDecisions": [
+    "Capture the rebrand boundary as structured JSON under .harness-runner instead of scattering notes across transient chat context.",
+    "Preserve .harness-runner and existing Harness-branded paths as explicit do-not-rename rules.",
+    "Treat metadata.ralphLanguage as a compatibility seam to coordinate later rather than a blind rename target.",
+    "Avoid touching the dirty US-002 source-file changes already present in the worktree; keep US-001 isolated to auditable artifacts."
+  ],
+  "patternsUsed": [],
+  "constraintsConfirmed": [
+    "prd.json remained untouched.",
+    "Runtime artifact root stays .harness-runner.",
+    "Git commit message must use Chinese.",
+    "No dist/ or out/ files were hand-edited.",
+    "At least one projectConstraints.testCommands command was executed before completion."
+  ],
+  "testsRun": [],
+  "risks": [
+    "The repository already contains interrupted US-002 worktree changes in package.json, src/extension.ts, src/localization.ts, src/projectConstraints.ts, and src/test/extension.test.ts. This story did not validate or amend them.",
+    "Generated/package outputs such as package-lock.json and the checked-in VSIX still carry old ralph-runner branding and will remain inconsistent until the metadata rename story is completed and packaging is regenerated.",
+    "Because this inventory is curated from search results, any newly introduced branding outside the scanned files will require a refresh later."
+  ],
+  "followUps": [
+    "Execute US-002 against the contribution-point cluster: package metadata, activation ids, command ids, configuration prefixes, and chat participant ids/names.",
+    "Execute US-003 against TypeScript symbol and user-visible copy surfaces using the preserve rules recorded here.",
+    "After runtime rename stories land, regenerate Agent Map artifacts and refresh README wording to remove mixed RALPH/Harness branding.",
+    "Regenerate package-lock.json and package artifacts once package metadata is renamed."
+  ],
+  "searchKeywords": [
+    "Ralph",
+    "RALPH",
+    "ralph",
+    "ralph-runner",
+    "Ralph Runner",
+    "@ralph",
+    "/ralph-spec",
+    "recent-graduates.ralph-runner",
+    ".harness-runner",
+    "harness-runner"
+  ],
+  "relatedStories": [],
+  "reviewSummary": {
+    "totalScore": 100,
+    "maxScore": 100,
+    "passingScore": 65,
+    "passed": true,
+    "reviewPass": 1,
+    "maxReviewerPasses": 3,
+    "maxAutoRefactorRounds": 2,
+    "dimensions": [
+      {
+        "dimension": "architectureConsistency",
+        "label": "Architecture Consistency",
+        "score": 25,
+        "summary": "Reviewer loop disabled in workspace settings.",
+        "issues": [],
+        "recommendations": [
+          "Reviewer loop disabled in workspace settings."
+        ]
+      },
+      {
+        "dimension": "acceptanceCoverage",
+        "label": "Acceptance Coverage",
+        "score": 25,
+        "summary": "Reviewer loop disabled in workspace settings.",
+        "issues": [],
+        "recommendations": [
+          "Reviewer loop disabled in workspace settings."
+        ]
+      },
+      {
+        "dimension": "changeScopeControl",
+        "label": "Change Scope Control",
+        "score": 25,
+        "summary": "Reviewer loop disabled in workspace settings.",
+        "issues": [],
+        "recommendations": [
+          "Reviewer loop disabled in workspace settings."
+        ]
+      },
+      {
+        "dimension": "verifiability",
+        "label": "Verifiability",
+        "score": 25,
+        "summary": "Reviewer loop disabled in workspace settings.",
+        "issues": [],
+        "recommendations": [
+          "Reviewer loop disabled in workspace settings."
+        ]
+      }
+    ],
+    "findings": [],
+    "recommendations": [
+      "Reviewer loop disabled in workspace settings."
+    ],
+    "refactorPerformed": false,
+    "reviewedAt": "2026-04-04T20:32:23.999Z",
+    "source": "synthesized"
+  },
+  "reviewLoop": {
+    "reviewerPasses": 1,
+    "autoRefactorRounds": 0,
+    "maxAutoRefactorRounds": 2,
+    "endedReason": "passed",
+    "lastReviewedAt": "2026-04-04T20:32:23.999Z"
+  },
+  "createdAt": "2026-04-04T20:32:09.631Z",
+  "source": "copilot"
+}

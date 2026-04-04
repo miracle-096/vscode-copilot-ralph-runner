@@ -1,0 +1,101 @@
+{
+  "storyId": "US-001",
+  "title": "",
+  "status": "completed",
+  "stageGoal": "梳理扩展入口、命令注册、配置键、聊天参与者、帮助文档、菜单文案和测试中所有 Ralph/ralph/ralph-runner 相关引用，形成精确的替换边界。",
+  "summary": "Completed the Ralph branding inventory and codified exact replacement boundaries, case rules, and preserve rules for the upcoming Harness Runner rebrand stories.",
+  "architectureNotes": [
+    "The story output is intentionally artifact-only and isolated to .harness-runner so it can be rolled back independently from the interrupted US-002 source changes.",
+    "Contribution-point renames should be handled as one cohesive next step: package.json, src/extension.ts runtime registration, and matching tests/docs.",
+    "Internal symbol renames should be staged separately after contribution points because workspacePaths.ts and localization APIs act as high-fan-out import seams."
+  ],
+  "keyDecisions": [
+    "Use a dedicated brand-boundary analysis artifact as the authoritative inventory for reviewer handoff.",
+    "Preserve .harness-runner, harness-engineering, and known Harness-branded runtime paths from further rename churn.",
+    "Record metadata.ralphLanguage as a deferred compatibility seam instead of forcing an inconsistent rename in this story."
+  ],
+  "confirmedConstraints": [
+    "prd.json was not modified.",
+    "Required completion artifacts now exist under .harness-runner.",
+    "A projectConstraints.testCommands command was executed successfully.",
+    "US-001 changes do not modify runtime source behavior."
+  ],
+  "unresolvedRisks": [
+    "US-002 source-file edits are already present in the worktree and remain unreviewed by this story.",
+    "Repository metadata and generated package outputs still expose old branding until later rebrand stories land.",
+    "Agent Map documentation is known stale relative to the current change surface and should be regenerated after the rename workflow settles."
+  ],
+  "nextStoryPrerequisites": [
+    "Read .harness-runner/analysis/brand-boundaries.US-001.json before changing package metadata or command ids.",
+    "Inspect existing worktree changes first so US-002 resumes from the latest stable partial state rather than assuming a clean tree.",
+    "Keep .harness-runner path values unchanged while renaming symbolic and contribution-point surfaces."
+  ],
+  "resumeRecommendation": "Resume US-002 by validating the interrupted package metadata and runtime registration edits against the inventory produced here, then finish the contribution-point rename cluster before touching broader symbol names.",
+  "reviewSummary": {
+    "totalScore": 100,
+    "maxScore": 100,
+    "passingScore": 65,
+    "passed": true,
+    "reviewPass": 1,
+    "maxReviewerPasses": 3,
+    "maxAutoRefactorRounds": 2,
+    "dimensions": [
+      {
+        "dimension": "architectureConsistency",
+        "label": "Architecture Consistency",
+        "score": 25,
+        "summary": "Reviewer loop disabled in workspace settings.",
+        "issues": [],
+        "recommendations": [
+          "Reviewer loop disabled in workspace settings."
+        ]
+      },
+      {
+        "dimension": "acceptanceCoverage",
+        "label": "Acceptance Coverage",
+        "score": 25,
+        "summary": "Reviewer loop disabled in workspace settings.",
+        "issues": [],
+        "recommendations": [
+          "Reviewer loop disabled in workspace settings."
+        ]
+      },
+      {
+        "dimension": "changeScopeControl",
+        "label": "Change Scope Control",
+        "score": 25,
+        "summary": "Reviewer loop disabled in workspace settings.",
+        "issues": [],
+        "recommendations": [
+          "Reviewer loop disabled in workspace settings."
+        ]
+      },
+      {
+        "dimension": "verifiability",
+        "label": "Verifiability",
+        "score": 25,
+        "summary": "Reviewer loop disabled in workspace settings.",
+        "issues": [],
+        "recommendations": [
+          "Reviewer loop disabled in workspace settings."
+        ]
+      }
+    ],
+    "findings": [],
+    "recommendations": [
+      "Reviewer loop disabled in workspace settings."
+    ],
+    "refactorPerformed": false,
+    "reviewedAt": "2026-04-04T20:32:23.999Z",
+    "source": "synthesized"
+  },
+  "reviewLoop": {
+    "reviewerPasses": 1,
+    "autoRefactorRounds": 0,
+    "maxAutoRefactorRounds": 2,
+    "endedReason": "passed",
+    "lastReviewedAt": "2026-04-04T20:32:23.999Z"
+  },
+  "updatedAt": "2026-04-04T20:32:09.651Z",
+  "source": "copilot"
+}
