@@ -71,7 +71,7 @@ export function createSynthesizedExecutionCheckpoint(
 		stageGoal: options.stageGoal ?? title,
 		summary,
 		architectureNotes: options.architectureNotes ?? [],
-		keyDecisions: options.keyDecisions ?? ['RALPH synthesized this execution checkpoint because a valid checkpoint artifact was not available.'],
+		keyDecisions: options.keyDecisions ?? ['Harness synthesized this execution checkpoint because a valid checkpoint artifact was not available.'],
 		confirmedConstraints: options.confirmedConstraints ?? ['prd.json remained read-only during task execution.'],
 		unresolvedRisks: options.unresolvedRisks ?? ['Checkpoint details may need manual review before the next handoff.'],
 		nextStoryPrerequisites: options.nextStoryPrerequisites ?? ['Review the latest workspace state before continuing execution.'],

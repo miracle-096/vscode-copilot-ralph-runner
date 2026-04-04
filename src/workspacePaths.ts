@@ -1,7 +1,7 @@
 import * as fs from 'fs';
 import * as path from 'path';
 
-export const RALPH_DIR = '.harness-runner';
+export const HARNESS_RUNNER_DIR = '.harness-runner';
 export const PRD_DIR = '.prd';
 export const DESIGN_CONTEXT_DIR = 'design-context';
 export const DESIGN_CONTEXT_SHARED_DIR = 'shared';
@@ -34,20 +34,20 @@ export function ensureDirectoryExists(dirPath: string): string {
 	return dirPath;
 }
 
-export function getRalphDir(workspaceRoot: string): string {
-	return path.join(workspaceRoot, RALPH_DIR);
+export function getHarnessRunnerDir(workspaceRoot: string): string {
+	return path.join(workspaceRoot, HARNESS_RUNNER_DIR);
 }
 
 export function getTaskStatusPath(workspaceRoot: string, taskId: string): string {
-	return path.join(getRalphDir(workspaceRoot), `task-${taskId}-status`);
+	return path.join(getHarnessRunnerDir(workspaceRoot), `task-${taskId}-status`);
 }
 
 export function getStoryStatusRegistryPath(workspaceRoot: string): string {
-	return path.join(getRalphDir(workspaceRoot), STORY_STATUS_FILENAME);
+	return path.join(getHarnessRunnerDir(workspaceRoot), STORY_STATUS_FILENAME);
 }
 
 export function getTaskMemoryDirectoryPath(workspaceRoot: string): string {
-	return path.join(getRalphDir(workspaceRoot), TASK_MEMORY_DIR);
+	return path.join(getHarnessRunnerDir(workspaceRoot), TASK_MEMORY_DIR);
 }
 
 export function getTaskMemoryPath(workspaceRoot: string, storyId: string): string {
@@ -55,11 +55,11 @@ export function getTaskMemoryPath(workspaceRoot: string, storyId: string): strin
 }
 
 export function getTaskMemoryIndexPath(workspaceRoot: string): string {
-	return path.join(getRalphDir(workspaceRoot), TASK_MEMORY_INDEX_FILENAME);
+	return path.join(getHarnessRunnerDir(workspaceRoot), TASK_MEMORY_INDEX_FILENAME);
 }
 
 export function getExecutionCheckpointDirectoryPath(workspaceRoot: string): string {
-	return path.join(getRalphDir(workspaceRoot), EXECUTION_CHECKPOINT_DIR);
+	return path.join(getHarnessRunnerDir(workspaceRoot), EXECUTION_CHECKPOINT_DIR);
 }
 
 export function getExecutionCheckpointPath(workspaceRoot: string, storyId: string): string {
@@ -67,7 +67,7 @@ export function getExecutionCheckpointPath(workspaceRoot: string, storyId: strin
 }
 
 export function getStoryEvidenceDirectoryPath(workspaceRoot: string): string {
-	return path.join(getRalphDir(workspaceRoot), STORY_EVIDENCE_DIR);
+	return path.join(getHarnessRunnerDir(workspaceRoot), STORY_EVIDENCE_DIR);
 }
 
 export function getStoryEvidencePath(workspaceRoot: string, storyId: string): string {
@@ -75,7 +75,7 @@ export function getStoryEvidencePath(workspaceRoot: string, storyId: string): st
 }
 
 export function getStoryRunLogDirectoryPath(workspaceRoot: string): string {
-	return path.join(getRalphDir(workspaceRoot), STORY_RUN_LOG_DIR);
+	return path.join(getHarnessRunnerDir(workspaceRoot), STORY_RUN_LOG_DIR);
 }
 
 export function getStoryRunLogPath(workspaceRoot: string, runId: string): string {
@@ -83,7 +83,7 @@ export function getStoryRunLogPath(workspaceRoot: string, runId: string): string
 }
 
 export function getDesignContextSuggestionDirectoryPath(workspaceRoot: string): string {
-	return path.join(getRalphDir(workspaceRoot), DESIGN_CONTEXT_SUGGESTION_DIR);
+	return path.join(getHarnessRunnerDir(workspaceRoot), DESIGN_CONTEXT_SUGGESTION_DIR);
 }
 
 export function getDesignContextSuggestionPath(workspaceRoot: string, storyId: string): string {
@@ -132,19 +132,19 @@ export function getModuleDesignContextPath(workspaceRoot: string, moduleId: stri
 }
 
 export function getEditableProjectConstraintsPath(workspaceRoot: string): string {
-	return path.join(getRalphDir(workspaceRoot), PROJECT_CONSTRAINTS_FILENAME);
+	return path.join(getHarnessRunnerDir(workspaceRoot), PROJECT_CONSTRAINTS_FILENAME);
 }
 
 export function getGeneratedProjectConstraintsPath(workspaceRoot: string): string {
-	return path.join(getRalphDir(workspaceRoot), GENERATED_PROJECT_CONSTRAINTS_FILENAME);
+	return path.join(getHarnessRunnerDir(workspaceRoot), GENERATED_PROJECT_CONSTRAINTS_FILENAME);
 }
 
 export function getSourceContextIndexPath(workspaceRoot: string): string {
-	return path.join(getRalphDir(workspaceRoot), SOURCE_CONTEXT_INDEX_FILENAME);
+	return path.join(getHarnessRunnerDir(workspaceRoot), SOURCE_CONTEXT_INDEX_FILENAME);
 }
 
 export function getAgentMapDirectoryPath(workspaceRoot: string): string {
-	return path.join(getRalphDir(workspaceRoot), AGENT_MAP_DIR);
+	return path.join(getHarnessRunnerDir(workspaceRoot), AGENT_MAP_DIR);
 }
 
 export function getAgentMapOverviewPath(workspaceRoot: string): string {
@@ -156,7 +156,7 @@ export function getAgentMapKnowledgeCatalogPath(workspaceRoot: string): string {
 }
 
 export function getPolicyBaselineDirectoryPath(workspaceRoot: string): string {
-	return path.join(getRalphDir(workspaceRoot), POLICY_BASELINE_DIR);
+	return path.join(getHarnessRunnerDir(workspaceRoot), POLICY_BASELINE_DIR);
 }
 
 export function getPolicyBaselinePath(workspaceRoot: string, storyId: string): string {
@@ -170,42 +170,42 @@ export function ensurePrdDirectories(workspaceRoot: string): { prdDir: string; d
 	return { prdDir, designContextDir, sharedDesignContextDir };
 }
 
-export function ensureProjectConstraintDirectories(workspaceRoot: string): { ralphDir: string } {
-	const ralphDir = ensureDirectoryExists(getRalphDir(workspaceRoot));
-	return { ralphDir };
+export function ensureProjectConstraintDirectories(workspaceRoot: string): { harnessRunnerDir: string } {
+	const harnessRunnerDir = ensureDirectoryExists(getHarnessRunnerDir(workspaceRoot));
+	return { harnessRunnerDir };
 }
 
 export function ensureTaskMemoryDirectory(workspaceRoot: string): string {
-	ensureDirectoryExists(getRalphDir(workspaceRoot));
+	ensureDirectoryExists(getHarnessRunnerDir(workspaceRoot));
 	return ensureDirectoryExists(getTaskMemoryDirectoryPath(workspaceRoot));
 }
 
 export function ensureExecutionCheckpointDirectory(workspaceRoot: string): string {
-	ensureDirectoryExists(getRalphDir(workspaceRoot));
+	ensureDirectoryExists(getHarnessRunnerDir(workspaceRoot));
 	return ensureDirectoryExists(getExecutionCheckpointDirectoryPath(workspaceRoot));
 }
 
 export function ensureStoryEvidenceDirectory(workspaceRoot: string): string {
-	ensureDirectoryExists(getRalphDir(workspaceRoot));
+	ensureDirectoryExists(getHarnessRunnerDir(workspaceRoot));
 	return ensureDirectoryExists(getStoryEvidenceDirectoryPath(workspaceRoot));
 }
 
 export function ensureStoryRunLogDirectory(workspaceRoot: string): string {
-	ensureDirectoryExists(getRalphDir(workspaceRoot));
+	ensureDirectoryExists(getHarnessRunnerDir(workspaceRoot));
 	return ensureDirectoryExists(getStoryRunLogDirectoryPath(workspaceRoot));
 }
 
 export function ensurePolicyBaselineDirectory(workspaceRoot: string): string {
-	ensureDirectoryExists(getRalphDir(workspaceRoot));
+	ensureDirectoryExists(getHarnessRunnerDir(workspaceRoot));
 	return ensureDirectoryExists(getPolicyBaselineDirectoryPath(workspaceRoot));
 }
 
 export function ensureAgentMapDirectory(workspaceRoot: string): string {
-	ensureDirectoryExists(getRalphDir(workspaceRoot));
+	ensureDirectoryExists(getHarnessRunnerDir(workspaceRoot));
 	return ensureDirectoryExists(getAgentMapDirectoryPath(workspaceRoot));
 }
 
 export function ensureDesignContextSuggestionDirectory(workspaceRoot: string): string {
-	ensureDirectoryExists(getRalphDir(workspaceRoot));
+	ensureDirectoryExists(getHarnessRunnerDir(workspaceRoot));
 	return ensureDirectoryExists(getDesignContextSuggestionDirectoryPath(workspaceRoot));
 }

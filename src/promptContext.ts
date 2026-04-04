@@ -112,7 +112,7 @@ export function composeStoryExecutionPrompt(context: StoryPromptContext): string
 			lines: [
 				'After completing this executor pass, confirm what was done.',
 				'',
-				'RALPH will launch a separate Reviewer Agent pass after this executor pass completes.',
+				'HARNESS will launch a separate Reviewer Agent pass after this executor pass completes.',
 				'Focus this pass on implementation, relevant validation, and leaving auditable artifacts for the reviewer handoff.',
 				'Apply architecture thinking during execution: keep module boundaries explicit, keep responsibilities cohesive, prefer reuse over copy-paste, and leave a credible rollback path for risky edits.',
 				'Do not reduce governance to language-specific lint or static complexity rules; use repository structure, changed-file grouping, artifact evidence, and cross-toolchain signals instead.',
@@ -147,8 +147,8 @@ export function composeStoryExecutionPrompt(context: StoryPromptContext): string
 				`Completion Signal File: ${context.completionSignalPath}`,
 				`Completion Signal Key: ${context.completionSignalKey}`,
 				'Preserve valid JSON in the file and keep other entries untouched.',
-				'This is how RALPH knows the task is done and can move to the next step.',
-				'Do NOT skip this step — without it RALPH will time out waiting.',
+				'This is how HARNESS knows the task is done and can move to the next step.',
+				'Do NOT skip this step — without it HARNESS will time out waiting.',
 			],
 		},
 	];

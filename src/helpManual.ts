@@ -1,49 +1,49 @@
-import { SupportedRalphLanguage } from './localization';
+import { SupportedHarnessLanguage } from './localization';
 
-export type RalphHelpDocumentKind = 'introduction' | 'manual';
+export type HarnessHelpDocumentKind = 'introduction' | 'manual';
 
-export interface RalphHelpDocument {
+export interface HarnessHelpDocument {
 	title: string;
 	html: string;
 }
 
-interface RalphHelpSection {
+interface HarnessHelpSection {
 	title: string;
 	paragraphs: string[];
 	bullets?: string[];
 	steps?: string[];
 }
 
-interface RalphHelpContent {
+interface HarnessHelpContent {
 	title: string;
 	summary: string;
-	sections: RalphHelpSection[];
+	sections: HarnessHelpSection[];
 }
 
-export function buildRalphHelpDocument(language: SupportedRalphLanguage, kind: RalphHelpDocumentKind): RalphHelpDocument {
-	const content = getRalphHelpContent(language, kind);
+export function buildHarnessHelpDocument(language: SupportedHarnessLanguage, kind: HarnessHelpDocumentKind): HarnessHelpDocument {
+	const content = getHarnessHelpContent(language, kind);
 	return {
 		title: content.title,
 		html: renderHelpHtml(content),
 	};
 }
 
-export function getRalphHelpContent(language: SupportedRalphLanguage, kind: RalphHelpDocumentKind): RalphHelpContent {
+export function getHarnessHelpContent(language: SupportedHarnessLanguage, kind: HarnessHelpDocumentKind): HarnessHelpContent {
 	return language === 'English'
 		? getEnglishHelpContent(kind)
 		: getChineseHelpContent(kind);
 }
 
-function getChineseHelpContent(kind: RalphHelpDocumentKind): RalphHelpContent {
+function getChineseHelpContent(kind: HarnessHelpDocumentKind): HarnessHelpContent {
 	if (kind === 'introduction') {
 		return {
-			title: 'RALPH 插件介绍',
-			summary: 'RALPH Runner 会围绕 prd.json 中的用户故事组织执行循环，把项目约束、设计上下文、任务记忆、源码线索和证据工件一起注入到 Copilot 的执行链中。',
+			title: 'Harness 插件介绍',
+			summary: 'Harness Runner 会围绕 prd.json 中的用户故事组织执行循环，把项目约束、设计上下文、任务记忆、源码线索和证据工件一起注入到 Copilot 的执行链中。',
 			sections: [
 				{
-					title: 'RALPH 是什么',
+					title: 'Harness 是什么',
 					paragraphs: [
-						'RALPH 的全名是 Run Autonomous Loops Per Handoff。它不是单纯的命令集合，而是一套把用户故事拆分、执行、检查、证据沉淀和后续 handoff 串起来的 VS Code 扩展工作流。',
+						'Harness Runner 不是单纯的命令集合，而是一套把用户故事拆分、执行、检查、证据沉淀和后续 handoff 串起来的 VS Code 扩展工作流。',
 						'它的目标是让 Copilot 在多轮执行里仍然保留工程上下文，而不是每次都从零开始猜测仓库规则。'
 					],
 					bullets: [
@@ -66,9 +66,9 @@ function getChineseHelpContent(kind: RalphHelpDocumentKind): RalphHelpContent {
 					]
 				},
 				{
-					title: 'RALPH 菜单里有什么',
+					title: 'Harness 菜单里有什么',
 					paragraphs: [
-						'RALPH 状态栏按钮和快捷键 Alt+R 都会打开命令菜单。菜单覆盖从生成 PRD、追加故事，到初始化项目约束、刷新源码上下文、录入设计描述、开始执行、审批和查看状态的一整条链路。'
+						'Harness 状态栏按钮和快捷键 Alt+R 都会打开命令菜单。菜单覆盖从生成 PRD、追加故事，到初始化项目约束、刷新源码上下文、录入设计描述、开始执行、审批和查看状态的一整条链路。'
 					],
 					steps: [
 						'生成 PRD 或追加用户故事',
@@ -82,21 +82,21 @@ function getChineseHelpContent(kind: RalphHelpDocumentKind): RalphHelpContent {
 	}
 
 	return {
-		title: 'RALPH 使用流程手册',
+		title: 'Harness 使用流程手册',
 		summary: '下面按空项目和已存在项目两种起点说明推荐流程，帮助你决定先用哪些命令、哪些工件必须先准备、哪些步骤可以按需逐步引入。',
 		sections: [
 			{
 				title: '空项目流程',
 				paragraphs: [
-					'如果当前工作区还没有 prd.json，建议先把 RALPH 当作“计划和执行编排器”来使用。先让 Copilot 帮你生成 PRD，再逐步补足约束和上下文。'
+					'如果当前工作区还没有 prd.json，建议先把 Harness 当作“计划和执行编排器”来使用。先让 Copilot 帮你生成 PRD，再逐步补足约束和上下文。'
 				],
 				steps: [
-					'打开 RALPH 菜单，先执行“生成 PRD”，描述项目目标或想完成的里程碑。',
+					'打开 Harness 菜单，先执行“生成 PRD”，描述项目目标或想完成的里程碑。',
 					'确认 prd.json 生成后，如有需要执行“追加用户故事”，继续细化下一批故事。',
-					'执行“初始化项目约束”，让 RALPH 扫描脚本、目录、README 和配置文件，产出基础规则。',
+					'执行“初始化项目约束”，让 Harness 扫描脚本、目录、README 和配置文件，产出基础规则。',
 					'执行“刷新源码上下文索引”，为后续故事提供入口文件、模块提示和热点路径。',
 					'如果项目偏界面驱动，再执行“界面设计描述”，补充设计稿、截图、布局约束或复用目标。',
-					'最后执行“开始执行”，让 RALPH 按 PRD 的优先级逐个推进故事。'
+					'最后执行“开始执行”，让 Harness 按 PRD 的优先级逐个推进故事。'
 				],
 				bullets: [
 					'最小起步只需要工作区和 prd.json',
@@ -111,7 +111,7 @@ function getChineseHelpContent(kind: RalphHelpDocumentKind): RalphHelpContent {
 				],
 				steps: [
 					'先确认工作区根目录已有或准备好 prd.json，必要时使用“追加用户故事”把当前需求并入现有 PRD。',
-					'优先执行“初始化项目约束”，把已有脚本、目录规范、Git 规则和交付要求收进 RALPH。',
+					'优先执行“初始化项目约束”，把已有脚本、目录规范、Git 规则和交付要求收进 Harness。',
 					'执行“刷新源码上下文索引”，必要时再执行“生成 Agent Map”，让模块、规则入口和知识缺口可被后续故事引用。',
 					'如果部分故事有 UI 或交互变化，再为这些故事执行“界面设计描述”。',
 					'检查配置执行检查、审批模式和 Reviewer 评分设置是否符合团队要求，然后再执行“开始执行”。',
@@ -126,7 +126,7 @@ function getChineseHelpContent(kind: RalphHelpDocumentKind): RalphHelpContent {
 			{
 				title: '日常使用建议',
 				paragraphs: [
-					'RALPH 最适合被当作“持续执行和治理层”。你可以把需求和故事管理交给 prd.json，把仓库规则和设计约束交给对应工件，把每次执行的结果沉淀到 .harness-runner 目录。'
+					'Harness 最适合被当作“持续执行和治理层”。你可以把需求和故事管理交给 prd.json，把仓库规则和设计约束交给对应工件，把每次执行的结果沉淀到 .harness-runner 目录。'
 				],
 				bullets: [
 					'每次新增大需求时先更新 PRD，而不是直接跳过故事层',
@@ -139,16 +139,16 @@ function getChineseHelpContent(kind: RalphHelpDocumentKind): RalphHelpContent {
 	};
 }
 
-function getEnglishHelpContent(kind: RalphHelpDocumentKind): RalphHelpContent {
+function getEnglishHelpContent(kind: HarnessHelpDocumentKind): HarnessHelpContent {
 	if (kind === 'introduction') {
 		return {
-			title: 'RALPH Introduction',
-			summary: 'RALPH Runner organizes execution around prd.json user stories and keeps Copilot grounded with project constraints, design notes, task memory, source context, checkpoints, and evidence artifacts.',
+			title: 'Harness Introduction',
+			summary: 'Harness Runner organizes execution around prd.json user stories and keeps Copilot grounded with project constraints, design notes, task memory, source context, checkpoints, and evidence artifacts.',
 			sections: [
 				{
-					title: 'What RALPH Is',
+					title: 'What Harness Is',
 					paragraphs: [
-						'RALPH stands for Run Autonomous Loops Per Handoff. It is a VS Code workflow layer that connects story planning, execution, review, evidence, and handoff instead of acting as a loose command list.',
+						'Harness Runner is a VS Code workflow layer that connects story planning, execution, review, evidence, and handoff instead of acting as a loose command list.',
 						'Its main purpose is to keep Copilot aligned with repository-specific rules and prior decisions across multiple story executions.'
 					],
 					bullets: [
@@ -161,14 +161,14 @@ function getEnglishHelpContent(kind: RalphHelpDocumentKind): RalphHelpContent {
 				{
 					title: 'Where It Fits',
 					paragraphs: [
-						'RALPH is useful when you already work with GitHub Copilot Chat and want a repeatable story-driven execution loop inside a real repository.',
+						'Harness is useful when you already work with GitHub Copilot Chat and want a repeatable story-driven execution loop inside a real repository.',
 						'It is especially helpful when the work needs traceability, multiple handoffs, or stronger governance than one-off prompts.'
 					]
 				},
 				{
 					title: 'What You Get In The Menu',
 					paragraphs: [
-						'The status bar button and Alt+R open the RALPH menu. From there you can generate or append PRD stories, initialize project constraints, refresh source context, manage design notes, start execution, review approvals, and inspect status.'
+						'The status bar button and Alt+R open the Harness menu. From there you can generate or append PRD stories, initialize project constraints, refresh source context, manage design notes, start execution, review approvals, and inspect status.'
 					]
 				}
 			]
@@ -176,21 +176,21 @@ function getEnglishHelpContent(kind: RalphHelpDocumentKind): RalphHelpContent {
 	}
 
 	return {
-		title: 'RALPH Usage Guide',
+		title: 'Harness Usage Guide',
 		summary: 'This guide splits the recommended workflow into two starting points: a new empty project and an existing repository that already has code, scripts, and working conventions.',
 		sections: [
 			{
 				title: 'Empty Project Workflow',
 				paragraphs: [
-					'When the workspace does not have prd.json yet, treat RALPH as your planning and execution orchestrator. Start with story generation, then gradually add context and constraints.'
+					'When the workspace does not have prd.json yet, treat Harness as your planning and execution orchestrator. Start with story generation, then gradually add context and constraints.'
 				],
 				steps: [
-					'Open the RALPH menu and run Generate PRD.',
+					'Open the Harness menu and run Generate PRD.',
 					'After prd.json exists, use Append User Stories whenever you need to expand the plan.',
 					'Run Initialize Project Constraints to collect scripts, folders, README signals, and configuration rules.',
 					'Run Refresh Source Context Index so later stories can reuse entry files, module hints, and hotspot paths.',
 					'If UI work is involved, add UI Design Notes before execution.',
-					'Run Start to let RALPH execute the story queue in priority order.'
+					'Run Start to let Harness execute the story queue in priority order.'
 				]
 			},
 			{
@@ -210,14 +210,14 @@ function getEnglishHelpContent(kind: RalphHelpDocumentKind): RalphHelpContent {
 			{
 				title: 'Daily Operating Advice',
 				paragraphs: [
-					'Treat RALPH as the execution and governance layer on top of your repository. Keep the PRD current, keep context artifacts fresh, and use the .harness-runner artifacts as the main audit trail.'
+					'Treat Harness as the execution and governance layer on top of your repository. Keep the PRD current, keep context artifacts fresh, and use the .harness-runner artifacts as the main audit trail.'
 				]
 			}
 		]
 	};
 }
 
-function renderHelpHtml(content: RalphHelpContent): string {
+function renderHelpHtml(content: HarnessHelpContent): string {
 	const sectionHtml = content.sections.map(section => `
 		<section class="card">
 			<h2>${escapeHtml(section.title)}</h2>

@@ -13,7 +13,7 @@ import {
 	PolicyGatePhase,
 	PolicyRule,
 	PolicyRuleCondition,
-	RalphPolicyConfig,
+	HarnessPolicyConfig,
 	UserStory,
 } from './types';
 import {
@@ -65,7 +65,7 @@ const WINDOWS_CODE_PAGE_ENCODINGS: Readonly<Record<string, string>> = {
 
 let cachedWindowsShellEncoding: string | null | undefined;
 
-export function createDefaultPolicyConfig(): RalphPolicyConfig {
+export function createDefaultPolicyConfig(): HarnessPolicyConfig {
 	return {
 		enabled: false,
 		preflightRules: [
@@ -149,7 +149,7 @@ export function createDefaultPolicyConfig(): RalphPolicyConfig {
 	};
 }
 
-export function normalizePolicyConfig(value: unknown): RalphPolicyConfig {
+export function normalizePolicyConfig(value: unknown): HarnessPolicyConfig {
 	const fallback = createDefaultPolicyConfig();
 	const input = isRecord(value) ? value : {};
 	return {
@@ -162,7 +162,7 @@ export function normalizePolicyConfig(value: unknown): RalphPolicyConfig {
 export function buildEffectivePolicyConfig(
 	value: unknown,
 	compatibility: LegacyPolicyCompatibilityOptions,
-): RalphPolicyConfig {
+): HarnessPolicyConfig {
 	const normalized = normalizePolicyConfig(value);
 	const preflightRules = [...normalized.preflightRules];
 
@@ -197,7 +197,7 @@ export function buildEffectivePolicyConfig(
 	};
 }
 
-export function summarizePolicyConfigForPrompt(config: RalphPolicyConfig): string[] {
+export function summarizePolicyConfigForPrompt(config: HarnessPolicyConfig): string[] {
 	if (!config.enabled) {
 		return [];
 	}
@@ -220,7 +220,7 @@ export function summarizePolicyConfigForPrompt(config: RalphPolicyConfig): strin
 	return lines;
 }
 
-export function evaluatePolicyGates(config: RalphPolicyConfig, context: PolicyEvaluationContext): PolicyEvaluationResult {
+export function evaluatePolicyGates(config: HarnessPolicyConfig, context: PolicyEvaluationContext): PolicyEvaluationResult {
 	if (!config.enabled) {
 		return { ok: true, violations: [], executedCommands: [] };
 	}

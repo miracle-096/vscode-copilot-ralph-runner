@@ -8,7 +8,7 @@ import {
 	TaskMemoryArtifact,
 	UserStory,
 } from './types';
-import { ensureDirectoryExists, getRalphDir, getSourceContextIndexPath } from './workspacePaths';
+import { ensureDirectoryExists, getHarnessRunnerDir, getSourceContextIndexPath } from './workspacePaths';
 
 interface PackageJsonLike {
 	main?: string;
@@ -31,7 +31,7 @@ export function createEmptySourceContextIndex(workspaceRoot: string): SourceCont
 }
 
 export function ensureSourceContextIndexScaffold(workspaceRoot: string): string {
-	return ensureDirectoryExists(getRalphDir(workspaceRoot));
+	return ensureDirectoryExists(getHarnessRunnerDir(workspaceRoot));
 }
 
 export function getSourceContextIndex(workspaceRoot: string): SourceContextIndexArtifact | null {

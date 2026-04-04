@@ -40,11 +40,11 @@ interface CoverageHint {
 
 const COVERAGE_HINTS: ReadonlyArray<CoverageHint> = [
 	{
-		id: 'ralph-run',
-		matchKeywords: ['ralph run', 'start execution', '开始执行', '自动执行', 'execution loop'],
+		id: 'harness-run',
+		matchKeywords: ['harness run', 'start execution', '开始执行', '自动执行', 'execution loop'],
 		modules: ['extension'],
-		runbookKeywords: ['ralph: 开始执行', 'start execution', '自动执行', 'execution loop'],
-		label: 'RALPH run flow',
+		runbookKeywords: ['harness: 开始执行', 'start execution', '自动执行', 'execution loop'],
+		label: 'Harness run flow',
 	},
 	{
 		id: 'harness-spec',

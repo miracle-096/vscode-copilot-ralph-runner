@@ -252,7 +252,7 @@ export function createSynthesizedStoryEvidence(
 		'src/localization.ts',
 	].includes(filePath));
 	if (touchesCoreExecutionSurface) {
-		riskReasons.push('The story changes Ralph core execution or packaging surfaces.');
+		riskReasons.push('The story changes Harness core execution or packaging surfaces.');
 	}
 
 	if (changedFiles.length >= 8) {

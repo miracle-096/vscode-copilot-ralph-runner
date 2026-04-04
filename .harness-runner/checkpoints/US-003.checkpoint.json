@@ -1,0 +1,89 @@
+{
+  "storyId": "US-003",
+  "title": "重命名核心代码符号与服务文案",
+  "status": "completed",
+  "stageGoal": "将项目代码中的 Ralph 命名替换为 Harness，包括语言包、帮助文档构建器、状态栏文案、运行时消息、类型名、函数名和常量名，并保证 TypeScript 编译与测试编译通过。",
+  "summary": "Completed the core Ralph-to-Harness rename sweep across exported symbols, runtime/help/status copy, prompt contracts, synthesized artifact wording, workspace path helpers, and related test assertions.",
+  "architectureNotes": [
+    "Runtime branding and exported API renames were treated as one unit so extension.ts, localization.ts, helpManual.ts, and tests stay aligned.",
+    "The .harness-runner directory remains the canonical artifact root, so the rename avoided persistence-path migration work.",
+    "Backward-compatible cleanup of old ralph-runner workspace settings remains in place to avoid breaking existing users during the rename."
+  ],
+  "keyDecisions": [
+    "Adopt Harness as the active name in runtime text, help content, prompt contracts, and synthesized fallback artifacts.",
+    "Rename shared exported helpers and types to Harness-prefixed names instead of leaving mixed internal APIs.",
+    "Leave legacy ralph-runner compatibility deletion paths untouched while removing Ralph from the active user-facing surface."
+  ],
+  "confirmedConstraints": [
+    "prd.json remained untouched.",
+    "The .harness-runner artifact root was preserved.",
+    "Validation ran through npm run compile and npm run compile-tests.",
+    "No dist/ or out/ files were hand-edited."
+  ],
+  "unresolvedRisks": [
+    "The icon asset path and packaged VSIX filename still use legacy ralph naming.",
+    "Repository slug and some compatibility-oriented test fixtures still contain ralph identifiers outside the active runtime surface."
+  ],
+  "nextStoryPrerequisites": [
+    "If branding must be fully normalized, audit package assets and repository metadata next.",
+    "If broader verification is desired, run the full npm test suite after this rename story."
+  ],
+  "resumeRecommendation": "Continue from this completed state by reviewing remaining non-runtime branding artifacts such as icon filenames, VSIX output, and repository metadata rather than reopening the core symbol rename itself.",
+  "reviewSummary": {
+    "totalScore": 100,
+    "maxScore": 100,
+    "passingScore": 65,
+    "passed": true,
+    "reviewPass": 1,
+    "maxReviewerPasses": 3,
+    "maxAutoRefactorRounds": 2,
+    "dimensions": [
+      {
+        "dimension": "architectureConsistency",
+        "label": "Architecture Consistency",
+        "score": 25,
+        "summary": "Core rename surfaces and tests are aligned.",
+        "issues": [],
+        "recommendations": []
+      },
+      {
+        "dimension": "acceptanceCoverage",
+        "label": "Acceptance Coverage",
+        "score": 25,
+        "summary": "Acceptance rename targets are reflected in code and strings.",
+        "issues": [],
+        "recommendations": []
+      },
+      {
+        "dimension": "changeScopeControl",
+        "label": "Change Scope Control",
+        "score": 25,
+        "summary": "The story did not alter prd.json or runtime artifact-root paths.",
+        "issues": [],
+        "recommendations": []
+      },
+      {
+        "dimension": "verifiability",
+        "label": "Verifiability",
+        "score": 25,
+        "summary": "Compile and test-compilation evidence are attached.",
+        "issues": [],
+        "recommendations": []
+      }
+    ],
+    "findings": [],
+    "recommendations": [],
+    "refactorPerformed": false,
+    "reviewedAt": "2026-04-04T21:10:00.000Z",
+    "source": "synthesized"
+  },
+  "reviewLoop": {
+    "reviewerPasses": 1,
+    "autoRefactorRounds": 0,
+    "maxAutoRefactorRounds": 2,
+    "endedReason": "passed",
+    "lastReviewedAt": "2026-04-04T21:10:00.000Z"
+  },
+  "updatedAt": "2026-04-04T21:10:00.000Z",
+  "source": "copilot"
+}

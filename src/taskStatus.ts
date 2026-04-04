@@ -1,6 +1,6 @@
-export type RalphTaskSignalStatus = 'inprogress' | 'completed' | 'none';
+export type HarnessTaskSignalStatus = 'inprogress' | 'completed' | 'none';
 
-export function parseTaskSignalStatus(rawValue: string | null | undefined): RalphTaskSignalStatus {
+export function parseTaskSignalStatus(rawValue: string | null | undefined): HarnessTaskSignalStatus {
 	if (!rawValue) {
 		return 'none';
 	}

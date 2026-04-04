@@ -1,0 +1,124 @@
+{
+  "storyId": "US-003",
+  "title": "重命名核心代码符号与服务文案",
+  "status": "completed",
+  "summary": "Rebranded the active Ralph runtime surface to Harness across exported helpers/types, user-facing language-pack copy, help titles, runtime/status messages, prompt context, synthesized artifact text, and associated test expectations.",
+  "changedFiles": [
+    "src/executionCheckpoint.ts",
+    "src/extension.ts",
+    "src/helpManual.ts",
+    "src/knowledgeCheck.ts",
+    "src/localization.ts",
+    "src/policyGate.ts",
+    "src/projectConstraints.ts",
+    "src/promptContext.ts",
+    "src/runLog.ts",
+    "src/sourceContext.ts",
+    "src/storyEvidence.ts",
+    "src/taskMemory.ts",
+    "src/taskStatus.ts",
+    "src/test/extension.test.ts",
+    "src/types.ts",
+    "src/workspacePaths.ts"
+  ],
+  "changedModules": [
+    "runtime orchestration",
+    "localization and help content",
+    "prompt and evidence helpers",
+    "workspace path helpers",
+    "tests"
+  ],
+  "architectureNotes": [
+    "The story changed several core execution surfaces, but kept persistence paths stable by retaining .harness-runner.",
+    "Tests were updated together with exported symbol renames to keep the module graph and assertions coherent."
+  ],
+  "tests": [
+    {
+      "command": "npm run compile",
+      "success": true
+    },
+    {
+      "command": "npm run compile-tests",
+      "success": true
+    }
+  ],
+  "riskLevel": "medium",
+  "riskReasons": [
+    "The story changes Harness core execution or packaging surfaces.",
+    "Icon and packaged VSIX filenames still carry legacy ralph branding outside the active runtime copy."
+  ],
+  "releaseNotes": [
+    "Core extension APIs and user-facing copy now use Harness instead of Ralph.",
+    "Status bar, help pages, prompt contracts, synthesized artifact wording, and test expectations were aligned to the new name.",
+    "The .harness-runner artifact root and legacy ralph-runner settings cleanup behavior were preserved."
+  ],
+  "rollbackHints": [
+    "Rollback should revert the runtime/help/localization/test rename together rather than selectively undoing only one module.",
+    "Use the story-scoped commit as the primary rollback unit before considering partial reversions."
+  ],
+  "followUps": [
+    "Rename or replace icon/package assets if visual branding parity is required.",
+    "Audit repository metadata and packaged outputs for remaining legacy ralph naming."
+  ],
+  "recommendFeatureFlag": false,
+  "evidenceGaps": [],
+  "approvalState": "approved",
+  "approvalHistory": [],
+  "reviewSummary": {
+    "totalScore": 100,
+    "maxScore": 100,
+    "passingScore": 65,
+    "passed": true,
+    "reviewPass": 1,
+    "maxReviewerPasses": 3,
+    "maxAutoRefactorRounds": 2,
+    "dimensions": [
+      {
+        "dimension": "architectureConsistency",
+        "label": "Architecture Consistency",
+        "score": 25,
+        "summary": "Core rename surfaces and tests are aligned.",
+        "issues": [],
+        "recommendations": []
+      },
+      {
+        "dimension": "acceptanceCoverage",
+        "label": "Acceptance Coverage",
+        "score": 25,
+        "summary": "Acceptance rename targets are reflected in code and strings.",
+        "issues": [],
+        "recommendations": []
+      },
+      {
+        "dimension": "changeScopeControl",
+        "label": "Change Scope Control",
+        "score": 25,
+        "summary": "The story did not alter prd.json or runtime artifact-root paths.",
+        "issues": [],
+        "recommendations": []
+      },
+      {
+        "dimension": "verifiability",
+        "label": "Verifiability",
+        "score": 25,
+        "summary": "Compile and test-compilation evidence are attached.",
+        "issues": [],
+        "recommendations": []
+      }
+    ],
+    "findings": [],
+    "recommendations": [],
+    "refactorPerformed": false,
+    "reviewedAt": "2026-04-04T21:10:00.000Z",
+    "source": "synthesized"
+  },
+  "reviewLoop": {
+    "reviewerPasses": 1,
+    "autoRefactorRounds": 0,
+    "maxAutoRefactorRounds": 2,
+    "endedReason": "passed",
+    "lastReviewedAt": "2026-04-04T21:10:00.000Z"
+  },
+  "generatedAt": "2026-04-04T21:10:00.000Z",
+  "source": "copilot"
+}

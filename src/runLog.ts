@@ -135,7 +135,7 @@ export function classifyOutputMessage(message: string): { category: StoryRunLogC
 		normalized.startsWith('… still waiting for Copilot')
 		|| normalized.startsWith('… minimum wait in progress')
 		|| /^[-═]{4,}/.test(normalized)
-		|| normalized === 'RALPH Runner started — autonomous task runner'
+		|| normalized === 'Harness Runner started — autonomous task runner'
 		|| normalized.startsWith('Loaded ')
 		|| normalized.startsWith('Max loops:')
 	) {

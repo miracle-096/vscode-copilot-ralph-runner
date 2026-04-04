@@ -117,7 +117,7 @@ import {
 	readStoryRunLog,
 	summarizeCommandOutput,
 } from '../runLog';
-import { buildRalphHelpDocument, getRalphHelpContent } from '../helpManual';
+import { buildHarnessHelpDocument, getHarnessHelpContent } from '../helpManual';
 import { parseTaskSignalStatus } from '../taskStatus';
 import {
 	normalizeReviewerAutoRefactorLimit,
@@ -283,13 +283,13 @@ suite('Extension Test Suite', () => {
 			assert.strictEqual('ralph-runner.reviewPassingScore' in persisted, false);
 	});
 
-	test('RALPH help documents cover introduction and split manual flows', () => {
-		const chineseIntro = getRalphHelpContent('Chinese', 'introduction');
-		const chineseManual = getRalphHelpContent('Chinese', 'manual');
-		const englishManualDocument = buildRalphHelpDocument('English', 'manual');
+	test('Harness help documents cover introduction and split manual flows', () => {
+		const chineseIntro = getHarnessHelpContent('Chinese', 'introduction');
+		const chineseManual = getHarnessHelpContent('Chinese', 'manual');
+		const englishManualDocument = buildHarnessHelpDocument('English', 'manual');
 
-		assert.strictEqual(chineseIntro.title, 'RALPH 插件介绍');
-		assert.ok(chineseIntro.sections.some(section => section.title === 'RALPH 是什么'));
+		assert.strictEqual(chineseIntro.title, 'Harness 插件介绍');
+		assert.ok(chineseIntro.sections.some(section => section.title === 'Harness 是什么'));
 		assert.ok(chineseManual.sections.some(section => section.title === '空项目流程'));
 		assert.ok(chineseManual.sections.some(section => section.title === '已存在项目流程'));
 		assert.ok(englishManualDocument.html.includes('Empty Project Workflow'));
@@ -552,7 +552,7 @@ suite('Extension Test Suite', () => {
 			assert.ok(generated?.buildCommands.includes('npm run compile'));
 			assert.ok(editable?.sections.some(section => section.heading === 'Technology Summary'));
 			assert.ok(editable?.sections.some(section => section.heading === 'Git Rules' && section.items.includes('完成用户故事并准备 Git 提交时，提交标题和描述必须使用中文。')));
-			assert.strictEqual(editable?.title, 'RALPH Project Constraints');
+			assert.strictEqual(editable?.title, 'Harness Project Constraints');
 			assert.ok(promptLines.includes('Technology Summary'));
 			assert.ok(promptLines.includes('Git Rules'));
 			assert.ok(promptLines.some(line => line.includes('完成用户故事并准备 Git 提交时')));
@@ -586,7 +586,7 @@ suite('Extension Test Suite', () => {
 					deliveryChecklist: ['Run lint'],
 				},
 				editableConstraints: {
-					title: 'RALPH Project Constraints',
+					title: 'Harness Project Constraints',
 					lastUpdated: new Date().toISOString(),
 					sections: [
 						{ heading: 'Technology Summary', items: ['TypeScript'] },
@@ -649,7 +649,7 @@ suite('Extension Test Suite', () => {
 		const prompt = buildProjectConstraintChatAdvicePrompt({
 			workspaceRoot: 'd:/workspace/vscode-copilot-ralph-runner',
 			language: 'Chinese',
-			userRequest: '请帮我完善 ralph run 的执行说明。',
+			userRequest: '请帮我完善 harness run 的执行说明。',
 			generatedPath: 'd:/workspace/vscode-copilot-ralph-runner/.harness-runner/project-constraints.generated.json',
 			editablePath: 'd:/workspace/vscode-copilot-ralph-runner/.harness-runner/project-constraints.md',
 			knowledgeReminderLines: ['- [stale-documentation] README may lag behind the current run flow.'],
@@ -701,7 +701,7 @@ suite('Extension Test Suite', () => {
 			assert.deepStrictEqual(result.generatedConstraints.gitRules, [
 				'When completing a user story and preparing a Git commit, write the commit title and description in English.'
 			]);
-			assert.strictEqual(result.editableConstraints.title, 'RALPH Project Constraints');
+			assert.strictEqual(result.editableConstraints.title, 'Harness Project Constraints');
 			assert.ok(result.editableConstraints.sections.some(section =>
 				section.heading === 'Git Rules'
 				&& section.items.includes('When completing a user story and preparing a Git commit, write the commit title and description in English.')));
@@ -1384,7 +1384,7 @@ suite('Extension Test Suite', () => {
 
 		assert.ok(prompt.includes('Before writing the completion signal, write a structured task memory artifact as valid JSON to:'));
 		assert.ok(prompt.includes('After completing this executor pass, confirm what was done.'));
-		assert.ok(prompt.includes('RALPH will launch a separate Reviewer Agent pass after this executor pass completes.'));
+		assert.ok(prompt.includes('HARNESS will launch a separate Reviewer Agent pass after this executor pass completes.'));
 		assert.ok(prompt.includes('Apply architecture thinking during execution: keep module boundaries explicit'));
 		assert.ok(prompt.includes('Do not reduce governance to language-specific lint or static complexity rules'));
 		assert.ok(prompt.includes('persist reusable architecture conclusions in architectureNotes'));
@@ -1851,7 +1851,7 @@ suite('Extension Test Suite', () => {
 
 			const report = evaluateKnowledgeCoverage(workspaceRoot, {
 				scope: 'run-completion',
-				promptText: 'Update /ralph-spec and Agent Map guidance, plus the ralph run workflow.',
+				promptText: 'Update /harness-spec and Agent Map guidance, plus the harness run workflow.',
 				changedFiles: ['src/customKnowledge.ts'],
 			});
 

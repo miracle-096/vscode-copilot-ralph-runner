@@ -75,7 +75,7 @@ import {
 	validateStoryReviewResult,
 } from './storyReview';
 import { parseTaskSignalStatus } from './taskStatus';
-import { buildRalphHelpDocument, RalphHelpDocumentKind } from './helpManual';
+import { buildHarnessHelpDocument, HarnessHelpDocumentKind } from './helpManual';
 import {
 	buildProjectConstraintChatAdvicePrompt,
 	buildProjectConstraintsInitializationPrompt,
@@ -126,7 +126,7 @@ import {
 import {
 	PRD_FILENAME,
 	PROGRESS_FILENAME,
-	RALPH_DIR,
+	HARNESS_RUNNER_DIR,
 	STORY_STATUS_FILENAME,
 	ensureDesignContextSuggestionDirectory,
 	getDesignContextSuggestionPath as resolveDesignContextSuggestionPath,
@@ -138,14 +138,14 @@ import {
 	getExecutionCheckpointPath as resolveExecutionCheckpointPath,
 	getGeneratedProjectConstraintsPath as resolveGeneratedProjectConstraintsPath,
 	getProjectDesignContextPath as resolveProjectDesignContextPath,
-	getRalphDir as resolveRalphDir,
+	getHarnessRunnerDir as resolveHarnessRunnerDir,
 	getScreenDesignContextPath as resolveScreenDesignContextPath,
 	getStoryEvidencePath as resolveStoryEvidencePath,
 	getStoryStatusRegistryPath as resolveStoryStatusRegistryPath,
 	getSourceContextIndexPath as resolveSourceContextIndexPath,
 	getTaskMemoryPath as resolveTaskMemoryPath,
 } from './workspacePaths';
-import { getLocalizedStoryStatus, getRalphLanguagePack, normalizeRalphLanguage } from './localization';
+import { getLocalizedStoryStatus, getHarnessLanguagePack, normalizeHarnessLanguage } from './localization';
 
 function getConfig() {
 	const cfg = vscode.workspace.getConfiguration('harness-runner');
@@ -172,7 +172,7 @@ function getConfig() {
 		ENABLE_REVIEWER_LOOP: reviewerLoopEnabled,
 		REVIEW_PASSING_SCORE: reviewerPassingScore,
 		MAX_AUTO_REFACTOR_ROUNDS: reviewerAutoRefactorLimit,
-		LANGUAGE: normalizeRalphLanguage(cfg.get<string>('language', 'Chinese')),
+		LANGUAGE: normalizeHarnessLanguage(cfg.get<string>('language', 'Chinese')),
 	};
 }
 
@@ -242,18 +242,18 @@ export function resolveWorkspaceReviewerAutoRefactorLimit(
 }
 
 function getLanguagePack() {
-	return getRalphLanguagePack(getConfig().LANGUAGE);
+	return getHarnessLanguagePack(getConfig().LANGUAGE);
 }
 
 // ── Filesystem Task State Manager ────────────────────────────────────────────
 // Manages .harness-runner/story-status.json as the shared state and completion-signal
 // registry. Legacy task-<id>-status files are migrated on read.
 
-class RalphStateManager {
+class HarnessStateManager {
 
 	/** Absolute path to the .harness-runner directory for the workspace. */
-	static getRalphDir(workspaceRoot: string): string {
-		return resolveRalphDir(workspaceRoot);
+	static getHarnessRunnerDir(workspaceRoot: string): string {
+		return resolveHarnessRunnerDir(workspaceRoot);
 	}
 
 	/** Absolute path to the story status registry stored under .harness-runner/. */
@@ -265,18 +265,18 @@ class RalphStateManager {
 	 * Ensure the .harness-runner directory exists. Safe to call multiple times.
 	 */
 	static ensureDir(workspaceRoot: string): void {
-		const dir = RalphStateManager.getRalphDir(workspaceRoot);
+		const dir = HarnessStateManager.getHarnessRunnerDir(workspaceRoot);
 		if (!fs.existsSync(dir)) {
 			fs.mkdirSync(dir, { recursive: true });
 		}
 	}
 
 	private static getLegacyTaskStatusPath(workspaceRoot: string, taskId: string): string {
-		return path.join(RalphStateManager.getRalphDir(workspaceRoot), `task-${taskId}-status`);
+		return path.join(HarnessStateManager.getHarnessRunnerDir(workspaceRoot), `task-${taskId}-status`);
 	}
 
 	private static clearLegacyTaskStatusFile(workspaceRoot: string, taskId: string): void {
-		const legacyPath = RalphStateManager.getLegacyTaskStatusPath(workspaceRoot, taskId);
+		const legacyPath = HarnessStateManager.getLegacyTaskStatusPath(workspaceRoot, taskId);
 		try {
 			if (fs.existsSync(legacyPath)) {
 				fs.unlinkSync(legacyPath);
@@ -287,10 +287,10 @@ class RalphStateManager {
 	}
 
 	private static deleteStatusEntry(workspaceRoot: string, taskId: string): void {
-		const statusMap = RalphStateManager.readStoryStatusMap(workspaceRoot);
+		const statusMap = HarnessStateManager.readStoryStatusMap(workspaceRoot);
 		if (taskId in statusMap) {
 			delete statusMap[taskId];
-			const filePath = RalphStateManager.getStoryStatusRegistryPath(workspaceRoot);
+			const filePath = HarnessStateManager.getStoryStatusRegistryPath(workspaceRoot);
 			if (Object.keys(statusMap).length === 0) {
 				try {
 					if (fs.existsSync(filePath)) { fs.unlinkSync(filePath); }
@@ -298,11 +298,11 @@ class RalphStateManager {
 					/* ignore */
 				}
 			} else {
-				RalphStateManager.writeStoryStatusMap(workspaceRoot, statusMap);
+				HarnessStateManager.writeStoryStatusMap(workspaceRoot, statusMap);
 			}
 		}
 
-		RalphStateManager.clearLegacyTaskStatusFile(workspaceRoot, taskId);
+		HarnessStateManager.clearLegacyTaskStatusFile(workspaceRoot, taskId);
 	}
 
 	private static setTaskSignalStatus(
@@ -310,10 +310,10 @@ class RalphStateManager {
 		taskId: string,
 		status: Extract<StoryExecutionStatus, 'inprogress' | 'completed'>,
 	): void {
-		const statusMap = RalphStateManager.readStoryStatusMap(workspaceRoot);
+		const statusMap = HarnessStateManager.readStoryStatusMap(workspaceRoot);
 		statusMap[taskId] = status;
-		RalphStateManager.writeStoryStatusMap(workspaceRoot, statusMap);
-		RalphStateManager.clearLegacyTaskStatusFile(workspaceRoot, taskId);
+		HarnessStateManager.writeStoryStatusMap(workspaceRoot, statusMap);
+		HarnessStateManager.clearLegacyTaskStatusFile(workspaceRoot, taskId);
 	}
 
 	/**
@@ -321,8 +321,8 @@ class RalphStateManager {
 	 * Stores the transient signal inside .harness-runner/story-status.json.
 	 */
 	static setInProgress(workspaceRoot: string, taskId: string): void {
-		RalphStateManager.ensureDir(workspaceRoot);
-		RalphStateManager.setTaskSignalStatus(workspaceRoot, taskId, 'inprogress');
+		HarnessStateManager.ensureDir(workspaceRoot);
+		HarnessStateManager.setTaskSignalStatus(workspaceRoot, taskId, 'inprogress');
 	}
 
 	/**
@@ -330,8 +330,8 @@ class RalphStateManager {
 	 * Safe to call even if the signal entry does not already exist.
 	 */
 	static setCompleted(workspaceRoot: string, taskId: string): void {
-		RalphStateManager.ensureDir(workspaceRoot);
-		RalphStateManager.setTaskSignalStatus(workspaceRoot, taskId, 'completed');
+		HarnessStateManager.ensureDir(workspaceRoot);
+		HarnessStateManager.setTaskSignalStatus(workspaceRoot, taskId, 'completed');
 	}
 
 	/**
@@ -339,18 +339,18 @@ class RalphStateManager {
 	 * Falls back to a legacy task-<id>-status file and migrates it when present.
 	 */
 	static getTaskSignalStatus(workspaceRoot: string, taskId: string): 'inprogress' | 'completed' | 'none' {
-		const statusMap = RalphStateManager.readStoryStatusMap(workspaceRoot);
+		const statusMap = HarnessStateManager.readStoryStatusMap(workspaceRoot);
 		const mappedStatus = statusMap[taskId];
 		if (mappedStatus === 'inprogress' || mappedStatus === 'completed') {
 			return mappedStatus;
 		}
 
-		const legacyPath = RalphStateManager.getLegacyTaskStatusPath(workspaceRoot, taskId);
+		const legacyPath = HarnessStateManager.getLegacyTaskStatusPath(workspaceRoot, taskId);
 		try {
 			const content = fs.readFileSync(legacyPath, 'utf-8').trim();
 			const parsedStatus = parseTaskSignalStatus(content);
 			if (parsedStatus === 'inprogress' || parsedStatus === 'completed') {
-				RalphStateManager.setTaskSignalStatus(workspaceRoot, taskId, parsedStatus);
+				HarnessStateManager.setTaskSignalStatus(workspaceRoot, taskId, parsedStatus);
 				return parsedStatus;
 			}
 		} catch {
@@ -364,13 +364,13 @@ class RalphStateManager {
 	 * or null if no task is currently active.
 	 */
 	static getInProgressTaskId(workspaceRoot: string): string | null {
-		for (const [taskId, status] of Object.entries(RalphStateManager.readStoryStatusMap(workspaceRoot))) {
+		for (const [taskId, status] of Object.entries(HarnessStateManager.readStoryStatusMap(workspaceRoot))) {
 			if (status === 'inprogress') {
 				return taskId;
 			}
 		}
 
-		const dir = RalphStateManager.getRalphDir(workspaceRoot);
+		const dir = HarnessStateManager.getHarnessRunnerDir(workspaceRoot);
 		if (!fs.existsSync(dir)) { return null; }
 
 		try {
@@ -378,7 +378,7 @@ class RalphStateManager {
 				const match = entry.match(/^task-(.+)-status$/);
 				if (!match) { continue; }
 				const taskId = match[1];
-				if (RalphStateManager.getTaskSignalStatus(workspaceRoot, taskId) === 'inprogress') {
+				if (HarnessStateManager.getTaskSignalStatus(workspaceRoot, taskId) === 'inprogress') {
 					return taskId;
 				}
 			}
@@ -390,20 +390,20 @@ class RalphStateManager {
 
 	/** True if any task status file currently contains "inprogress". */
 	static isAnyInProgress(workspaceRoot: string): boolean {
-		return RalphStateManager.getInProgressTaskId(workspaceRoot) !== null;
+		return HarnessStateManager.getInProgressTaskId(workspaceRoot) !== null;
 	}
 
 	/**
 	 * Reset a stalled inprogress task back to "none" by deleting its signal entry.
-	 * Used during startup recovery when a previous RALPH session crashed.
+	 * Used during startup recovery when a previous HARNESS session crashed.
 	 */
 	static clearStalledTask(workspaceRoot: string, taskId: string): void {
-		RalphStateManager.deleteStatusEntry(workspaceRoot, taskId);
+		HarnessStateManager.deleteStatusEntry(workspaceRoot, taskId);
 	}
 
 	/** Read the persisted per-story execution status map. */
 	static readStoryStatusMap(workspaceRoot: string): Record<string, StoryExecutionStatus> {
-		const filePath = RalphStateManager.getStoryStatusRegistryPath(workspaceRoot);
+		const filePath = HarnessStateManager.getStoryStatusRegistryPath(workspaceRoot);
 		if (!fs.existsSync(filePath)) {
 			return {};
 		}
@@ -428,16 +428,16 @@ class RalphStateManager {
 
 	/** Persist the per-story execution status map to .harness-runner/story-status.json. */
 	static writeStoryStatusMap(workspaceRoot: string, statusMap: Record<string, StoryExecutionStatus>): void {
-		RalphStateManager.ensureDir(workspaceRoot);
-		const filePath = RalphStateManager.getStoryStatusRegistryPath(workspaceRoot);
+		HarnessStateManager.ensureDir(workspaceRoot);
+		const filePath = HarnessStateManager.getStoryStatusRegistryPath(workspaceRoot);
 		fs.writeFileSync(filePath, `${JSON.stringify(statusMap, null, 2)}\n`, 'utf-8');
 	}
 
 	/** Store the latest execution status for one story. */
 	static setStoryExecutionStatus(workspaceRoot: string, taskId: string, status: StoryExecutionStatus): void {
-		const statusMap = RalphStateManager.readStoryStatusMap(workspaceRoot);
+		const statusMap = HarnessStateManager.readStoryStatusMap(workspaceRoot);
 		statusMap[taskId] = status;
-		RalphStateManager.writeStoryStatusMap(workspaceRoot, statusMap);
+		HarnessStateManager.writeStoryStatusMap(workspaceRoot, statusMap);
 	}
 
 	/**
@@ -445,7 +445,7 @@ class RalphStateManager {
 	 * Falls back to progress.txt and transient signal entries when needed.
 	 */
 	static getStoryExecutionStatus(workspaceRoot: string, taskId: string): StoryExecutionStatus | 'none' {
-		const statusMap = RalphStateManager.readStoryStatusMap(workspaceRoot);
+		const statusMap = HarnessStateManager.readStoryStatusMap(workspaceRoot);
 		const mappedStatus = statusMap[taskId];
 		if (mappedStatus) {
 			return mappedStatus;
@@ -465,7 +465,7 @@ class RalphStateManager {
 			return 'failed';
 		}
 
-		const taskSignal = RalphStateManager.getTaskSignalStatus(workspaceRoot, taskId);
+		const taskSignal = HarnessStateManager.getTaskSignalStatus(workspaceRoot, taskId);
 		if (taskSignal === 'inprogress' || taskSignal === 'completed') {
 			return taskSignal;
 		}
@@ -475,7 +475,7 @@ class RalphStateManager {
 
 	/** Remove a story from the persisted execution status map. */
 	static clearStoryExecutionStatus(workspaceRoot: string, taskId: string): void {
-		RalphStateManager.deleteStatusEntry(workspaceRoot, taskId);
+		HarnessStateManager.deleteStatusEntry(workspaceRoot, taskId);
 	}
 
 	/**
@@ -680,7 +680,7 @@ function writeProgressEntry(workspaceRoot: string, id: string, status: 'done' | 
 		});
 		content = lines.join('\n');
 	} else {
-		content = '# RALPH Runner Progress\n# Format: <storyId> | <status> | <timestamp> | <notes>\n';
+		content = '# Harness Runner Progress\n# Format: <storyId> | <status> | <timestamp> | <notes>\n';
 	}
 
 	if (!content.endsWith('\n')) { content += '\n'; }
@@ -712,7 +712,7 @@ function findNextPendingStory(prd: PrdFile, workspaceRoot: string): UserStory | 
 	// Sort by priority (ascending — lower number = higher priority)
 	const sorted = [...prd.userStories].sort((a, b) => a.priority - b.priority);
 	return sorted.find(story => {
-		const status = RalphStateManager.getStoryExecutionStatus(workspaceRoot, story.id);
+		const status = HarnessStateManager.getStoryExecutionStatus(workspaceRoot, story.id);
 		return status === 'none' || status === '未开始';
 	}) || null;
 }
@@ -735,9 +735,9 @@ let activeRunLog: StoryRunLogRecorder | null = null;
 // ── Activation ──────────────────────────────────────────────────────────────
 
 export function activate(context: vscode.ExtensionContext) {
-	outputChannel = vscode.window.createOutputChannel('RALPH Runner');
+	outputChannel = vscode.window.createOutputChannel('Harness Runner');
 	const languagePack = getLanguagePack();
-	registerRalphChatParticipant(context);
+	registerHarnessChatParticipant(context);
 
 	// ── Status bar icon ────────────────────────────────────────────────────
 	statusBarItem = vscode.window.createStatusBarItem(vscode.StatusBarAlignment.Left, 100);
@@ -765,8 +765,8 @@ export function activate(context: vscode.ExtensionContext) {
 		vscode.commands.registerCommand('harness-runner.configurePolicyGates', () => configurePolicyGates()),
 		vscode.commands.registerCommand('harness-runner.showIntroduction', () => showHelpDocument('introduction')),
 		vscode.commands.registerCommand('harness-runner.showUsageGuide', () => showHelpDocument('manual')),
-		vscode.commands.registerCommand('harness-runner.start', () => startRalph()),
-		vscode.commands.registerCommand('harness-runner.stop', () => stopRalph()),
+		vscode.commands.registerCommand('harness-runner.start', () => startHarnessRunner()),
+		vscode.commands.registerCommand('harness-runner.stop', () => stopHarnessRunner()),
 		vscode.commands.registerCommand('harness-runner.status', () => showStatus()),
 		vscode.commands.registerCommand('harness-runner.reviewStoryApproval', () => reviewStoryApproval()),
 		vscode.commands.registerCommand('harness-runner.resetStep', () => resetStory()),
@@ -785,18 +785,18 @@ export function activate(context: vscode.ExtensionContext) {
 		vscode.commands.registerCommand('harness-runner.appendUserStories', () => appendUserStories())
 	);
 
-	log('RALPH Runner extension activated.');
+	log('Harness Runner extension activated.');
 }
 
 export function deactivate() {
-	stopRalph();
+	stopHarnessRunner();
 	statusBarItem?.dispose();
 	outputChannel?.dispose();
 }
 
 // ── Core Loop ───────────────────────────────────────────────────────────────
 
-async function startRalph(): Promise<void> {
+async function startHarnessRunner(): Promise<void> {
 	const languagePack = getLanguagePack();
 	if (isRunning) {
 		vscode.window.showWarningMessage(languagePack.runtime.alreadyRunning);
@@ -816,10 +816,10 @@ async function startRalph(): Promise<void> {
 	}
 
 	// ── Startup: ensure .harness-runner/ dir exists and is gitignored in the workspace ──
-	RalphStateManager.ensureDir(workspaceRoot);
-	RalphStateManager.ensureGitignore(workspaceRoot);
+	HarnessStateManager.ensureDir(workspaceRoot);
+	HarnessStateManager.ensureGitignore(workspaceRoot);
 
-	const stalledTaskId = RalphStateManager.getInProgressTaskId(workspaceRoot);
+	const stalledTaskId = HarnessStateManager.getInProgressTaskId(workspaceRoot);
 	if (stalledTaskId !== null) {
 		const stalledStory = getStoriesFromPrd(workspaceRoot).find(story => story.id === stalledTaskId)
 			?? createCheckpointFallbackStory(stalledTaskId);
@@ -833,10 +833,10 @@ async function startRalph(): Promise<void> {
 		}
 		const recoveryCheckpoint = ensureExecutionCheckpointPersistence(stalledStory, workspaceRoot, {
 			status: 'interrupted',
-			failureMessage: 'RALPH detected and cleared a stale in-progress lock during startup recovery.',
+			failureMessage: 'HARNESS detected and cleared a stale in-progress lock during startup recovery.',
 		});
-		RalphStateManager.clearStalledTask(workspaceRoot, stalledTaskId);
-		RalphStateManager.clearStoryExecutionStatus(workspaceRoot, stalledTaskId);
+		HarnessStateManager.clearStalledTask(workspaceRoot, stalledTaskId);
+		HarnessStateManager.clearStoryExecutionStatus(workspaceRoot, stalledTaskId);
 		log(`Cleared stalled inprogress state for task ${stalledTaskId}; checkpoint persisted (${recoveryCheckpoint.source}).`);
 	}
 
@@ -851,7 +851,7 @@ async function startRalph(): Promise<void> {
 	cancelToken = new vscode.CancellationTokenSource();
 	outputChannel.show(true);
 	log('═══════════════════════════════════════════════════');
-	log('RALPH Runner started — autonomous task runner');
+	log('Harness Runner started — autonomous task runner');
 	log(`Max loops: ${config.MAX_AUTONOMOUS_LOOPS}`);
 	log('═══════════════════════════════════════════════════');
 
@@ -960,8 +960,8 @@ async function startRalph(): Promise<void> {
 		});
 
 		// ── Persist "inprogress" state to .harness-runner/story-status.json ───────────
-		RalphStateManager.setInProgress(workspaceRoot, nextStory.id);
-		RalphStateManager.setStoryExecutionStatus(workspaceRoot, nextStory.id, 'inprogress');
+		HarnessStateManager.setInProgress(workspaceRoot, nextStory.id);
+		HarnessStateManager.setStoryExecutionStatus(workspaceRoot, nextStory.id, 'inprogress');
 		log(`  Task state written: .harness-runner/story-status.json[${nextStory.id}] = inprogress`);
 
 		try {
@@ -971,8 +971,8 @@ async function startRalph(): Promise<void> {
 			const executionResult = await executeStory(nextStory, workspaceRoot);
 
 			// Safety net: ensure the lock is always cleared on success
-			RalphStateManager.setCompleted(workspaceRoot, nextStory.id);
-			RalphStateManager.setStoryExecutionStatus(workspaceRoot, nextStory.id, executionResult.evidence.artifact.status);
+			HarnessStateManager.setCompleted(workspaceRoot, nextStory.id);
+			HarnessStateManager.setStoryExecutionStatus(workspaceRoot, nextStory.id, executionResult.evidence.artifact.status);
 
 			// Write completion to progress.txt (prd.json is never modified)
 			writeProgressEntry(
@@ -1003,8 +1003,8 @@ async function startRalph(): Promise<void> {
 					details: [errMsg],
 				});
 				activeRunLog?.finalize('cancelled', `Story ${nextStory.id} was cancelled during execution.`);
-				RalphStateManager.clearStalledTask(workspaceRoot, nextStory.id);
-				RalphStateManager.clearStoryExecutionStatus(workspaceRoot, nextStory.id);
+				HarnessStateManager.clearStalledTask(workspaceRoot, nextStory.id);
+				HarnessStateManager.clearStoryExecutionStatus(workspaceRoot, nextStory.id);
 				activeRunLog = null;
 				break;
 			}
@@ -1023,8 +1023,8 @@ async function startRalph(): Promise<void> {
 			});
 
 			// Always release the inprogress lock so the loop can advance
-			RalphStateManager.setCompleted(workspaceRoot, nextStory.id);
-			RalphStateManager.setStoryExecutionStatus(workspaceRoot, nextStory.id, 'failed');
+			HarnessStateManager.setCompleted(workspaceRoot, nextStory.id);
+			HarnessStateManager.setStoryExecutionStatus(workspaceRoot, nextStory.id, 'failed');
 
 			// Write failure to progress.txt (prd.json is never modified)
 			writeProgressEntry(workspaceRoot, nextStory.id, 'failed', `${errMsg}; checkpoint persisted (${failedCheckpoint.source})`);
@@ -1041,7 +1041,7 @@ async function startRalph(): Promise<void> {
 	}
 
 	if (loopsExecuted >= config.MAX_AUTONOMOUS_LOOPS && isRunning) {
-		log(`Reached MAX_AUTONOMOUS_LOOPS (${config.MAX_AUTONOMOUS_LOOPS}). Pausing. Run 'RALPH: Start' to continue.`);
+		log(`Reached MAX_AUTONOMOUS_LOOPS (${config.MAX_AUTONOMOUS_LOOPS}). Pausing. Run 'HARNESS: Start' to continue.`);
 		vscode.window.showInformationMessage(languagePack.runtime.pausedAfterLoops(config.MAX_AUTONOMOUS_LOOPS));
 	}
 
@@ -1050,7 +1050,7 @@ async function startRalph(): Promise<void> {
 	updateStatusBar('idle');
 }
 
-function stopRalph(): void {
+function stopHarnessRunner(): void {
 	const languagePack = getLanguagePack();
 	if (!isRunning) {
 		vscode.window.showInformationMessage(languagePack.runtime.notRunning);
@@ -1058,7 +1058,7 @@ function stopRalph(): void {
 	}
 	cancelToken?.cancel();
 	isRunning = false;
-	log('RALPH Runner stopped by user.');
+	log('Harness Runner stopped by user.');
 	vscode.window.showInformationMessage(languagePack.runtime.stopped);
 	updateStatusBar('idle');
 }
@@ -1200,13 +1200,13 @@ function refreshSourceContextIndexArtifact(
 	}
 }
 
-function registerRalphChatParticipant(context: vscode.ExtensionContext): void {
-	const participant = vscode.chat.createChatParticipant('recent-graduates.harness-runner', handleRalphChatRequest);
+function registerHarnessChatParticipant(context: vscode.ExtensionContext): void {
+	const participant = vscode.chat.createChatParticipant('recent-graduates.harness-runner', handleHarnessChatRequest);
 	participant.iconPath = vscode.Uri.joinPath(context.extensionUri, 'images', 'ralph_runner.ico');
 	context.subscriptions.push(participant);
 }
 
-const handleRalphChatRequest: vscode.ChatRequestHandler = async (
+const handleHarnessChatRequest: vscode.ChatRequestHandler = async (
 	request,
 	_chatContext,
 	stream,
@@ -1265,7 +1265,7 @@ const handleRalphChatRequest: vscode.ChatRequestHandler = async (
 			return;
 		}
 
-		const tempFileResult = writeRalphSpecFinalRequestTempFile(workspaceRoot, runnablePrompt);
+		const tempFileResult = writeHarnessSpecFinalRequestTempFile(workspaceRoot, runnablePrompt);
 		if (tempFileResult.ok) {
 			stream.markdown(`\n\n${languagePack.chatSpec.tempFileSaved(tempFileResult.filePath)}`);
 		} else {
@@ -1284,13 +1284,13 @@ const handleRalphChatRequest: vscode.ChatRequestHandler = async (
 	}
 };
 
-function writeRalphSpecFinalRequestTempFile(
+function writeHarnessSpecFinalRequestTempFile(
 	workspaceRoot: string,
 	content: string,
 ): { ok: true; filePath: string; } | { ok: false; message: string; } {
 	try {
-		RalphStateManager.ensureDir(workspaceRoot);
-		const filePath = path.join(resolveRalphDir(workspaceRoot), 'harness-spec-final-request.md');
+		HarnessStateManager.ensureDir(workspaceRoot);
+		const filePath = path.join(resolveHarnessRunnerDir(workspaceRoot), 'harness-spec-final-request.md');
 		fs.writeFileSync(filePath, `${content.trim()}\n`, 'utf-8');
 		return {
 			ok: true,
@@ -1384,7 +1384,7 @@ async function executeStory(story: UserStory, workspaceRoot: string): Promise<{
 		};
 	}
 
-	RalphStateManager.setStoryExecutionStatus(workspaceRoot, story.id, 'pendingReview');
+	HarnessStateManager.setStoryExecutionStatus(workspaceRoot, story.id, 'pendingReview');
 	log(`  Story ${story.id} moved into Reviewer Agent pass.`);
 	activeRunLog?.transitionPhase('review', `Story ${story.id} moved into Reviewer Agent pass.`);
 
@@ -1496,8 +1496,8 @@ function setTaskInProgressForFollowUpPass(
 	storyId: string,
 	status: Extract<StoryExecutionStatus, 'inprogress' | 'pendingReview'>,
 ): void {
-	RalphStateManager.setInProgress(workspaceRoot, storyId);
-	RalphStateManager.setStoryExecutionStatus(workspaceRoot, storyId, status);
+	HarnessStateManager.setInProgress(workspaceRoot, storyId);
+	HarnessStateManager.setStoryExecutionStatus(workspaceRoot, storyId, status);
 }
 
 // ── Copilot Integration ─────────────────────────────────────────────────────
@@ -2119,7 +2119,7 @@ async function waitForCopilotCompletion(
 			continue;
 		}
 
-		const status = RalphStateManager.getTaskSignalStatus(workspaceRoot, taskId);
+		const status = HarnessStateManager.getTaskSignalStatus(workspaceRoot, taskId);
 		if (status === 'completed') {
 			log(`  ✓ Copilot wrote "completed" to .harness-runner/story-status.json[${taskId}] (elapsed ${Math.round(elapsed / 1000)}s); validating artifacts next.`);
 			return;
@@ -2227,7 +2227,7 @@ function synthesizeTaskMemoryForStory(story: UserStory, workspaceRoot: string, v
 		changedFiles,
 		changedModules,
 		keyDecisions: [
-			'RALPH synthesized a task memory artifact because completion was signaled before a valid memory artifact was available.',
+			'HARNESS synthesized a task memory artifact because completion was signaled before a valid memory artifact was available.',
 			'Prompt recall should use this synthesized entry until a richer memory artifact is recorded.',
 		],
 		constraintsConfirmed: ['prd.json remained read-only during task execution.'],
@@ -2613,7 +2613,7 @@ function ensureStoryReviewPersistence(
 			taskMemory: artifacts.taskMemory.artifact,
 			checkpoint: artifacts.checkpoint.artifact,
 			evidence: artifacts.evidence.artifact,
-			fallbackReason: 'Reviewer pass did not persist a valid structured review summary, so Ralph synthesized one from the available artifacts.',
+			fallbackReason: 'Reviewer pass did not persist a valid structured review summary, so Harness synthesized one from the available artifacts.',
 		});
 		reviewSource = 'synthesized';
 		log(`  WARNING: Synthesized structured review summary for ${story.id}.`);
@@ -2845,11 +2845,11 @@ function extractRelatedStoryIds(story: UserStory): string[] {
 async function ensureNoActiveTask(workspaceRoot: string): Promise<void> {
 	const config = getConfig();
 
-	if (!RalphStateManager.isAnyInProgress(workspaceRoot)) {
+	if (!HarnessStateManager.isAnyInProgress(workspaceRoot)) {
 		return; // Fast path — no active task
 	}
 
-	const activeId = RalphStateManager.getInProgressTaskId(workspaceRoot);
+	const activeId = HarnessStateManager.getInProgressTaskId(workspaceRoot);
 	log(`  ⏳ Task ${activeId} is still marked inprogress in .harness-runner/story-status.json — waiting for it to complete...`);
 
 	const waitStart = Date.now();
@@ -2864,21 +2864,21 @@ async function ensureNoActiveTask(workspaceRoot: string): Promise<void> {
 			throw new Error('Cancelled by user');
 		}
 
-		if (!RalphStateManager.isAnyInProgress(workspaceRoot)) {
+		if (!HarnessStateManager.isAnyInProgress(workspaceRoot)) {
 			const waited = Math.round((Date.now() - waitStart) / 1000);
 			log(`  ✓ No active task on disk — proceeding (waited ${waited}s)`);
 			return;
 		}
 
-		const stillActive = RalphStateManager.getInProgressTaskId(workspaceRoot);
+		const stillActive = HarnessStateManager.getInProgressTaskId(workspaceRoot);
 		log(`  … still waiting for task ${stillActive} to clear inprogress state`);
 	}
 
 	// Timed out — clear the lock to prevent a permanent deadlock
-	const timedOutId = RalphStateManager.getInProgressTaskId(workspaceRoot);
+	const timedOutId = HarnessStateManager.getInProgressTaskId(workspaceRoot);
 	if (timedOutId !== null) {
 		log(`  WARNING: Timed out waiting for task ${timedOutId} — clearing stale lock and proceeding.`);
-		RalphStateManager.clearStalledTask(workspaceRoot, timedOutId);
+		HarnessStateManager.clearStalledTask(workspaceRoot, timedOutId);
 	}
 }
 
@@ -2903,7 +2903,7 @@ async function showStatus(): Promise<void> {
 	let pending = 0;
 	let highRisk = 0;
 	for (const story of prd.userStories) {
-		const status = RalphStateManager.getStoryExecutionStatus(workspaceRoot, story.id);
+		const status = HarnessStateManager.getStoryExecutionStatus(workspaceRoot, story.id);
 		if (status === 'completed') {
 			completed += 1;
 		} else if (status === 'failed') {
@@ -2920,7 +2920,7 @@ async function showStatus(): Promise<void> {
 			highRisk += 1;
 		}
 	}
-	const inProgress = RalphStateManager.getInProgressTaskId(workspaceRoot);
+	const inProgress = HarnessStateManager.getInProgressTaskId(workspaceRoot);
 	const nextPending = findNextPendingStory(prd, workspaceRoot);
 
 	const lines = [
@@ -2989,8 +2989,8 @@ async function reviewStoryApproval(targetStoryId?: string): Promise<void> {
 		note,
 	});
 	writeStoryEvidence(workspaceRoot, candidate.story.id, updatedEvidence);
-	RalphStateManager.setCompleted(workspaceRoot, candidate.story.id);
-	RalphStateManager.setStoryExecutionStatus(workspaceRoot, candidate.story.id, updatedEvidence.status);
+	HarnessStateManager.setCompleted(workspaceRoot, candidate.story.id);
+	HarnessStateManager.setStoryExecutionStatus(workspaceRoot, candidate.story.id, updatedEvidence.status);
 	writeProgressEntry(
 		workspaceRoot,
 		candidate.story.id,
@@ -3046,8 +3046,8 @@ async function resetStory(): Promise<void> {
 	if (selection) {
 		removeProgressEntry(workspaceRoot, selection.storyId);
 		// Also clear the .harness-runner status file if present
-		RalphStateManager.clearStalledTask(workspaceRoot, selection.storyId);
-		RalphStateManager.clearStoryExecutionStatus(workspaceRoot, selection.storyId);
+		HarnessStateManager.clearStalledTask(workspaceRoot, selection.storyId);
+		HarnessStateManager.clearStoryExecutionStatus(workspaceRoot, selection.storyId);
 		try {
 			const evidencePath = resolveStoryEvidencePath(workspaceRoot, selection.storyId);
 			if (fs.existsSync(evidencePath)) {
@@ -3104,7 +3104,7 @@ async function maybePromptForManualApproval(
 function getPendingApprovalCandidates(
 	workspaceRoot: string,
 	prd = parsePrd(workspaceRoot),
-): Array<{ story: UserStory; evidence: StoryEvidenceArtifact; status: ReturnType<typeof RalphStateManager.getStoryExecutionStatus>; }> {
+): Array<{ story: UserStory; evidence: StoryEvidenceArtifact; status: ReturnType<typeof HarnessStateManager.getStoryExecutionStatus>; }> {
 	if (!prd) {
 		return [];
 	}
@@ -3113,9 +3113,9 @@ function getPendingApprovalCandidates(
 		.map(story => ({
 			story,
 			evidence: readStoryEvidence(workspaceRoot, story.id),
-			status: RalphStateManager.getStoryExecutionStatus(workspaceRoot, story.id),
+			status: HarnessStateManager.getStoryExecutionStatus(workspaceRoot, story.id),
 		}))
-		.filter((item): item is { story: UserStory; evidence: StoryEvidenceArtifact; status: ReturnType<typeof RalphStateManager.getStoryExecutionStatus>; } =>
+		.filter((item): item is { story: UserStory; evidence: StoryEvidenceArtifact; status: ReturnType<typeof HarnessStateManager.getStoryExecutionStatus>; } =>
 			item.evidence !== null && isStoryAwaitingApproval(item.evidence)
 		);
 }
@@ -3174,7 +3174,7 @@ function isStoryAwaitingApproval(evidence: StoryEvidenceArtifact): boolean {
 	return evidence.status === 'pendingReview' || evidence.status === 'pendingRelease';
 }
 
-async function pickApprovalCandidate(candidates: Array<{ story: UserStory; evidence: StoryEvidenceArtifact; status: ReturnType<typeof RalphStateManager.getStoryExecutionStatus>; }>) {
+async function pickApprovalCandidate(candidates: Array<{ story: UserStory; evidence: StoryEvidenceArtifact; status: ReturnType<typeof HarnessStateManager.getStoryExecutionStatus>; }>) {
 	const languagePack = getLanguagePack();
 	const items = candidates.map(candidate => ({
 		label: languagePack.common.storyFormat(candidate.story.id, candidate.story.title),
@@ -3297,7 +3297,7 @@ async function initializeProjectConstraints(): Promise<void> {
 
 	outputChannel.show(true);
 	log('═══════════════════════════════════════════════════');
-	log('RALPH Initialize Project Constraints');
+	log('HARNESS Initialize Project Constraints');
 	log('═══════════════════════════════════════════════════');
 
 	try {
@@ -3311,7 +3311,7 @@ async function initializeProjectConstraints(): Promise<void> {
 		}
 		const scaffold = ensureProjectConstraintsScaffold(workspaceRoot);
 		const taskId = 'project-constraints-init';
-		RalphStateManager.clearStalledTask(workspaceRoot, taskId);
+		HarnessStateManager.clearStalledTask(workspaceRoot, taskId);
 		const prompt = buildProjectConstraintsInitializationPrompt({
 			workspaceRoot,
 			language: config.LANGUAGE,
@@ -3332,7 +3332,7 @@ async function initializeProjectConstraints(): Promise<void> {
 
 		try {
 			await waitForCopilotCompletion(taskId, workspaceRoot, { requireRunnerActive: false });
-			RalphStateManager.clearStalledTask(workspaceRoot, taskId);
+			HarnessStateManager.clearStalledTask(workspaceRoot, taskId);
 		} catch (error: unknown) {
 			const message = error instanceof Error ? error.message : String(error);
 			log(`ERROR: Failed to initialize project constraints: ${message}`);
@@ -3476,10 +3476,10 @@ function readProjectConstraintReferenceFile(filePath: string): string {
 		if (normalized.length <= 4000) {
 			return normalized;
 		}
-		return `${normalized.slice(0, 4000)}\n\n[Content truncated by Ralph]`;
+		return `${normalized.slice(0, 4000)}\n\n[Content truncated by Harness]`;
 	} catch (error: unknown) {
 		const message = error instanceof Error ? error.message : String(error);
-		return `[RALPH could not read this file: ${message}]`;
+		return `[HARNESS could not read this file: ${message}]`;
 	}
 }
 
@@ -3603,7 +3603,7 @@ async function runVisualDesignContextDraft(
 	}
 
 	const taskId = createVisualDesignContextDraftTaskId(selectedStory?.id ?? target.scopeId, target.scope, target.scopeId);
-	RalphStateManager.clearStalledTask(workspaceRoot, taskId);
+	HarnessStateManager.clearStalledTask(workspaceRoot, taskId);
 
 	const prompt = buildVisualDesignContextDraftPrompt({
 		workspaceRoot,
@@ -3626,7 +3626,7 @@ async function runVisualDesignContextDraft(
 
 	try {
 		await waitForCopilotCompletion(taskId, workspaceRoot);
-		RalphStateManager.clearStalledTask(workspaceRoot, taskId);
+		HarnessStateManager.clearStalledTask(workspaceRoot, taskId);
 	} catch (error: unknown) {
 		const message = error instanceof Error ? error.message : String(error);
 		log(`ERROR: Visual design context draft generation failed for ${target.label}: ${message}`);
@@ -3700,7 +3700,7 @@ async function suggestStoryDesignContext(): Promise<void> {
 	ensureDesignContextSuggestionDirectory(workspaceRoot);
 	const suggestionPath = resolveDesignContextSuggestionPath(workspaceRoot, selectedStory.id);
 	const taskId = `design-context-suggest-${selectedStory.id.toLowerCase()}`;
-	RalphStateManager.clearStalledTask(workspaceRoot, taskId);
+	HarnessStateManager.clearStalledTask(workspaceRoot, taskId);
 
 	const prompt = buildStoryDesignContextSuggestionPrompt({
 		workspaceRoot,
@@ -3719,7 +3719,7 @@ async function suggestStoryDesignContext(): Promise<void> {
 
 	try {
 		await waitForCopilotCompletion(taskId, workspaceRoot);
-		RalphStateManager.clearStalledTask(workspaceRoot, taskId);
+		HarnessStateManager.clearStalledTask(workspaceRoot, taskId);
 	} catch (error: unknown) {
 		const message = error instanceof Error ? error.message : String(error);
 		log(`ERROR: Story design context suggestion failed for ${selectedStory.id}: ${message}`);
@@ -3825,7 +3825,7 @@ async function selectStoryForTaskMemoryRecall(workspaceRoot: string): Promise<Us
 	const selected = await vscode.window.showQuickPick(
 		stories.map(story => ({
 			label: languagePack.common.storyFormat(story.id, story.title || languagePack.common.untitledStory),
-			description: languagePack.common.statusPriority(getLocalizedStoryStatus(RalphStateManager.getStoryExecutionStatus(workspaceRoot, story.id), languagePack.language), story.priority),
+			description: languagePack.common.statusPriority(getLocalizedStoryStatus(HarnessStateManager.getStoryExecutionStatus(workspaceRoot, story.id), languagePack.language), story.priority),
 			detail: (story.description || '').trim() || languagePack.common.noDescription,
 			story,
 		})),
@@ -4248,7 +4248,7 @@ async function matchDesignDraftsToStories(
 	ensureDesignContextSuggestionDirectory(workspaceRoot);
 	const taskId = `design-context-match-${Date.now()}`;
 	const matchPlanPath = path.join(ensureDesignContextSuggestionDirectory(workspaceRoot), `${taskId}.json`);
-	RalphStateManager.clearStalledTask(workspaceRoot, taskId);
+	HarnessStateManager.clearStalledTask(workspaceRoot, taskId);
 
 	const allowedReferences = selectedDrafts.map(draft => `${draft.scope}:${draft.scopeId}`);
 	const prompt = buildStoryDesignContextBatchMatchPrompt({
@@ -4269,7 +4269,7 @@ async function matchDesignDraftsToStories(
 
 	try {
 		await waitForCopilotCompletion(taskId, workspaceRoot);
-		RalphStateManager.clearStalledTask(workspaceRoot, taskId);
+		HarnessStateManager.clearStalledTask(workspaceRoot, taskId);
 	} catch (error: unknown) {
 		const message = error instanceof Error ? error.message : String(error);
 		log(`ERROR: Design draft matching failed: ${message}`);
@@ -4762,11 +4762,11 @@ async function showCommandMenu(): Promise<void> {
 	}
 }
 
-function showHelpDocument(kind: RalphHelpDocumentKind): void {
+function showHelpDocument(kind: HarnessHelpDocumentKind): void {
 	const languagePack = getLanguagePack();
-	const document = buildRalphHelpDocument(languagePack.language, kind);
+	const document = buildHarnessHelpDocument(languagePack.language, kind);
 	const panel = vscode.window.createWebviewPanel(
-		'ralphHelp',
+		'harnessHelp',
 		document.title,
 		vscode.ViewColumn.Active,
 		{
@@ -4982,7 +4982,7 @@ async function quickStart(): Promise<void> {
 
 	outputChannel.show(true);
 	log('═══════════════════════════════════════════════════');
-	log('RALPH Generate PRD');
+	log('HARNESS Generate PRD');
 	log('═══════════════════════════════════════════════════');
 
 	const prdPath = getPrdPath(workspaceRoot);
@@ -5060,7 +5060,7 @@ async function quickStartProvideFile(prdPath: string): Promise<void> {
 
 /**
  * Ask the user what they want to accomplish, then send a Copilot prompt that
- * generates prd.json in the expected format used by the RALPH Runner extension.
+ * generates prd.json in the expected format used by the Harness Runner extension.
  */
 async function quickStartGenerate(workspaceRoot: string): Promise<void> {
 	const languagePack = getLanguagePack();
@@ -5088,7 +5088,7 @@ async function quickStartGenerate(workspaceRoot: string): Promise<void> {
 
 /**
  * Builds the Copilot prompt that instructs it to generate prd.json
- * in the exact format the RALPH Runner expects.
+ * in the exact format the Harness Runner expects.
  */
 function buildQuickStartPrompt(userGoal: string, workspaceRoot: string): string {
 	const languagePack = getLanguagePack();
@@ -5106,7 +5106,7 @@ function buildQuickStartPrompt(userGoal: string, workspaceRoot: string): string 
 		'```json',
 		'{',
 		'  "project": "<ProjectName>",',
-		'  "branchName": "ralph/<branchName>",',
+		'  "branchName": "harness/<branchName>",',
 		'  "description": "<Short Description of user request>",',
 		'  "userStories": [',
 		'    {',

@@ -81,7 +81,7 @@ export function createSynthesizedTaskMemory(
 		changedFiles: options.changedFiles ?? ['(unable to determine changed files automatically)'],
 		changedModules: options.changedModules ?? [],
 		architectureNotes: options.architectureNotes ?? [],
-		keyDecisions: options.keyDecisions ?? ['RALPH synthesized this task memory because a valid artifact was not persisted before completion.'],
+		keyDecisions: options.keyDecisions ?? ['HARNESS synthesized this task memory because a valid artifact was not persisted before completion.'],
 		constraintsConfirmed: options.constraintsConfirmed ?? ['prd.json remained read-only during task execution.'],
 		testsRun: options.testsRun ?? [],
 		risks: options.risks ?? ['Synthesized memory may need manual review before using it for recall.'],

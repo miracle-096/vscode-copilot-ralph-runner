@@ -1,0 +1,139 @@
+{
+  "storyId": "US-003",
+  "title": "重命名核心代码符号与服务文案",
+  "summary": "Renamed core Ralph symbols and service-facing copy to Harness across localization, help/manual generation, runtime messaging, prompt contracts, policy/task types, workspace path helpers, and related tests while preserving the .harness-runner artifact root and legacy compatibility cleanup for old ralph-runner settings keys.",
+  "changedFiles": [
+    "src/executionCheckpoint.ts",
+    "src/extension.ts",
+    "src/helpManual.ts",
+    "src/knowledgeCheck.ts",
+    "src/localization.ts",
+    "src/policyGate.ts",
+    "src/projectConstraints.ts",
+    "src/promptContext.ts",
+    "src/runLog.ts",
+    "src/sourceContext.ts",
+    "src/storyEvidence.ts",
+    "src/taskMemory.ts",
+    "src/taskStatus.ts",
+    "src/test/extension.test.ts",
+    "src/types.ts",
+    "src/workspacePaths.ts",
+    ".harness-runner/memory/US-003.json",
+    ".harness-runner/checkpoints/US-003.checkpoint.json",
+    ".harness-runner/evidence/US-003.evidence.json",
+    ".harness-runner/story-status.json"
+  ],
+  "changedModules": [
+    "extension runtime orchestration and task-state manager",
+    "localization packs and user-facing service copy",
+    "help document builders and document kinds",
+    "project constraint prompting and editable-title generation",
+    "task memory, checkpoint, and evidence synthesis fallbacks",
+    "workspace path helpers and source-context scaffolding",
+    "policy/task shared types and policy gate helpers",
+    "knowledge coverage hints, run-log classification, and prompt contracts",
+    "extension test expectations"
+  ],
+  "architectureNotes": [
+    "The persistence boundary stays .harness-runner; symbol and copy rebranding was applied around that stable storage root rather than moving artifact paths.",
+    "Localization, help content, runtime logs, and tests were updated together because brand renames are only safe when user-visible strings and assertions move in lockstep.",
+    "Legacy ralph-runner workspace setting cleanup remains intentionally preserved in src/extension.ts as a compatibility seam, separate from the active Harness surface.",
+    "Type and helper renames were propagated through policy, task-status, help, and workspace-path modules so extension.ts can consume a consistent Harness-named API surface.",
+    "The rollback unit is the combined rename across runtime, prompts, localization, and tests; partial reverts would leave mismatched exported symbols and broken assertions."
+  ],
+  "keyDecisions": [
+    "Use Harness as the active product/runtime name in status bar text, help titles, runtime logs, prompt contracts, and synthesized fallback messages.",
+    "Rename core exported symbols such as help builders, language-pack helpers, task-state types, policy config types, and workspace-path helpers to Harness-prefixed names.",
+    "Keep .harness-runner unchanged as the artifact root and keep deletion of legacy ralph-runner.* workspace settings for backward compatibility.",
+    "Update tests with the same pass so renamed titles, prompt copy, and exported helper names remain verifiable under compilation."
+  ],
+  "patternsUsed": [],
+  "constraintsConfirmed": [
+    "prd.json was not modified.",
+    ".harness-runner remained the runtime artifact root.",
+    "No dist/ or out/ files were hand-edited.",
+    "Validation ran through npm run compile and npm run compile-tests.",
+    "Compatibility cleanup for legacy ralph-runner workspace settings was preserved."
+  ],
+  "testsRun": [],
+  "risks": [
+    "The checked-in icon asset path and packaged VSIX filename still use legacy ralph naming, so distribution/file branding is not fully normalized.",
+    "Some remaining ralph occurrences in tests are compatibility fixtures or temporary directory names rather than active runtime branding and may be intentionally left for later cleanup.",
+    "The repository slug in package metadata still references vscode-copilot-ralph-runner and was not changed by this story."
+  ],
+  "followUps": [
+    "Decide whether to rename the checked-in icon asset and packaged VSIX filename to match Harness branding.",
+    "Audit non-source assets and repository metadata for any remaining intentional or accidental ralph branding.",
+    "If desired, run the full npm test suite in a later pass in addition to compile and compile-tests."
+  ],
+  "searchKeywords": [
+    "Harness Runner",
+    "HARNESS",
+    "buildHarnessHelpDocument",
+    "getHarnessLanguagePack",
+    "HarnessStateManager",
+    "HarnessPolicyConfig",
+    "HarnessTaskSignalStatus",
+    "getHarnessRunnerDir",
+    "ralph-runner"
+  ],
+  "relatedStories": [],
+  "reviewSummary": {
+    "totalScore": 100,
+    "maxScore": 100,
+    "passingScore": 65,
+    "passed": true,
+    "reviewPass": 1,
+    "maxReviewerPasses": 3,
+    "maxAutoRefactorRounds": 2,
+    "dimensions": [
+      {
+        "dimension": "architectureConsistency",
+        "label": "Architecture Consistency",
+        "score": 25,
+        "summary": "Core rename surfaces and tests are aligned.",
+        "issues": [],
+        "recommendations": []
+      },
+      {
+        "dimension": "acceptanceCoverage",
+        "label": "Acceptance Coverage",
+        "score": 25,
+        "summary": "Acceptance rename targets are reflected in code and strings.",
+        "issues": [],
+        "recommendations": []
+      },
+      {
+        "dimension": "changeScopeControl",
+        "label": "Change Scope Control",
+        "score": 25,
+        "summary": "The story did not alter prd.json or runtime artifact-root paths.",
+        "issues": [],
+        "recommendations": []
+      },
+      {
+        "dimension": "verifiability",
+        "label": "Verifiability",
+        "score": 25,
+        "summary": "Compile and test-compilation evidence are attached.",
+        "issues": [],
+        "recommendations": []
+      }
+    ],
+    "findings": [],
+    "recommendations": [],
+    "refactorPerformed": false,
+    "reviewedAt": "2026-04-04T21:10:00.000Z",
+    "source": "synthesized"
+  },
+  "reviewLoop": {
+    "reviewerPasses": 1,
+    "autoRefactorRounds": 0,
+    "maxAutoRefactorRounds": 2,
+    "endedReason": "passed",
+    "lastReviewedAt": "2026-04-04T21:10:00.000Z"
+  },
+  "createdAt": "2026-04-04T21:10:00.000Z",
+  "source": "copilot"
+}

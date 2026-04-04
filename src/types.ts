@@ -571,7 +571,7 @@ export interface KnowledgeCheckPolicyRule extends PolicyRuleBase {
 
 export type PolicyRule = RequiredArtifactPolicyRule | RestrictedPathsPolicyRule | RequireCommandPolicyRule | KnowledgeCheckPolicyRule;
 
-export interface RalphPolicyConfig {
+export interface HarnessPolicyConfig {
 	enabled: boolean;
 	preflightRules: PolicyRule[];
 	completionRules: PolicyRule[];

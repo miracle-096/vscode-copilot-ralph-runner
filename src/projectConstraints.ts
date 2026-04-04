@@ -10,7 +10,7 @@ import {
 	getEditableProjectConstraintsPath,
 	getGeneratedProjectConstraintsPath,
 } from './workspacePaths';
-import { getRalphLanguagePack } from './localization';
+import { getHarnessLanguagePack } from './localization';
 
 interface PackageJsonLike {
 	name?: string;
@@ -113,7 +113,7 @@ export function createEmptyGeneratedProjectConstraints(): GeneratedProjectConstr
 }
 
 export function createEditableProjectConstraintsTemplate(): EditableProjectConstraints {
-	const languagePack = getRalphLanguagePack(undefined);
+	const languagePack = getHarnessLanguagePack(undefined);
 	return {
 		title: languagePack.projectConstraintsTitle,
 		lastUpdated: new Date().toISOString(),
@@ -178,7 +178,7 @@ export function scanWorkspaceForProjectConstraints(
 } {
 	const generatedConstraints = createEmptyGeneratedProjectConstraints();
 	generatedConstraints.generatedAt = new Date().toISOString();
-	const languagePack = getRalphLanguagePack(options?.language);
+	const languagePack = getHarnessLanguagePack(options?.language);
 
 	const packageJson = readJsonFile<PackageJsonLike>(path.join(workspaceRoot, 'package.json'));
 	const tsconfig = readJsonFile<TsConfigLike>(path.join(workspaceRoot, 'tsconfig.json'));
@@ -220,7 +220,7 @@ export function scanWorkspaceForProjectConstraints(
 }
 
 export function buildProjectConstraintsInitializationPrompt(input: ProjectConstraintInitializationPromptInput): string {
-	const languagePack = getRalphLanguagePack(input.language);
+	const languagePack = getHarnessLanguagePack(input.language);
 	const generatedJson = JSON.stringify(normalizeGeneratedProjectConstraints(input.scanResult.generatedConstraints), null, 2);
 	const editableMarkdown = serializeEditableProjectConstraints(normalizeEditableProjectConstraints(input.scanResult.editableConstraints));
 	const referenceSources = input.referenceSources ?? [];
@@ -281,7 +281,7 @@ export function buildProjectConstraintsInitializationPrompt(input: ProjectConstr
 }
 
 export function buildProjectConstraintChatAdvicePrompt(input: ProjectConstraintChatAdvicePromptInput): string {
-	const languagePack = getRalphLanguagePack(input.language);
+	const languagePack = getHarnessLanguagePack(input.language);
 	const constraintLines = summarizeProjectConstraintsForPrompt(input.constraints);
 	const languageInstruction = languagePack.language === 'Chinese'
 		? '用中文输出，先吸收并落实规范建议，再给出一份可直接提供给大模型使用的最终描述。'
@@ -603,7 +603,7 @@ function toStringArray(value: unknown): string[] {
 export function createEditableProjectConstraintsFromGenerated(constraints: Partial<GeneratedProjectConstraints>): EditableProjectConstraints {
 	const normalizedGenerated = normalizeGeneratedProjectConstraints(constraints);
 	return normalizeEditableProjectConstraints({
-		title: normalizedGenerated.metadata?.ralphLanguage === 'Chinese' ? 'RALPH 项目约束' : 'RALPH Project Constraints',
+		title: normalizedGenerated.metadata?.harnessLanguage === 'Chinese' ? 'Harness 项目约束' : 'Harness Project Constraints',
 		lastUpdated: normalizedGenerated.generatedAt,
 		sections: GENERATED_CONSTRAINT_SECTION_ORDER.map(section => ({
 			heading: section.heading,
@@ -657,7 +657,7 @@ function collectStyleRules(tsconfig: TsConfigLike | null, eslintConfigPath: stri
 }
 
 function collectGitRules(language?: string): string[] {
-	return [getRalphLanguagePack(language).gitCommitRule];
+	return [getHarnessLanguagePack(language).gitCommitRule];
 }
 
 function collectArchitectureRules(tsconfig: TsConfigLike | null, srcDirectories: string[]): string[] {
