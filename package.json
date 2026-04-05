@@ -1,7 +1,7 @@
 {
   "name": "harness-runner",
   "displayName": "Harness Runner",
-  "description": "Autonomous task runner — reads prd.json user stories, tracks progress inline, and drives Copilot Chat to execute each story in an auditable execution loop",
+  "description": "Autonomous task runner — reads prd.json user stories, tracks progress inline, and drives Cline to execute each story in an auditable execution loop",
   "version": "0.0.9",
   "publisher": "recent-graduates",
   "repository": {
@@ -15,8 +15,7 @@
     "Other"
   ],
   "activationEvents": [
-    "onStartupFinished",
-    "onChatParticipant:recent-graduates.harness-runner"
+    "onStartupFinished"
   ],
   "main": "./dist/extension.js",
   "contributes": {
@@ -100,21 +99,6 @@
         "key": "alt+r"
       }
     ],
-    "chatParticipants": [
-      {
-        "id": "recent-graduates.harness-runner",
-        "name": "harness",
-        "fullName": "Harness Runner",
-        "description": "%chatParticipant.description%",
-        "isSticky": true,
-        "commands": [
-          {
-            "name": "harness-spec",
-            "description": "%chatParticipant.command.harnessSpec.description%"
-          }
-        ]
-      }
-    ],
     "configuration": {
       "title": "%configuration.title%",
       "properties": {
@@ -130,23 +114,23 @@
           "minimum": 0,
           "description": "%configuration.loopDelayMs.description%"
         },
-        "harness-runner.copilotResponsePollMs": {
+        "harness-runner.executionResponsePollMs": {
           "type": "number",
           "default": 5000,
           "minimum": 1000,
-          "description": "%configuration.copilotResponsePollMs.description%"
+          "description": "%configuration.executionResponsePollMs.description%"
         },
-        "harness-runner.copilotTimeoutMs": {
+        "harness-runner.executionTimeoutMs": {
           "type": "number",
           "default": 3600000,
           "minimum": 30000,
-          "description": "%configuration.copilotTimeoutMs.description%"
+          "description": "%configuration.executionTimeoutMs.description%"
         },
-        "harness-runner.copilotMinWaitMs": {
+        "harness-runner.executionMinWaitMs": {
           "type": "number",
           "default": 15000,
           "minimum": 0,
-          "description": "%configuration.copilotMinWaitMs.description%"
+          "description": "%configuration.executionMinWaitMs.description%"
         },
         "harness-runner.autoInjectProjectConstraints": {
           "type": "boolean",

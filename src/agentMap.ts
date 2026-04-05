@@ -51,7 +51,7 @@ const MODULE_RESPONSIBILITY_HINTS: Readonly<Record<string, string[]>> = {
 	],
 	extension: [
 		'Activate VS Code commands and orchestrate the autonomous story loop.',
-		'Bridge persisted artifacts with Copilot Chat execution.',
+		'Bridge persisted artifacts with Cline task execution.',
 	],
 	localization: [
 		'Provide localized labels and messages for commands, prompts, and status UI.',
@@ -142,7 +142,7 @@ export function generateAgentMapArtifacts(workspaceRoot: string): GenerateAgentM
 		runbook,
 		documentIndex,
 		gaps,
-		source: 'copilot',
+		source: 'cline',
 	};
 
 	const knowledgeCatalog: AgentKnowledgeCatalogArtifact = {
@@ -157,7 +157,7 @@ export function generateAgentMapArtifacts(workspaceRoot: string): GenerateAgentM
 			freshnessTarget: item.freshnessTarget,
 			exists: item.exists,
 		})),
-		source: 'copilot',
+		source: 'cline',
 	};
 
 	const overviewPath = getAgentMapOverviewPath(workspaceRoot);

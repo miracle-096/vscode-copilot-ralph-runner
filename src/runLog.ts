@@ -26,8 +26,8 @@ export interface StoryRunLogRecorder {
 	recordContextInjection(entry: StoryRunLogContextInjection, phase?: StoryRunLogPhase): void;
 	recordPolicyEvaluation(phase: 'preflight' | 'completion', result: PolicyEvaluationResult): void;
 	recordTests(results: StoryRunLogTestResult[]): void;
-	recordArtifact(kind: 'task-memory' | 'execution-checkpoint' | 'story-evidence', filePath: string, source: 'copilot' | 'synthesized'): void;
-	recordReview(review: StoryReviewResult, reviewLoop: StoryReviewLoopState, source: 'copilot' | 'synthesized'): void;
+	recordArtifact(kind: 'task-memory' | 'execution-checkpoint' | 'story-evidence', filePath: string, source: 'cline' | 'synthesized'): void;
+	recordReview(review: StoryReviewResult, reviewLoop: StoryReviewLoopState, source: 'cline' | 'synthesized'): void;
 	recordRefactorRound(round: number, maxRounds: number, summary: string): void;
 	finalize(status: StoryRunLogStatus, summary: string, phase?: StoryRunLogPhase): void;
 }
@@ -132,7 +132,7 @@ export function classifyOutputMessage(message: string): { category: StoryRunLogC
 		return { category: 'noise', summary: '' };
 	}
 	if (
-		normalized.startsWith('… still waiting for Copilot')
+		normalized.startsWith('… still waiting for Cline')
 		|| normalized.startsWith('… minimum wait in progress')
 		|| /^[-═]{4,}/.test(normalized)
 		|| normalized === 'Harness Runner started — autonomous task runner'

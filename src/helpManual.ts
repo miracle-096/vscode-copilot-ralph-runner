@@ -53,7 +53,7 @@ function getChineseGuideContent(): HarnessGuideContent {
 						title: 'Harness 是什么',
 						paragraphs: [
 							'Harness Runner 不是零散命令的集合，而是一套围绕 prd.json 用户故事组织执行、检查、证据沉淀和 handoff 的 VS Code 扩展工作流。',
-							'从 harness-engineering 的视角看，它不是去增强模型本身，而是去设计模型运行的环境，让 Copilot 在多轮执行里持续继承仓库规则、交付边界和最近决策。'
+							'从 harness-engineering 的视角看，它不是去增强模型本身，而是去设计模型运行的环境，让 Cline 在多轮执行里持续继承仓库规则、交付边界和最近决策。'
 						],
 						bullets: [
 							'核心哲学是“人类掌舵，智能体执行”，由人定义目标、约束和验收，Harness 负责把这些约束稳定送到执行现场',
@@ -66,7 +66,7 @@ function getChineseGuideContent(): HarnessGuideContent {
 					{
 						title: '适合什么场景',
 						paragraphs: [
-							'适合已经在使用 GitHub Copilot Chat，并且希望把需求拆成用户故事持续推进的项目。',
+							'适合已经在使用 Cline，并且希望把需求拆成用户故事持续推进的项目。',
 							'尤其适合需要保留上下文、多人接力、严格审计或显式回滚线索的工程型仓库。'
 						],
 						bullets: [
@@ -181,7 +181,7 @@ function getChineseGuideContent(): HarnessGuideContent {
 					{
 						title: '已存在项目流程',
 						paragraphs: [
-							'如果仓库已经存在并有真实代码、脚本和文档，建议先把规则和已有知识显式化，再开始执行故事，这样 Copilot 的实现会更稳定。'
+							'如果仓库已经存在并有真实代码、脚本和文档，建议先把规则和已有知识显式化，再开始执行故事，这样 Cline 的实现会更稳定。'
 						],
 						steps: [
 							'确认工作区根目录已有或准备好 prd.json，必要时通过“追加用户故事”并入当前需求。',
@@ -260,7 +260,7 @@ function getEnglishGuideContent(): HarnessGuideContent {
 						title: 'What Harness Is',
 						paragraphs: [
 							'Harness Runner is a VS Code workflow layer that connects story execution, checks, evidence, and handoff around prd.json instead of acting like a loose command list.',
-							'In harness-engineering terms, it improves the environment around the model so Copilot can keep repository-specific rules, boundaries, and recent decisions intact across repeated executions.'
+							'In harness-engineering terms, it improves the environment around the model so Cline can keep repository-specific rules, boundaries, and recent decisions intact across repeated executions.'
 						],
 						bullets: [
 							'The operating model is human steer, agent execute: people define goals, constraints, and acceptance, and the harness keeps them present during execution',
@@ -273,7 +273,7 @@ function getEnglishGuideContent(): HarnessGuideContent {
 					{
 						title: 'Where It Fits',
 						paragraphs: [
-							'Harness Runner is useful when you already work with GitHub Copilot Chat and want a repeatable story-driven execution loop inside a real repository.',
+							'Harness Runner is useful when you already work with Cline and want a repeatable story-driven execution loop inside a real repository.',
 							'It is especially helpful when the work needs traceability, multiple handoffs, or stronger governance than one-off prompts.'
 						]
 					}
@@ -378,7 +378,7 @@ function getEnglishGuideContent(): HarnessGuideContent {
 					{
 						title: 'Existing Repository Workflow',
 						paragraphs: [
-							'For an existing repository, surface the repository rules and existing knowledge before large execution passes so Copilot does not improvise around unknown conventions.'
+							'For an existing repository, surface the repository rules and existing knowledge before large execution passes so Cline does not improvise around unknown conventions.'
 						],
 						steps: [
 							'Confirm prd.json exists or append the current requirement into the existing PRD.',

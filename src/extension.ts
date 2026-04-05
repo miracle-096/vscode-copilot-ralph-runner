@@ -159,6 +159,22 @@ import {
 	normalizeHarnessMenuOrderEditorPayload,
 } from './menuOrderEditor';
 
+interface ClineAPI {
+	startNewTask(task?: string, images?: string[]): Promise<void>;
+	sendMessage?(message?: string, images?: string[]): Promise<void>;
+	pressPrimaryButton?(): Promise<void>;
+	pressSecondaryButton?(): Promise<void>;
+}
+
+function getNumericConfigWithLegacyFallback(
+	cfg: vscode.WorkspaceConfiguration,
+	key: string,
+	legacyKey: string,
+	defaultValue: number,
+): number {
+	return cfg.get<number>(key, cfg.get<number>(legacyKey, defaultValue));
+}
+
 function getConfig() {
 	const cfg = vscode.workspace.getConfiguration('harness-runner');
 	const approvalPromptMode = resolveWorkspaceApprovalPromptMode(cfg.inspect<string>('approvalPromptMode'));
@@ -168,9 +184,9 @@ function getConfig() {
 	return {
 		MAX_AUTONOMOUS_LOOPS: cfg.get<number>('maxAutonomousLoops', 2),
 		LOOP_DELAY_MS: cfg.get<number>('loopDelayMs', 3000),
-		COPILOT_RESPONSE_POLL_MS: cfg.get<number>('copilotResponsePollMs', 5000),
-		COPILOT_TIMEOUT_MS: cfg.get<number>('copilotTimeoutMs', 600000),
-		COPILOT_MIN_WAIT_MS: cfg.get<number>('copilotMinWaitMs', 15000),
+		EXECUTION_RESPONSE_POLL_MS: getNumericConfigWithLegacyFallback(cfg, 'executionResponsePollMs', 'copilotResponsePollMs', 5000),
+		EXECUTION_TIMEOUT_MS: getNumericConfigWithLegacyFallback(cfg, 'executionTimeoutMs', 'copilotTimeoutMs', 600000),
+		EXECUTION_MIN_WAIT_MS: getNumericConfigWithLegacyFallback(cfg, 'executionMinWaitMs', 'copilotMinWaitMs', 15000),
 		AUTO_INJECT_PROJECT_CONSTRAINTS: cfg.get<boolean>('autoInjectProjectConstraints', true),
 		AUTO_INJECT_DESIGN_CONTEXT: cfg.get<boolean>('autoInjectDesignContext', true),
 		AUTO_RECALL_TASK_MEMORY: cfg.get<boolean>('autoRecallTaskMemory', true),
@@ -975,13 +991,13 @@ let cancelToken: vscode.CancellationTokenSource | null = null;
 let isRunning = false;
 let statusBarItem: vscode.StatusBarItem;
 let activeRunLog: StoryRunLogRecorder | null = null;
+let activeClineSessionStartedAt: number | null = null;
 
 // ── Activation ──────────────────────────────────────────────────────────────
 
 export function activate(context: vscode.ExtensionContext) {
 	outputChannel = vscode.window.createOutputChannel('Harness Runner');
 	const languagePack = getLanguagePack();
-	registerHarnessChatParticipant(context);
 
 	// ── Status bar icon ────────────────────────────────────────────────────
 	statusBarItem = vscode.window.createStatusBarItem(vscode.StatusBarAlignment.Left, 100);
@@ -1210,8 +1226,8 @@ async function startHarnessRunner(): Promise<void> {
 		log(`  Task state written: .harness-runner/story-status.json[${nextStory.id}] = inprogress`);
 
 		try {
-			activeRunLog?.transitionPhase('execution', `Delegating ${nextStory.id} to Copilot for implementation.`);
-			// executeStory returns only after Copilot has written "completed"
+			activeRunLog?.transitionPhase('execution', `Delegating ${nextStory.id} to Cline for implementation.`);
+			// executeStory returns only after Cline has written "completed"
 			// to .harness-runner/story-status.json for this story id (or after a timeout).
 			const executionResult = await executeStory(nextStory, workspaceRoot);
 
@@ -1297,7 +1313,7 @@ async function startHarnessRunner(): Promise<void> {
 	updateStatusBar('idle');
 }
 
-function stopHarnessRunner(): void {
+async function stopHarnessRunner(): Promise<void> {
 	const languagePack = getLanguagePack();
 	if (!isRunning) {
 		vscode.window.showInformationMessage(languagePack.runtime.notRunning);
@@ -1305,7 +1321,12 @@ function stopHarnessRunner(): void {
 	}
 	cancelToken?.cancel();
 	isRunning = false;
-	log('Harness Runner stopped by user.');
+	const stoppedExternalSession = await stopActiveClineSession();
+	if (stoppedExternalSession) {
+		log('Harness Runner stopped by user. Active Cline task cancellation requested.');
+	} else {
+		log('Harness Runner stopped by user.');
+	}
 	vscode.window.showInformationMessage(languagePack.runtime.stopped);
 	updateStatusBar('idle');
 }
@@ -1447,134 +1468,28 @@ function refreshSourceContextIndexArtifact(
 	}
 }
 
-function registerHarnessChatParticipant(context: vscode.ExtensionContext): void {
-	const participant = vscode.chat.createChatParticipant('recent-graduates.harness-runner', handleHarnessChatRequest);
-	participant.iconPath = vscode.Uri.joinPath(context.extensionUri, 'images', 'harness_runner.ico');
-	context.subscriptions.push(participant);
-}
-
-const handleHarnessChatRequest: vscode.ChatRequestHandler = async (
-	request,
-	_chatContext,
-	stream,
-	token,
-) => {
-	const languagePack = getLanguagePack();
-	const workspaceRoot = getWorkspaceRoot();
-
-	if (!workspaceRoot) {
-		stream.markdown(languagePack.chatSpec.missingWorkspace);
-		return;
-	}
-
-	if (!hasProjectConstraintsArtifacts(workspaceRoot)) {
-		stream.markdown(languagePack.chatSpec.missingConstraints);
-		return;
-	}
-
-	const userRequest = request.prompt.trim();
-	if (request.command === 'harness-spec' && userRequest.length === 0) {
-		stream.markdown(languagePack.chatSpec.emptyPrompt);
-		return;
-	}
-
-	const mergedConstraints = loadMergedProjectConstraints(workspaceRoot);
-	const knowledgeReport = getKnowledgeCheckReportSafe(workspaceRoot, {
-		scope: 'spec',
-		promptText: userRequest,
-	});
-	const prompt = buildProjectConstraintChatAdvicePrompt({
-		workspaceRoot,
-		language: getConfig().LANGUAGE,
-		userRequest: userRequest.length > 0 ? userRequest : languagePack.chatSpec.emptyPrompt,
-		constraints: mergedConstraints,
-		generatedPath: resolveGeneratedProjectConstraintsPath(workspaceRoot),
-		editablePath: resolveEditableProjectConstraintsPath(workspaceRoot),
-		knowledgeReminderLines: summarizeKnowledgeCheckForPrompt(knowledgeReport),
-	});
-
-	stream.progress(languagePack.chatSpec.thinking);
-
-	try {
-		const response = await request.model.sendRequest([
-			vscode.LanguageModelChatMessage.User(prompt),
-		], {}, token);
-
-		const responseFragments: string[] = [];
-		for await (const fragment of response.text) {
-			responseFragments.push(fragment);
-			stream.markdown(fragment);
-		}
-
-		const runnablePrompt = extractRunnableProjectConstraintRequest(responseFragments.join(''));
-		if (!runnablePrompt) {
-			stream.markdown(`\n\n${languagePack.chatSpec.autoSendSkipped}`);
-			return;
-		}
-
-		const tempFileResult = writeHarnessSpecFinalRequestTempFile(workspaceRoot, runnablePrompt);
-		if (tempFileResult.ok) {
-			stream.markdown(`\n\n${languagePack.chatSpec.tempFileSaved(tempFileResult.filePath)}`);
-		} else {
-			stream.markdown(`\n\n${languagePack.chatSpec.tempFileSaveFailed(tempFileResult.message)}`);
-		}
-
-		const autoSent = await openCopilotChatWithPrompt(
-			runnablePrompt,
-			languagePack.chatSpec.copiedPrompt,
-			{ startNewChat: true }
-		);
-		stream.markdown(`\n\n${autoSent ? languagePack.chatSpec.autoSent : languagePack.chatSpec.openedWithClipboardFallback}`);
-	} catch (error: unknown) {
-		const message = error instanceof Error ? error.message : String(error);
-		stream.markdown(languagePack.chatSpec.error(message));
-	}
-};
-
-function writeHarnessSpecFinalRequestTempFile(
-	workspaceRoot: string,
-	content: string,
-): { ok: true; filePath: string; } | { ok: false; message: string; } {
-	try {
-		HarnessStateManager.ensureDir(workspaceRoot);
-		const filePath = path.join(resolveHarnessRunnerDir(workspaceRoot), 'harness-spec-final-request.md');
-		fs.writeFileSync(filePath, `${content.trim()}\n`, 'utf-8');
-		return {
-			ok: true,
-			filePath: filePath.replace(/\\/g, '/'),
-		};
-	} catch (error: unknown) {
-		const message = error instanceof Error ? error.message : String(error);
-		log(`WARNING: Failed to persist /harness-spec final request: ${message}`);
-		return {
-			ok: false,
-			message,
-		};
-	}
-}
-
 // ── Story Execution ─────────────────────────────────────────────────────────
 
 interface TaskMemoryPersistenceResult {
 	filePath: string;
-	source: 'copilot' | 'synthesized';
+	source: 'cline' | 'synthesized';
 	artifact: TaskMemoryArtifact;
 }
 
 interface ExecutionCheckpointPersistenceResult {
 	filePath: string;
-	source: 'copilot' | 'synthesized';
+	source: 'cline' | 'synthesized';
 	artifact: ExecutionCheckpointArtifact;
 }
 
 interface StoryEvidencePersistenceResult {
 	filePath: string;
-	source: 'copilot' | 'synthesized';
+	source: 'cline' | 'synthesized';
 	artifact: StoryEvidenceArtifact;
 }
 
 interface StoryReviewPersistenceResult {
-	source: 'copilot' | 'synthesized';
+	source: 'cline' | 'synthesized';
 	artifact: StoryReviewResult;
 	loop: StoryReviewLoopState;
 }
@@ -1591,7 +1506,7 @@ async function executeStory(story: UserStory, workspaceRoot: string): Promise<{
 	evidence: StoryEvidencePersistenceResult;
 	review: StoryReviewPersistenceResult;
 }> {
-	const prompt = buildCopilotPromptForStory(story, workspaceRoot);
+	const prompt = buildClinePromptForStory(story, workspaceRoot);
 	const config = getConfig();
 	activeRunLog?.recordEvent({
 		phase: 'execution',
@@ -1601,8 +1516,8 @@ async function executeStory(story: UserStory, workspaceRoot: string): Promise<{
 		summary: `Execution prompt composed for ${story.id}.`,
 		details: [`length=${prompt.length}`],
 	});
-	log('  Delegating user story to Copilot...');
-	await sendToCopilot(prompt, story.id, workspaceRoot);
+	log(`  Delegating user story to Cline...`);
+	await sendToCline(prompt, story.id, workspaceRoot);
 	const completionPolicyResult = evaluateCompletionPolicyGates(workspaceRoot, story);
 	if (!completionPolicyResult.ok) {
 		throw new Error(`Policy gates blocked completion for ${story.id}`);
@@ -1677,7 +1592,7 @@ async function runReviewerAndAutoRefactorLoop(
 		setTaskInProgressForFollowUpPass(workspaceRoot, story.id, 'pendingReview');
 		log(`  Launching Reviewer Agent pass ${reviewPass}/${maxReviewerPasses} for ${story.id}.`);
 		activeRunLog?.transitionPhase('review', `Launching reviewer pass ${reviewPass}/${maxReviewerPasses} for ${story.id}.`);
-		await sendToCopilot(
+		await sendToCline(
 			buildReviewerPromptForStory(story, workspaceRoot, artifacts, reviewPass),
 			story.id,
 			workspaceRoot,
@@ -1710,7 +1625,7 @@ async function runReviewerAndAutoRefactorLoop(
 		log(`  Launching Executor Agent auto-refactor round ${nextRefactorRound}/${config.MAX_AUTO_REFACTOR_ROUNDS} for ${story.id}.`);
 		activeRunLog?.transitionPhase('refactor', `Launching auto-refactor round ${nextRefactorRound}/${config.MAX_AUTO_REFACTOR_ROUNDS} for ${story.id}.`);
 		activeRunLog?.recordRefactorRound(nextRefactorRound, config.MAX_AUTO_REFACTOR_ROUNDS, `Reviewer findings triggered an automatic refactor for ${story.id}.`);
-		await sendToCopilot(
+		await sendToCline(
 			buildRefactorPromptForStory(story, workspaceRoot, artifacts, latestReview, nextRefactorRound, config),
 			story.id,
 			workspaceRoot,
@@ -1747,9 +1662,9 @@ function setTaskInProgressForFollowUpPass(
 	HarnessStateManager.setStoryExecutionStatus(workspaceRoot, storyId, status);
 }
 
-// ── Copilot Integration ─────────────────────────────────────────────────────
+// ── Cline Integration ───────────────────────────────────────────────────────
 
-function buildCopilotPromptForStory(story: UserStory, workspaceRoot: string): string {
+function buildClinePromptForStory(story: UserStory, workspaceRoot: string): string {
 	const projectConstraintsLines = getProjectConstraintsPromptLines(workspaceRoot, story.id);
 	const designContextLines = getDesignContextPromptLines(workspaceRoot, story);
 	const priorWorkLines = getPriorWorkPromptLines(workspaceRoot, story);
@@ -1763,7 +1678,7 @@ function buildCopilotPromptForStory(story: UserStory, workspaceRoot: string): st
 		'Do not ask questions — execute directly.',
 		'Make the actual code changes to the files in the workspace.',
 		'Follow an explicit plan -> execute -> checkpoint -> reset workflow for each story handoff.',
-		'Each story execution starts in a fresh Copilot Chat session; do not rely on implicit context from previous chats.',
+		'Each story execution starts in a fresh agent session; do not rely on implicit context from previous sessions.',
 		'If a Recent Checkpoint section is present, treat it as the authoritative short handoff from the previous execution state.',
 		...getGitExecutionRules(workspaceRoot),
 	];
@@ -2255,64 +2170,116 @@ const DESIGN_SENSITIVE_TAGS = new Set(['design', 'ui', 'ux', 'frontend', 'visual
 
 const DESIGN_SENSITIVE_KEYWORDS = ['design', 'figma', 'layout', 'responsive', 'ui', 'ux', 'visual', 'token', 'spacing'];
 
-async function openCopilotChatWithPrompt(prompt: string, copiedPromptMessage?: string, options?: { startNewChat?: boolean }): Promise<boolean> {
+async function getClineApi(): Promise<ClineAPI | null> {
+	const clineExtension = vscode.extensions.getExtension<ClineAPI>('saoudrizwan.claude-dev');
+	if (!clineExtension) {
+		return null;
+	}
+
+	if (!clineExtension.isActive) {
+		try {
+			await clineExtension.activate();
+		} catch (error: unknown) {
+			const message = error instanceof Error ? error.message : String(error);
+			log(`WARNING: Failed to activate Cline extension (${message})`);
+			return null;
+		}
+	}
+
+	return clineExtension.exports ?? null;
+}
+
+async function stopActiveClineSession(): Promise<boolean> {
+	if (!activeClineSessionStartedAt) {
+		return false;
+	}
+
+	activeClineSessionStartedAt = null;
+
+	const cline = await getClineApi();
+	if (!cline?.pressSecondaryButton) {
+		return false;
+	}
+
+	try {
+		await cline.pressSecondaryButton();
+		return true;
+	} catch (error: unknown) {
+		const message = error instanceof Error ? error.message : String(error);
+		log(`WARNING: Failed to stop active Cline task (${message})`);
+		return false;
+	}
+}
+
+async function openClineWithPrompt(prompt: string, copiedPromptMessage?: string, options?: { startNewChat?: boolean }): Promise<boolean> {
 	async function tryExecuteVsCodeCommand(commandId: string, ...args: unknown[]): Promise<boolean> {
 		try {
 			await vscode.commands.executeCommand(commandId, ...args);
 			return true;
-		} catch {
+		} catch (error: unknown) {
+			const message = error instanceof Error ? error.message : String(error);
+			log(`WARNING: Cline command failed: ${commandId} (${message})`);
 			return false;
 		}
 	}
 
-	async function startFreshCopilotChatSession(): Promise<void> {
-		await tryExecuteVsCodeCommand('workbench.panel.chat.view.copilot.focus');
-		for (const commandId of ['workbench.action.chat.newChat', 'workbench.action.chat.new']) {
-			if (await tryExecuteVsCodeCommand(commandId)) {
-				await sleep(150);
-				return;
+	const cline = await getClineApi();
+	if (cline) {
+		try {
+			if (options?.startNewChat || !activeClineSessionStartedAt) {
+				await cline.startNewTask(prompt);
+			} else if (cline.sendMessage) {
+				await cline.sendMessage(prompt);
+			} else {
+				await cline.startNewTask(prompt);
 			}
+
+			activeClineSessionStartedAt = Date.now();
+			return true;
+		} catch (error: unknown) {
+			const message = error instanceof Error ? error.message : String(error);
+			log(`WARNING: Cline API prompt dispatch failed (${message}); falling back to command automation.`);
 		}
 	}
+
+	await vscode.env.clipboard.writeText(prompt);
+	const sidebarOpened = await tryExecuteVsCodeCommand('claude-dev.SidebarProvider.focus');
+	await sleep(150);
 
 	if (options?.startNewChat) {
-		await startFreshCopilotChatSession();
+		await tryExecuteVsCodeCommand('cline.plusButtonClicked');
+		await sleep(200);
 	}
 
+	const inputFocused = await tryExecuteVsCodeCommand('cline.focusChatInput');
+	if (!sidebarOpened || !inputFocused) {
+		vscode.window.showWarningMessage('HARNESS: Cline 未就绪或未安装。提示词已复制到剪贴板，请安装并启用 Cline。');
+		return false;
+	}
+
+	if (copiedPromptMessage) {
+		vscode.window.showInformationMessage(copiedPromptMessage);
+	}
+	return false;
+}
+
+async function openClineTaskWithPrompt(prompt: string, copiedPromptMessage?: string, options?: { startNewChat?: boolean }): Promise<boolean> {
+	return openClineWithPrompt(prompt, copiedPromptMessage, options);
+}
+
+async function sendToCline(prompt: string, taskId: string, workspaceRoot: string): Promise<void> {
+	log('  Resetting Cline session before story execution...');
+	log('  Sending prompt to Cline...');
 	try {
-		await vscode.commands.executeCommand('workbench.action.chat.open', {
-			query: prompt,
-			isPartialQuery: false
-		});
-		return true;
-	} catch {
-		try {
-			await vscode.commands.executeCommand('workbench.panel.chat.view.copilot.focus');
-			await sleep(1000);
-			await vscode.commands.executeCommand('workbench.action.chat.open', prompt);
-			return true;
-		} catch {
-			log('WARNING: Could not programmatically send to Copilot. Copying to clipboard.');
-			await vscode.env.clipboard.writeText(prompt);
-			await vscode.commands.executeCommand('workbench.action.chat.open');
-			if (copiedPromptMessage) {
-				vscode.window.showInformationMessage(copiedPromptMessage);
-			}
-			return false;
-		}
+		await openClineTaskWithPrompt(prompt, undefined, { startNewChat: true });
+
+		await waitForClineCompletion(taskId, workspaceRoot);
+	} finally {
+		activeClineSessionStartedAt = null;
 	}
 }
 
-async function sendToCopilot(prompt: string, taskId: string, workspaceRoot: string): Promise<void> {
-	log('  Resetting Copilot Chat session before story execution...');
-	log('  Sending prompt to Copilot Chat...');
-	await openCopilotChatWithPrompt(prompt, undefined, { startNewChat: true });
-
-	// Poll story-status.json until Copilot writes "completed" to the expected entry
-	await waitForCopilotCompletion(taskId, workspaceRoot);
-}
-
-export function shouldAbortCopilotWait(
+export function shouldAbortClineWait(
 	isCancellationRequested: boolean,
 	requireRunnerActive: boolean,
 	runnerIsActive: boolean,
@@ -2328,55 +2295,55 @@ export function shouldAbortCopilotWait(
 	return false;
 }
 
-interface CopilotCompletionWaitOptions {
+interface ClineCompletionWaitOptions {
 	requireRunnerActive?: boolean;
 }
 
 /**
- * Polls .harness-runner/story-status.json until Copilot writes "completed" to the task entry.
- * Enforces a minimum wait (copilotMinWaitMs) before checking so that Copilot
+	* Polls .harness-runner/story-status.json until Cline writes "completed" to the task entry.
+	* Enforces a minimum wait before checking so that Cline
  * has time to begin working before the first read.
  * Throws if the timeout is exceeded without seeing "completed".
  */
-async function waitForCopilotCompletion(
+async function waitForClineCompletion(
 	taskId: string,
 	workspaceRoot: string,
-	options?: CopilotCompletionWaitOptions,
+	options?: ClineCompletionWaitOptions,
 ): Promise<void> {
 	const config = getConfig();
 	const requireRunnerActive = options?.requireRunnerActive ?? true;
-	log(`  Waiting for Copilot to write "completed" to .harness-runner/story-status.json[${taskId}]...`);
+	log(`  Waiting for Cline to write "completed" to .harness-runner/story-status.json[${taskId}]...`);
 
 	const startTime = Date.now();
 
-	while (Date.now() - startTime < config.COPILOT_TIMEOUT_MS) {
-		if (shouldAbortCopilotWait(Boolean(cancelToken?.token.isCancellationRequested), requireRunnerActive, isRunning)) {
+	while (Date.now() - startTime < config.EXECUTION_TIMEOUT_MS) {
+		if (shouldAbortClineWait(Boolean(cancelToken?.token.isCancellationRequested), requireRunnerActive, isRunning)) {
 			throw new Error('Cancelled by user');
 		}
 
-		await sleep(config.COPILOT_RESPONSE_POLL_MS);
-		if (shouldAbortCopilotWait(Boolean(cancelToken?.token.isCancellationRequested), requireRunnerActive, isRunning)) {
+		await sleep(config.EXECUTION_RESPONSE_POLL_MS);
+		if (shouldAbortClineWait(Boolean(cancelToken?.token.isCancellationRequested), requireRunnerActive, isRunning)) {
 			throw new Error('Cancelled by user');
 		}
 		const elapsed = Date.now() - startTime;
 
 		// Enforce a minimum wait before the first status check
-		if (elapsed < config.COPILOT_MIN_WAIT_MS) {
-			log(`  … minimum wait in progress (${Math.round(elapsed / 1000)}s / ${Math.round(config.COPILOT_MIN_WAIT_MS / 1000)}s)`);
+		if (elapsed < config.EXECUTION_MIN_WAIT_MS) {
+			log(`  … minimum wait in progress (${Math.round(elapsed / 1000)}s / ${Math.round(config.EXECUTION_MIN_WAIT_MS / 1000)}s)`);
 			continue;
 		}
 
 		const status = HarnessStateManager.getTaskSignalStatus(workspaceRoot, taskId);
 		if (status === 'completed') {
-			log(`  ✓ Copilot wrote "completed" to .harness-runner/story-status.json[${taskId}] (elapsed ${Math.round(elapsed / 1000)}s); validating artifacts next.`);
+			log(`  ✓ Cline wrote "completed" to .harness-runner/story-status.json[${taskId}] (elapsed ${Math.round(elapsed / 1000)}s); validating artifacts next.`);
 			return;
 		}
 
-		log(`  … still waiting for Copilot to complete task ${taskId} (status: ${status}, elapsed ${Math.round(elapsed / 1000)}s)`);
+		log(`  … still waiting for Cline to complete task ${taskId} (status: ${status}, elapsed ${Math.round(elapsed / 1000)}s)`);
 	}
 
-	log(`  ⚠ Copilot timed out after ${Math.round(config.COPILOT_TIMEOUT_MS / 1000)}s without writing "completed" — proceeding.`);
-	throw new Error(`Copilot timed out on task ${taskId}`);
+	log(`  ⚠ Cline timed out after ${Math.round(config.EXECUTION_TIMEOUT_MS / 1000)}s without writing "completed" — proceeding.`);
+	throw new Error(`Cline timed out on task ${taskId}`);
 }
 
 function ensureTaskMemoryPersistence(story: UserStory, workspaceRoot: string): TaskMemoryPersistenceResult {
@@ -2386,16 +2353,16 @@ function ensureTaskMemoryPersistence(story: UserStory, workspaceRoot: string): T
 	if (validation?.isValid) {
 		const filePath = writeTaskMemory(workspaceRoot, story.id, {
 			...validation.artifact,
-			source: validation.artifact.source ?? 'copilot',
+			source: validation.artifact.source ?? 'cline',
 		});
 		const persistedArtifact: TaskMemoryArtifact = {
 			...validation.artifact,
-			source: validation.artifact.source ?? 'copilot',
+			source: validation.artifact.source ?? 'cline',
 		};
 		upsertTaskMemoryIndexEntry(workspaceRoot, persistedArtifact, story.id);
 		log(`  Valid task memory artifact accepted for ${story.id}.`);
-		activeRunLog?.recordArtifact('task-memory', filePath, persistedArtifact.source ?? 'copilot');
-		return { filePath, source: persistedArtifact.source ?? 'copilot', artifact: persistedArtifact };
+		activeRunLog?.recordArtifact('task-memory', filePath, persistedArtifact.source ?? 'cline');
+		return { filePath, source: persistedArtifact.source ?? 'cline', artifact: persistedArtifact };
 	}
 
 	if (validation && !validation.isValid) {
@@ -2428,17 +2395,17 @@ function ensureExecutionCheckpointPersistence(
 	if (validation?.isValid) {
 		const filePath = writeExecutionCheckpoint(workspaceRoot, story.id, {
 			...validation.artifact,
-			source: validation.artifact.source ?? 'copilot',
+			source: validation.artifact.source ?? 'cline',
 		}, options.status);
 		const persistedArtifact: ExecutionCheckpointArtifact = {
 			...validation.artifact,
-			source: validation.artifact.source ?? 'copilot',
+			source: validation.artifact.source ?? 'cline',
 		};
 		log(`  Valid execution checkpoint accepted for ${story.id}.`);
-		activeRunLog?.recordArtifact('execution-checkpoint', filePath, persistedArtifact.source ?? 'copilot');
+		activeRunLog?.recordArtifact('execution-checkpoint', filePath, persistedArtifact.source ?? 'cline');
 		return {
 			filePath,
-			source: persistedArtifact.source ?? 'copilot',
+			source: persistedArtifact.source ?? 'cline',
 			artifact: persistedArtifact,
 		};
 	}
@@ -2468,7 +2435,7 @@ function synthesizeTaskMemoryForStory(story: UserStory, workspaceRoot: string, v
 	const searchKeywords = deriveTaskMemorySearchKeywords(story, changedFiles, changedModules);
 	const risks = validationErrors.length > 0
 		? validationErrors.map(error => `Recovered from invalid task memory: ${error}`)
-		: ['Changed files were inferred automatically because Copilot did not persist task memory.'];
+		: ['Changed files were inferred automatically because Cline did not persist task memory.'];
 
 	return createSynthesizedTaskMemory(story.id, story.title, `Fallback task memory synthesized for ${story.id}: ${story.title}.`, {
 		changedFiles,
@@ -2716,15 +2683,15 @@ function ensureStoryEvidencePersistence(
 	if (validation?.isValid) {
 		const filePath = writeStoryEvidence(workspaceRoot, story.id, {
 			...validation.artifact,
-			source: validation.artifact.source ?? 'copilot',
+			source: validation.artifact.source ?? 'cline',
 		});
 		const persistedArtifact: StoryEvidenceArtifact = {
 			...validation.artifact,
-			source: validation.artifact.source ?? 'copilot',
+			source: validation.artifact.source ?? 'cline',
 		};
 		log(`  Valid story evidence artifact accepted for ${story.id}.`);
-		activeRunLog?.recordArtifact('story-evidence', filePath, persistedArtifact.source ?? 'copilot');
-		return { filePath, source: persistedArtifact.source ?? 'copilot', artifact: persistedArtifact };
+		activeRunLog?.recordArtifact('story-evidence', filePath, persistedArtifact.source ?? 'cline');
+		return { filePath, source: persistedArtifact.source ?? 'cline', artifact: persistedArtifact };
 	}
 
 	if (validation && !validation.isValid) {
@@ -2793,14 +2760,14 @@ function ensureStoryReviewPersistence(
 	artifacts: StoryExecutionArtifacts;
 	review: StoryReviewPersistenceResult;
 } {
-	const reviewCandidates: Array<{ value: Partial<StoryReviewResult> | undefined; source: 'copilot' | 'synthesized'; label: string; }> = [
+	const reviewCandidates: Array<{ value: Partial<StoryReviewResult> | undefined; source: 'cline' | 'synthesized'; label: string; }> = [
 		{ value: artifacts.evidence.artifact.reviewSummary, source: artifacts.evidence.source, label: 'story evidence' },
 		{ value: artifacts.checkpoint.artifact.reviewSummary, source: artifacts.checkpoint.source, label: 'execution checkpoint' },
 		{ value: artifacts.taskMemory.artifact.reviewSummary, source: artifacts.taskMemory.source, label: 'task memory' },
 	];
 
 	let reviewArtifact: StoryReviewResult | null = null;
-	let reviewSource: 'copilot' | 'synthesized' = 'synthesized';
+	let reviewSource: 'cline' | 'synthesized' = 'synthesized';
 	for (const candidate of reviewCandidates) {
 		if (!candidate.value) {
 			continue;
@@ -2815,7 +2782,7 @@ function ensureStoryReviewPersistence(
 		});
 		if (validation.isValid) {
 			reviewArtifact = validation.artifact;
-			reviewSource = candidate.source === 'copilot' ? 'copilot' : 'synthesized';
+			reviewSource = candidate.source === 'cline' ? 'cline' : 'synthesized';
 			break;
 		}
 
@@ -3087,7 +3054,7 @@ function extractRelatedStoryIds(story: UserStory): string[] {
 /**
  * Block until no transient signal entry in .harness-runner/story-status.json is "inprogress".
  * Under normal sequential operation this resolves immediately.
- * Polls every COPILOT_RESPONSE_POLL_MS and times out after COPILOT_TIMEOUT_MS.
+ * Polls every EXECUTION_RESPONSE_POLL_MS and times out after EXECUTION_TIMEOUT_MS.
  */
 async function ensureNoActiveTask(workspaceRoot: string): Promise<void> {
 	const config = getConfig();
@@ -3101,12 +3068,12 @@ async function ensureNoActiveTask(workspaceRoot: string): Promise<void> {
 
 	const waitStart = Date.now();
 
-	while (Date.now() - waitStart < config.COPILOT_TIMEOUT_MS) {
+	while (Date.now() - waitStart < config.EXECUTION_TIMEOUT_MS) {
 		if (cancelToken?.token.isCancellationRequested) {
 			throw new Error('Cancelled by user');
 		}
 
-		await sleep(config.COPILOT_RESPONSE_POLL_MS);
+		await sleep(config.EXECUTION_RESPONSE_POLL_MS);
 		if (cancelToken?.token.isCancellationRequested || !isRunning) {
 			throw new Error('Cancelled by user');
 		}
@@ -3638,11 +3605,11 @@ async function initializeProjectConstraints(): Promise<void> {
 		log(`Project constraints editable scaffold: ${scaffold.editablePath}`);
 		log(`Technology summary items: ${scanResult.generatedConstraints.technologySummary.length}`);
 		log(`Delivery checklist items: ${scanResult.generatedConstraints.deliveryChecklist.length}`);
-		await openCopilotChatWithPrompt(prompt, languagePack.initProjectConstraints.copiedPrompt);
+		await openClineTaskWithPrompt(prompt, languagePack.initProjectConstraints.copiedPrompt);
 		vscode.window.showInformationMessage(languagePack.initProjectConstraints.started);
 
 		try {
-			await waitForCopilotCompletion(taskId, workspaceRoot, { requireRunnerActive: false });
+			await waitForClineCompletion(taskId, workspaceRoot, { requireRunnerActive: false });
 			HarnessStateManager.clearStalledTask(workspaceRoot, taskId);
 		} catch (error: unknown) {
 			const message = error instanceof Error ? error.message : String(error);
@@ -3933,10 +3900,10 @@ async function runVisualDesignContextDraft(
 
 	log(`Generating visual design context draft for ${selectedStory?.id ?? target.scopeId} -> ${target.label}`);
 	vscode.window.showInformationMessage(languagePack.designContext.draft.started(target.label));
-	await openCopilotChatWithPrompt(prompt, languagePack.designContext.draft.copiedPrompt);
+	await openClineTaskWithPrompt(prompt, languagePack.designContext.draft.copiedPrompt);
 
 	try {
-		await waitForCopilotCompletion(taskId, workspaceRoot);
+		await waitForClineCompletion(taskId, workspaceRoot);
 		HarnessStateManager.clearStalledTask(workspaceRoot, taskId);
 	} catch (error: unknown) {
 		const message = error instanceof Error ? error.message : String(error);
@@ -3947,7 +3914,7 @@ async function runVisualDesignContextDraft(
 
 	const generatedDraft = readDesignContextForScope(workspaceRoot, target.scope, target.scopeId);
 	if (!generatedDraft) {
-		log(`ERROR: Copilot completed the visual draft task but no artifact was found at ${target.filePath}`);
+		log(`ERROR: Cline completed the visual draft task but no artifact was found at ${target.filePath}`);
 		vscode.window.showErrorMessage(languagePack.designContext.draft.missingArtifact(target.label));
 		return;
 	}
@@ -4026,10 +3993,10 @@ async function suggestStoryDesignContext(): Promise<void> {
 
 	log(`Generating story design context suggestion for ${selectedStory.id}`);
 	vscode.window.showInformationMessage(languagePack.designContext.suggestion.started(selectedStory.id));
-	await openCopilotChatWithPrompt(prompt, languagePack.designContext.suggestion.copiedPrompt);
+	await openClineTaskWithPrompt(prompt, languagePack.designContext.suggestion.copiedPrompt);
 
 	try {
-		await waitForCopilotCompletion(taskId, workspaceRoot);
+		await waitForClineCompletion(taskId, workspaceRoot);
 		HarnessStateManager.clearStalledTask(workspaceRoot, taskId);
 	} catch (error: unknown) {
 		const message = error instanceof Error ? error.message : String(error);
@@ -4040,7 +4007,7 @@ async function suggestStoryDesignContext(): Promise<void> {
 
 	const rawSuggestion = readJsonFile<Partial<import('./types').DesignContextArtifact>>(suggestionPath);
 	if (!rawSuggestion) {
-		log(`ERROR: Copilot completed suggestion task but no suggestion artifact was found for ${selectedStory.id}`);
+		log(`ERROR: Cline completed suggestion task but no suggestion artifact was found for ${selectedStory.id}`);
 		vscode.window.showErrorMessage(languagePack.designContext.suggestion.missingArtifact(selectedStory.id));
 		return;
 	}
@@ -4576,10 +4543,10 @@ async function matchDesignDraftsToStories(
 
 	log(`Generating AI-guided design-story matches for ${selectedStories.length} candidate stories using ${selectedDrafts.length} reusable drafts.`);
 	vscode.window.showInformationMessage(languagePack.designContext.matching.started(selectedStories.length, selectedDrafts.length));
-	await openCopilotChatWithPrompt(prompt, languagePack.designContext.matching.copiedPrompt);
+	await openClineTaskWithPrompt(prompt, languagePack.designContext.matching.copiedPrompt);
 
 	try {
-		await waitForCopilotCompletion(taskId, workspaceRoot);
+		await waitForClineCompletion(taskId, workspaceRoot);
 		HarnessStateManager.clearStalledTask(workspaceRoot, taskId);
 	} catch (error: unknown) {
 		const message = error instanceof Error ? error.message : String(error);
@@ -4590,7 +4557,7 @@ async function matchDesignDraftsToStories(
 
 	const rawMatchPlan = readJsonFile<unknown>(matchPlanPath);
 	if (!rawMatchPlan) {
-		log('ERROR: Copilot completed design matching task but no match plan artifact was found.');
+		log('ERROR: Cline completed design matching task but no match plan artifact was found.');
 		vscode.window.showErrorMessage(languagePack.designContext.matching.missingArtifact);
 		return;
 	}
@@ -4965,9 +4932,9 @@ async function appendUserStories(): Promise<void> {
 
 	const prompt = buildAppendUserStoriesPrompt(request.trim(), workspaceRoot, prd);
 	log(`Append user stories request: ${request.trim()}`);
-	await openCopilotChatWithPrompt(prompt, languagePack.appendStories.copiedPrompt);
+	await openClineTaskWithPrompt(prompt, languagePack.appendStories.copiedPrompt);
 	vscode.window.showInformationMessage(languagePack.appendStories.started);
-	log('Append user stories prompt sent to Copilot. Waiting for prd.json update…');
+	log('Append user stories prompt sent to Cline. Waiting for prd.json update…');
 }
 
 function buildAppendUserStoriesPrompt(request: string, workspaceRoot: string, prd: PrdFile): string {
@@ -5315,7 +5282,7 @@ async function promptForWorkspacePinnedInteger(options: {
 // 1. Checks if prd.json already exists in the workspace root.
 // 2. If missing, asks the user to provide a path to an existing file.
 // 3. If the user doesn't have one, asks what they want to accomplish and
-//    uses Copilot to generate prd.json in the expected format.
+//    uses Cline to generate prd.json in the expected format.
 
 async function quickStart(): Promise<void> {
 	const languagePack = getLanguagePack();
@@ -5404,7 +5371,7 @@ async function quickStartProvideFile(prdPath: string): Promise<void> {
 }
 
 /**
- * Ask the user what they want to accomplish, then send a Copilot prompt that
+ * Ask the user what they want to accomplish, then send a Cline prompt that
  * generates prd.json in the expected format used by the Harness Runner extension.
  */
 async function quickStartGenerate(workspaceRoot: string): Promise<void> {
@@ -5422,17 +5389,17 @@ async function quickStartGenerate(workspaceRoot: string): Promise<void> {
 	}
 
 	log(`User goal: ${userGoal}`);
-	log('Sending generation prompt to Copilot…');
+	log('Sending generation prompt to Cline…');
 
 	const prompt = buildQuickStartPrompt(userGoal, workspaceRoot);
-	await openCopilotChatWithPrompt(prompt, languagePack.quickStart.copiedPrompt);
+	await openClineTaskWithPrompt(prompt, languagePack.quickStart.copiedPrompt);
 
 	vscode.window.showInformationMessage(languagePack.quickStart.generationStarted);
-	log('Generate PRD prompt sent to Copilot. Waiting for file generation…');
+	log('Generate PRD prompt sent to Cline. Waiting for file generation…');
 }
 
 /**
- * Builds the Copilot prompt that instructs it to generate prd.json
+ * Builds the Cline prompt that instructs it to generate prd.json
  * in the exact format the Harness Runner expects.
  */
 function buildQuickStartPrompt(userGoal: string, workspaceRoot: string): string {

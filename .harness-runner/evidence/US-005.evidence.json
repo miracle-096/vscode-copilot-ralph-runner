@@ -1,7 +1,7 @@
 {
   "storyId": "US-005",
   "title": "抽象可扩展的分层菜单框架",
-  "status": "pendingRelease",
+  "status": "completed",
   "summary": "完成分层菜单框架的故事级收口：将命令入口整理为可扩展的菜单树模型，补充了分层菜单说明，并新增回归测试以锁定一级菜单、子菜单、返回导航和既有命令可达性。",
   "changedFiles": [
     "(unable to determine changed files automatically)"
@@ -39,8 +39,18 @@
   "evidenceGaps": [
     "Changed file scope could not be fully determined."
   ],
-  "approvalState": "pending",
-  "approvalHistory": [],
+  "approvalState": "approved",
+  "approvalUpdatedAt": "2026-04-05T07:43:43.702Z",
+  "approvalSummary": "approved at 2026-04-05T07:43:43.702Z; status=completed",
+  "approvalHistory": [
+    {
+      "action": "approved",
+      "createdAt": "2026-04-05T07:43:43.702Z",
+      "actor": "user",
+      "fromStatus": "pendingRelease",
+      "toStatus": "completed"
+    }
+  ],
   "reviewSummary": {
     "totalScore": 100,
     "maxScore": 100,

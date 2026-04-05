@@ -93,7 +93,7 @@ export interface TaskMemoryArtifact {
 	reviewSummary?: StoryReviewResult;
 	reviewLoop?: StoryReviewLoopState;
 	createdAt: string;
-	source?: 'copilot' | 'synthesized';
+	source?: 'cline' | 'synthesized';
 }
 
 export interface ExecutionCheckpointArtifact {
@@ -111,7 +111,7 @@ export interface ExecutionCheckpointArtifact {
 	reviewSummary?: StoryReviewResult;
 	reviewLoop?: StoryReviewLoopState;
 	updatedAt: string;
-	source?: 'copilot' | 'synthesized';
+	source?: 'cline' | 'synthesized';
 }
 
 export type StoryReviewDimensionId = 'architectureConsistency' | 'acceptanceCoverage' | 'changeScopeControl' | 'verifiability';
@@ -141,7 +141,7 @@ export interface StoryReviewResult {
 	refactorPerformed: boolean;
 	refactorSummary?: string;
 	reviewedAt: string;
-	source?: 'copilot' | 'synthesized';
+	source?: 'cline' | 'synthesized';
 }
 
 export interface StoryReviewLoopState {
@@ -196,7 +196,7 @@ export interface StoryEvidenceArtifact {
 	reviewSummary?: StoryReviewResult;
 	reviewLoop?: StoryReviewLoopState;
 	generatedAt: string;
-	source?: 'copilot' | 'synthesized';
+	source?: 'cline' | 'synthesized';
 }
 
 export type StoryRunLogStatus = 'running' | 'completed' | 'failed' | 'cancelled' | 'blocked';
@@ -393,7 +393,7 @@ export interface AgentMapOverviewArtifact {
 	runbook: AgentMapRunbookStep[];
 	documentIndex: AgentKnowledgeItem[];
 	gaps: AgentMapGap[];
-	source: 'copilot';
+	source: 'cline';
 }
 
 export interface AgentKnowledgeCatalogArtifact {
@@ -408,7 +408,7 @@ export interface AgentKnowledgeCatalogArtifact {
 		freshnessTarget: AgentKnowledgeFreshnessTarget;
 		exists: boolean;
 	}>;
-	source: 'copilot';
+	source: 'cline';
 }
 
 export type KnowledgeCheckScope = 'run-preflight' | 'run-completion' | 'spec';
@@ -432,7 +432,7 @@ export interface KnowledgeCheckReport {
 	issues: KnowledgeCheckIssue[];
 	relevantModules: string[];
 	checkedArtifacts: string[];
-	source?: 'copilot';
+	source?: 'cline';
 }
 
 export interface SourceContextRecallMatch {

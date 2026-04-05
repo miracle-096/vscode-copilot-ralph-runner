@@ -224,21 +224,6 @@ export interface HarnessLanguagePack {
 		openKnowledgeCatalog: string;
 		failed: (message: string) => string;
 	};
-	chatSpec: {
-		participantDescription: string;
-		commandDescription: string;
-		missingWorkspace: string;
-		missingConstraints: string;
-		emptyPrompt: string;
-		thinking: string;
-		tempFileSaved: (filePath: string) => string;
-		tempFileSaveFailed: (message: string) => string;
-		copiedPrompt: string;
-		autoSent: string;
-		openedWithClipboardFallback: string;
-		autoSendSkipped: string;
-		error: (message: string) => string;
-	};
 	designContext: {
 		noStories: string;
 			noExistingDrafts: string;
@@ -606,7 +591,7 @@ const CHINESE_PACK: HarnessLanguagePack = {
 	},
 	initProjectConstraints: {
 		success: 'HARNESS：项目约束已初始化。',
-		copiedPrompt: 'HARNESS：项目约束整理提示词已复制到剪贴板，请粘贴到 Copilot Chat。',
+		copiedPrompt: 'HARNESS：项目约束整理提示词已复制到剪贴板，请粘贴到当前配置的智能体。',
 		openEditableRules: '打开可编辑规则',
 		openGeneratedSummary: '打开生成摘要',
 		failed: message => `HARNESS：初始化项目约束失败：${message}`,
@@ -614,9 +599,9 @@ const CHINESE_PACK: HarnessLanguagePack = {
 		referenceSourcePlaceholder: '继续补充已有规范、说明，或选择完成提供',
 		referenceCollectionProgress: (fileCount, noteCount) => `（已添加 ${fileCount} 个文件，${noteCount} 条补充说明）`,
 		referenceSourceOptions: {
-			files: { label: '$(folder-opened) 提供已有规范文件', description: '选择现有的规范、README、团队约定或其他项目规则文件，交给 Copilot 一起整理' },
+			files: { label: '$(folder-opened) 提供已有规范文件', description: '选择现有的规范、README、团队约定或其他项目规则文件，交给 Cline 一起整理' },
 			notes: { label: '$(note) 补充文字要求', description: '输入这次必须纳入项目约束的规则、禁区或交付要求' },
-			finish: { label: '$(check) 完成提供并继续', description: '结束当前补充阶段，基于仓库扫描结果和你刚才提供的内容交给 Copilot 整理' },
+			finish: { label: '$(check) 完成提供并继续', description: '结束当前补充阶段，基于仓库扫描结果和你刚才提供的内容交给 Cline 整理' },
 		},
 		referenceFilesDialogTitle: '选择已有项目规范或团队约定文件',
 		referenceFilesOpenLabel: '使用这些规则文件',
@@ -625,7 +610,7 @@ const CHINESE_PACK: HarnessLanguagePack = {
 		referenceFileNotePlaceholder: '留空表示不补充这个文件的备注',
 		additionalNotesTitle: '初始化项目约束 — 补充说明',
 		additionalNotesPrompt: '可选：输入这次必须体现的规范、禁区、交付标准或协作要求',
-		started: 'HARNESS：Copilot 正在结合仓库扫描结果和你补充的规范，整理项目约束。',
+		started: 'HARNESS：Cline 正在结合仓库扫描结果和你补充的规范，整理项目约束。',
 	},
 	sourceContext: {
 		success: filePath => `HARNESS：源码上下文索引已刷新：${filePath}`,
@@ -646,21 +631,6 @@ const CHINESE_PACK: HarnessLanguagePack = {
 		openKnowledgeCatalog: '打开知识目录页',
 		failed: message => `HARNESS：生成 Agent Map 失败：${message}`,
 	},
-	chatSpec: {
-		participantDescription: '根据 Harness 合并后的项目规范，整理最终需求描述，并自动转交给 Copilot Chat 执行。',
-		commandDescription: '按当前项目规范完善你的描述，产出最终版本后自动发送到 Copilot Chat。',
-		missingWorkspace: 'HARNESS Spec：当前未打开工作区，无法读取项目规范。',
-		missingConstraints: 'HARNESS Spec：还没有初始化项目规范。请先运行“HARNESS: 初始化项目约束”，再使用 @harness /harness-spec。',
-		emptyPrompt: 'HARNESS Spec：请在 @harness /harness-spec 后面补充你的需求描述、修改想法或任务说明。',
-		thinking: 'HARNESS 正在根据已初始化的项目规范完善描述并整理最终版本...',
-		tempFileSaved: filePath => `HARNESS Spec：最终请求已写入临时文件：${filePath}`,
-		tempFileSaveFailed: message => `HARNESS Spec：写入临时文件失败：${message}`,
-		copiedPrompt: 'HARNESS Spec：最终请求已复制到剪贴板，请粘贴到新的 Copilot Chat。',
-		autoSent: 'HARNESS Spec：已将最终请求自动发送到新的 Copilot Chat。',
-		openedWithClipboardFallback: 'HARNESS Spec：无法直接自动发送，已复制最终请求并打开 Copilot Chat。',
-		autoSendSkipped: 'HARNESS Spec：未能从结果中提取可执行的最终请求，请直接使用上方代码块。',
-		error: message => `HARNESS Spec：生成约束对齐后的最终描述失败：${message}`,
-	},
 	designContext: {
 		noStories: '未找到可用的用户故事，请先准备 prd.json。',
 			noExistingDrafts: 'HARNESS：当前还没有任何界面设计描述。',
@@ -676,31 +646,31 @@ const CHINESE_PACK: HarnessLanguagePack = {
 		actionPlaceholder: '选择界面设计描述的处理方式',
 		sourcePlaceholder: '选择界面设计描述的主要来源',
 			deletePlaceholder: '选择要删除的界面设计描述',
-			matchDraftPlaceholder: '选择候选界面设计描述，可多选，Copilot 会判断哪些故事真正相关',
-			matchStoryPlaceholder: '顶部可评估全部未完成故事，下方可多选候选故事后让 Copilot 判断是否需要关联',
+			matchDraftPlaceholder: '选择候选界面设计描述，可多选，Cline 会判断哪些故事真正相关',
+			matchStoryPlaceholder: '顶部可评估全部未完成故事，下方可多选候选故事后让 Cline 判断是否需要关联',
 			deleteAction: '删除设计稿',
 			deleteConfirm: label => `确定删除 ${label} 吗？该操作不会自动恢复。`,
 			deleted: label => `HARNESS：已删除 ${label}。`,
 			matching: {
-				copiedPrompt: 'HARNESS：批量设计稿匹配提示词已复制到剪贴板，请粘贴到 Copilot Chat。',
-				started: (storyCount, draftCount) => `HARNESS：Copilot 正在从 ${storyCount} 个候选未完成故事中判断哪些应关联这 ${draftCount} 份界面设计描述。`,
+				copiedPrompt: 'HARNESS：批量设计稿匹配提示词已复制到剪贴板，请粘贴到当前配置的智能体。',
+				started: (storyCount, draftCount) => `HARNESS：Cline 正在从 ${storyCount} 个候选未完成故事中判断哪些应关联这 ${draftCount} 份界面设计描述。`,
 				failed: message => `HARNESS：批量匹配界面设计描述失败：${message}`,
-				missingArtifact: 'HARNESS：Copilot 已完成，但未找到批量设计稿匹配结果文件。',
-				noRelevantMatches: storyCount => `HARNESS：Copilot 已检查 ${storyCount} 个候选未完成故事，未发现需要关联当前设计稿的故事。`,
-				completed: (matchedStoryCount, candidateStoryCount, draftCount) => `HARNESS：Copilot 已在 ${candidateStoryCount} 个候选未完成故事中，实际关联 ${matchedStoryCount} 个故事到 ${draftCount} 份界面设计描述；其余故事未关联。`,
+				missingArtifact: 'HARNESS：Cline 已完成，但未找到批量设计稿匹配结果文件。',
+				noRelevantMatches: storyCount => `HARNESS：Cline 已检查 ${storyCount} 个候选未完成故事，未发现需要关联当前设计稿的故事。`,
+				completed: (matchedStoryCount, candidateStoryCount, draftCount) => `HARNESS：Cline 已在 ${candidateStoryCount} 个候选未完成故事中，实际关联 ${matchedStoryCount} 个故事到 ${draftCount} 份界面设计描述；其余故事未关联。`,
 			},
 		noSharedTargets: storyId => `HARNESS：${storyId} 还没有可复用的界面设计描述。先做项目级、页面级或模块级描述，再回来匹配会更省事。`,
 		linkTargetPlaceholder: '勾选这次要匹配到当前故事的可复用界面设计描述',
 		linkSaved: (storyId, count, hasWarnings) => hasWarnings ? `HARNESS：已为 ${storyId} 匹配 ${count} 份可复用界面设计描述，但存在警告。` : `HARNESS：已为 ${storyId} 匹配 ${count} 份可复用界面设计描述。`,
 			matchAllPending: {
 				label: '$(rocket) 一键全匹配未完成故事',
-				description: count => `把当前选中的设计稿作为候选资源，让 Copilot 在全部 ${count} 个未完成故事中判断真正相关的故事`,
+				description: count => `把当前选中的设计稿作为候选资源，让 Cline 在全部 ${count} 个未完成故事中判断真正相关的故事`,
 			},
 			managementActions: {
 				create: { label: '$(add) 新增设计稿', description: '创建新的界面设计描述，可用于单个故事，也可用于后续批量复用' },
 				createFirst: { label: '$(add) 创建设计稿', description: '当前还没有界面设计描述，先创建第一份' },
 				delete: { label: '$(trash) 删除设计稿', description: '删除某一份现有界面设计描述' },
-				match: { label: '$(link) 设计稿匹配用户故事', description: '选择候选设计稿和故事，让 Copilot 判断哪些故事真正需要关联这些资源' },
+				match: { label: '$(link) 设计稿匹配用户故事', description: '选择候选设计稿和故事，让 Cline 判断哪些故事真正需要关联这些资源' },
 			},
 		entryModes: {
 			single: { label: '$(symbol-field) 单独匹配当前故事', description: '整理当前故事的界面设计描述，可勾选要复用的项目、页面或模块描述' },
@@ -719,11 +689,11 @@ const CHINESE_PACK: HarnessLanguagePack = {
 				scopePlaceholder: '这份可复用的界面设计描述要保存到哪一层',
 				inputModePlaceholder: '选择要导入的视觉参考类型',
 				noVisualSources: 'HARNESS：至少要提供一个 Figma 链接或一张截图，才能生成界面设计描述。',
-				copiedPrompt: 'HARNESS：界面设计描述提示词已复制到剪贴板，请粘贴到 Copilot Chat。',
-				started: label => `HARNESS：Copilot 正在为 ${label} 生成界面设计描述。`,
+				copiedPrompt: 'HARNESS：界面设计描述提示词已复制到剪贴板，请粘贴到当前配置的智能体。',
+				started: label => `HARNESS：Cline 正在为 ${label} 生成界面设计描述。`,
 				saved: (label, hasWarnings) => hasWarnings ? `HARNESS：已为 ${label} 保存界面设计描述，但存在警告。` : `HARNESS：已为 ${label} 保存界面设计描述。`,
 				failed: message => `HARNESS：生成界面设计描述失败：${message}`,
-				missingArtifact: label => `HARNESS：Copilot 已完成，但未找到 ${label} 的界面设计描述文件。`,
+				missingArtifact: label => `HARNESS：Cline 已完成，但未找到 ${label} 的界面设计描述文件。`,
 				screenIdTitle: '界面设计描述 — 页面或屏幕标识',
 				screenIdPrompt: '输入这份可复用界面设计描述对应的页面或屏幕标识',
 				moduleIdTitle: '界面设计描述 — 模块标识',
@@ -748,11 +718,11 @@ const CHINESE_PACK: HarnessLanguagePack = {
 			},
 			suggestion: {
 				noSharedContext: storyId => `HARNESS：${storyId} 还没有可复用的界面设计描述，暂时没法自动补故事差异。请先准备项目级、页面级或模块级描述。`,
-				copiedPrompt: 'HARNESS：当前故事的界面设计描述提示词已复制到剪贴板，请粘贴到 Copilot Chat。',
-				started: storyId => `HARNESS：Copilot 正在为 ${storyId} 生成当前故事的界面设计描述。`,
+				copiedPrompt: 'HARNESS：当前故事的界面设计描述提示词已复制到剪贴板，请粘贴到当前配置的智能体。',
+				started: storyId => `HARNESS：Cline 正在为 ${storyId} 生成当前故事的界面设计描述。`,
 				saved: (storyId, hasWarnings) => hasWarnings ? `HARNESS：已为 ${storyId} 保存当前故事的界面设计描述，但存在警告。` : `HARNESS：已为 ${storyId} 保存当前故事的界面设计描述。`,
 				failed: message => `HARNESS：生成当前故事的界面设计描述失败：${message}`,
-				missingArtifact: storyId => `HARNESS：Copilot 已完成，但未找到 ${storyId} 的界面设计描述文件。`,
+				missingArtifact: storyId => `HARNESS：Cline 已完成，但未找到 ${storyId} 的界面设计描述文件。`,
 				additionalInstructionsTitle: '当前故事界面设计描述 — 补充说明',
 				additionalInstructionsPrompt: '可选：告诉模型这个故事这次只需要补哪些差异或重点',
 			},
@@ -810,8 +780,8 @@ const CHINESE_PACK: HarnessLanguagePack = {
 		requestPrompt: '描述你希望追加到当前 prd.json 的需求、范围或变更。',
 		requestPlaceholder: '例如：补充管理后台审计日志相关的用户故事…',
 		requestCancelled: 'HARNESS：已取消，未提供新增需求描述。',
-		copiedPrompt: 'HARNESS：追加故事提示词已复制到剪贴板，请粘贴到 Copilot Chat。',
-		started: 'HARNESS：Copilot 正在更新 prd.json 以追加新的用户故事。',
+		copiedPrompt: 'HARNESS：追加故事提示词已复制到剪贴板，请粘贴到当前配置的智能体。',
+		started: 'HARNESS：Cline 正在更新 prd.json 以追加新的用户故事。',
 		prompt: {
 			workspaceAnalysis: '先阅读当前工作区，特别是工作区根目录中的 prd.json，并理解现有项目目标与用户故事。',
 			requestLine: request => `用户希望在现有 PRD 基础上追加以下需求：${request}`,
@@ -852,8 +822,8 @@ const CHINESE_PACK: HarnessLanguagePack = {
 				placeholder: '规划与入门：选择一个命令',
 				items: [
 					{ kind: 'back', label: '$(arrow-left)  返回上一级', description: '回到 Harness Runner 主菜单' },
-					{ kind: 'command', command: 'harness-runner.quickStart', label: '$(zap)  生成 PRD', description: '通过 Copilot 生成 prd.json' },
-					{ kind: 'command', command: 'harness-runner.appendUserStories', label: '$(diff-added)  追加用户故事', description: '通过 Copilot 基于现有 prd.json 追加新的用户故事' },
+					{ kind: 'command', command: 'harness-runner.quickStart', label: '$(zap)  生成 PRD', description: '通过 Cline 生成 prd.json' },
+					{ kind: 'command', command: 'harness-runner.appendUserStories', label: '$(diff-added)  追加用户故事', description: '通过 Cline 基于现有 prd.json 追加新的用户故事' },
 				],
 			},
 			guides: {
@@ -919,7 +889,7 @@ const CHINESE_PACK: HarnessLanguagePack = {
 		openPrd: '打开 PRD',
 		missingPrdPlaceholder: '工作区根目录中未找到 prd.json，你希望如何继续？',
 		provideChoice: { label: '$(file-directory) 我已有这个文件，手动提供路径', description: '选择一个已有的 prd.json 文件' },
-		generateChoice: { label: '$(sparkle) 我还没有，让 Copilot 帮我生成', description: '描述你的目标，让 Copilot 生成 prd.json' },
+		generateChoice: { label: '$(sparkle) 我还没有，让 Cline 帮我生成', description: '描述你的目标，让 Cline 生成 prd.json' },
 		provideDialogTitle: '选择你的 prd.json 文件',
 		provideDialogOpenLabel: '选择 prd.json',
 		provideCancelled: 'HARNESS：已取消，未选择 prd.json。',
@@ -928,8 +898,8 @@ const CHINESE_PACK: HarnessLanguagePack = {
 		goalPrompt: '你想完成什么？例如“修复所有 TypeScript 错误”“给所有服务补充单元测试”“从 jQuery 迁移到 React”',
 		goalPlaceholder: '请描述你想完成的目标…',
 		goalCancelled: 'HARNESS：已取消，未提供目标描述。',
-		copiedPrompt: 'HARNESS：提示词已复制到剪贴板，请粘贴到 Copilot Chat。',
-		generationStarted: 'HARNESS：Copilot 正在生成 prd.json。生成后出现在工作区根目录时，执行“HARNESS: 开始执行”。',
+		copiedPrompt: 'HARNESS：提示词已复制到剪贴板，请粘贴到当前配置的智能体。',
+		generationStarted: 'HARNESS：Cline 正在生成 prd.json。生成后出现在工作区根目录时，执行“HARNESS: 开始执行”。',
 		prompt: {
 			workspaceAnalysis: '通读整个代码库并理解现有代码。',
 			goalLine: goal => `用户希望实现以下目标：${goal}`,
@@ -1090,7 +1060,7 @@ const ENGLISH_PACK: HarnessLanguagePack = {
 	},
 	initProjectConstraints: {
 		success: 'HARNESS: Project constraints initialized.',
-		copiedPrompt: 'HARNESS: The project-constraints prompt was copied to the clipboard. Paste it into Copilot Chat.',
+		copiedPrompt: 'HARNESS: The project-constraints prompt was copied to the clipboard. Paste it into the configured agent.',
 		openEditableRules: 'Open Editable Rules',
 		openGeneratedSummary: 'Open Generated Summary',
 		failed: message => `HARNESS: Failed to initialize project constraints: ${message}`,
@@ -1098,9 +1068,9 @@ const ENGLISH_PACK: HarnessLanguagePack = {
 		referenceSourcePlaceholder: 'Keep adding existing rules or notes, or choose to finish and continue',
 		referenceCollectionProgress: (fileCount, noteCount) => `(${fileCount} files and ${noteCount} notes added)`,
 		referenceSourceOptions: {
-			files: { label: '$(folder-opened) Provide Existing Rule Files', description: 'Select current standards, README docs, team agreements, or other project-rule files for Copilot to consolidate' },
+			files: { label: '$(folder-opened) Provide Existing Rule Files', description: 'Select current standards, README docs, team agreements, or other project-rule files for Cline to consolidate' },
 			notes: { label: '$(note) Add Written Requirements', description: 'Enter any must-include rules, forbidden areas, or delivery expectations for this initialization run' },
-			finish: { label: '$(check) Finish Providing Input', description: 'Stop adding input and let Copilot consolidate the repository scan plus everything you supplied' },
+			finish: { label: '$(check) Finish Providing Input', description: 'Stop adding input and let Cline consolidate the repository scan plus everything you supplied' },
 		},
 		referenceFilesDialogTitle: 'Select existing project-rule or team-standard files',
 		referenceFilesOpenLabel: 'Use These Rule Files',
@@ -1109,7 +1079,7 @@ const ENGLISH_PACK: HarnessLanguagePack = {
 		referenceFileNotePlaceholder: 'Leave empty to skip adding a note for this file',
 		additionalNotesTitle: 'Initialize Project Constraints — Additional Notes',
 		additionalNotesPrompt: 'Optional: enter must-have rules, forbidden areas, delivery standards, or collaboration expectations',
-		started: 'HARNESS: Copilot is consolidating project constraints from the repository scan plus your supplied rules.',
+		started: 'HARNESS: Cline is consolidating project constraints from the repository scan plus your supplied rules.',
 	},
 	sourceContext: {
 		success: filePath => `HARNESS: Source context index refreshed at ${filePath}`,
@@ -1130,21 +1100,6 @@ const ENGLISH_PACK: HarnessLanguagePack = {
 		openKnowledgeCatalog: 'Open Knowledge Catalog',
 		failed: message => `HARNESS: Failed to generate Agent Map: ${message}`,
 	},
-	chatSpec: {
-		participantDescription: 'Refine a request with the merged Harness project constraints, then auto-send the final version to Copilot Chat.',
-		commandDescription: 'Polish your request against the current project constraints, then auto-send the ready-to-use final version to Copilot Chat.',
-		missingWorkspace: 'HARNESS Spec: No workspace folder is open, so project constraints cannot be loaded.',
-		missingConstraints: 'HARNESS Spec: Project constraints have not been initialized yet. Run "HARNESS: Initialize Project Constraints" before using @harness /harness-spec.',
-		emptyPrompt: 'HARNESS Spec: Add the request, task description, or change idea you want revised after @harness /harness-spec.',
-		thinking: 'HARNESS is refining the request against the initialized project constraints and preparing a final version...',
-		tempFileSaved: filePath => `HARNESS Spec: The final request was written to a temporary file: ${filePath}`,
-		tempFileSaveFailed: message => `HARNESS Spec: Failed to write the temporary file: ${message}`,
-		copiedPrompt: 'HARNESS Spec: The final request was copied to the clipboard. Paste it into a new Copilot Chat.',
-		autoSent: 'HARNESS Spec: The final request was automatically sent to a new Copilot Chat.',
-		openedWithClipboardFallback: 'HARNESS Spec: Automatic sending fell back to copying the final request and opening Copilot Chat.',
-		autoSendSkipped: 'HARNESS Spec: No runnable final request could be extracted. Use the code block above directly.',
-		error: message => `HARNESS Spec: Failed to generate the final constraint-aligned request: ${message}`,
-	},
 	designContext: {
 		noStories: 'No user stories were found. Prepare prd.json first.',
 			noExistingDrafts: 'HARNESS: No UI design notes exist yet.',
@@ -1160,31 +1115,31 @@ const ENGLISH_PACK: HarnessLanguagePack = {
 		actionPlaceholder: 'Choose how to handle UI design notes',
 		sourcePlaceholder: 'Select the main source for the UI design notes',
 			deletePlaceholder: 'Choose the UI design notes to delete',
-			matchDraftPlaceholder: 'Choose one or more candidate UI design note sets; Copilot will decide which stories are genuinely related',
-			matchStoryPlaceholder: 'Top item evaluates all unfinished stories; otherwise multi-select candidate stories and let Copilot decide whether they should inherit the selected notes',
+			matchDraftPlaceholder: 'Choose one or more candidate UI design note sets; Cline will decide which stories are genuinely related',
+			matchStoryPlaceholder: 'Top item evaluates all unfinished stories; otherwise multi-select candidate stories and let Cline decide whether they should inherit the selected notes',
 			deleteAction: 'Delete Draft',
 			deleteConfirm: label => `Delete ${label}? This cannot be undone automatically.`,
 			deleted: label => `HARNESS: Deleted ${label}.`,
 			matching: {
-				copiedPrompt: 'HARNESS: The batch design-matching prompt was copied to the clipboard. Paste it into Copilot Chat.',
-				started: (storyCount, draftCount) => `HARNESS: Copilot is evaluating ${storyCount} candidate unfinished stor${storyCount === 1 ? 'y' : 'ies'} against ${draftCount} UI design note set(s).`,
+				copiedPrompt: 'HARNESS: The batch design-matching prompt was copied to the clipboard. Paste it into the configured agent.',
+				started: (storyCount, draftCount) => `HARNESS: Cline is evaluating ${storyCount} candidate unfinished stor${storyCount === 1 ? 'y' : 'ies'} against ${draftCount} UI design note set(s).`,
 				failed: message => `HARNESS: Failed to batch-match UI design notes: ${message}`,
-				missingArtifact: 'HARNESS: Copilot completed, but no batch design-matching result file was found.',
-				noRelevantMatches: storyCount => `HARNESS: Copilot checked ${storyCount} candidate unfinished stor${storyCount === 1 ? 'y' : 'ies'} and did not find any that should inherit the selected UI design notes.`,
-				completed: (matchedStoryCount, candidateStoryCount, draftCount) => `HARNESS: Copilot linked ${matchedStoryCount} of ${candidateStoryCount} candidate unfinished stor${candidateStoryCount === 1 ? 'y' : 'ies'} to ${draftCount} UI design note set(s); the rest were left unlinked.`,
+				missingArtifact: 'HARNESS: Cline completed, but no batch design-matching result file was found.',
+				noRelevantMatches: storyCount => `HARNESS: Cline checked ${storyCount} candidate unfinished stor${storyCount === 1 ? 'y' : 'ies'} and did not find any that should inherit the selected UI design notes.`,
+				completed: (matchedStoryCount, candidateStoryCount, draftCount) => `HARNESS: Cline linked ${matchedStoryCount} of ${candidateStoryCount} candidate unfinished stor${candidateStoryCount === 1 ? 'y' : 'ies'} to ${draftCount} UI design note set(s); the rest were left unlinked.`,
 			},
 		noSharedTargets: storyId => `HARNESS: ${storyId} does not have reusable UI design notes yet. Create project, screen, or module notes first to make matching easier.`,
 		linkTargetPlaceholder: 'Choose which reusable UI design notes should be matched to this story',
 		linkSaved: (storyId, count, hasWarnings) => hasWarnings ? `HARNESS: Matched ${count} reusable UI design note set(s) to ${storyId}, but warnings were found.` : `HARNESS: Matched ${count} reusable UI design note set(s) to ${storyId}.`,
 			matchAllPending: {
 				label: '$(rocket) Match All Unfinished Stories',
-				description: count => `Use the selected draft(s) as candidate resources and let Copilot decide which of the ${count} unfinished stories are truly related`,
+				description: count => `Use the selected draft(s) as candidate resources and let Cline decide which of the ${count} unfinished stories are truly related`,
 			},
 			managementActions: {
 				create: { label: '$(add) Add Draft', description: 'Create new UI design notes for one story or for later reuse' },
 				createFirst: { label: '$(add) Create Draft', description: 'Create the first UI design notes in this workspace' },
 				delete: { label: '$(trash) Delete Draft', description: 'Delete an existing UI design note file' },
-				match: { label: '$(link) Match Drafts To Stories', description: 'Choose candidate drafts and stories, then let Copilot decide which stories should inherit those resources' },
+				match: { label: '$(link) Match Drafts To Stories', description: 'Choose candidate drafts and stories, then let Cline decide which stories should inherit those resources' },
 			},
 		entryModes: {
 			single: { label: '$(symbol-field) Match One Story', description: 'Prepare notes for the current story and optionally reuse project, screen, or module notes' },
@@ -1203,11 +1158,11 @@ const ENGLISH_PACK: HarnessLanguagePack = {
 				scopePlaceholder: 'Choose where the reusable UI design notes should be saved',
 				inputModePlaceholder: 'Choose which visual references to import',
 				noVisualSources: 'HARNESS: Provide at least one Figma URL or screenshot to generate UI design notes.',
-				copiedPrompt: 'HARNESS: The UI design notes prompt was copied to the clipboard. Paste it into Copilot Chat.',
-				started: label => `HARNESS: Copilot is generating UI design notes for ${label}.`,
+				copiedPrompt: 'HARNESS: The UI design notes prompt was copied to the clipboard. Paste it into the configured agent.',
+				started: label => `HARNESS: Cline is generating UI design notes for ${label}.`,
 				saved: (label, hasWarnings) => hasWarnings ? `HARNESS: Saved UI design notes for ${label}, but warnings were found.` : `HARNESS: Saved UI design notes for ${label}.`,
 				failed: message => `HARNESS: Failed to generate UI design notes: ${message}`,
-				missingArtifact: label => `HARNESS: Copilot completed, but no UI design note file was found for ${label}.`,
+				missingArtifact: label => `HARNESS: Cline completed, but no UI design note file was found for ${label}.`,
 				screenIdTitle: 'UI Design Notes — Screen Identifier',
 				screenIdPrompt: 'Enter the page or screen identifier for these reusable notes',
 				moduleIdTitle: 'UI Design Notes — Module Identifier',
@@ -1232,11 +1187,11 @@ const ENGLISH_PACK: HarnessLanguagePack = {
 			},
 			suggestion: {
 				noSharedContext: storyId => `HARNESS: ${storyId} does not inherit any reusable UI design notes yet, so story-only notes cannot be suggested. Create project, screen, or module notes first.`,
-				copiedPrompt: 'HARNESS: The current-story UI design notes prompt was copied to the clipboard. Paste it into Copilot Chat.',
-				started: storyId => `HARNESS: Copilot is generating current-story UI design notes for ${storyId}.`,
+				copiedPrompt: 'HARNESS: The current-story UI design notes prompt was copied to the clipboard. Paste it into the configured agent.',
+				started: storyId => `HARNESS: Cline is generating current-story UI design notes for ${storyId}.`,
 				saved: (storyId, hasWarnings) => hasWarnings ? `HARNESS: Saved current-story UI design notes for ${storyId}, but warnings were found.` : `HARNESS: Saved current-story UI design notes for ${storyId}.`,
 				failed: message => `HARNESS: Failed to generate current-story UI design notes: ${message}`,
-				missingArtifact: storyId => `HARNESS: Copilot completed, but no UI design note file was found for ${storyId}.`,
+				missingArtifact: storyId => `HARNESS: Cline completed, but no UI design note file was found for ${storyId}.`,
 				additionalInstructionsTitle: 'Current-Story UI Design Notes — Additional Instructions',
 				additionalInstructionsPrompt: 'Optional: tell the model which story-only differences or priorities to focus on',
 			},
@@ -1294,8 +1249,8 @@ const ENGLISH_PACK: HarnessLanguagePack = {
 		requestPrompt: 'Describe the requirements or scope you want to add to the current prd.json.',
 		requestPlaceholder: 'For example: add user stories for an admin audit log workflow…',
 		requestCancelled: 'HARNESS: Cancelled because no additional scope was provided.',
-		copiedPrompt: 'HARNESS: The append-story prompt was copied to the clipboard. Paste it into Copilot Chat.',
-		started: 'HARNESS: Copilot is updating prd.json with additional user stories.',
+		copiedPrompt: 'HARNESS: The append-story prompt was copied to the clipboard. Paste it into the configured agent.',
+		started: 'HARNESS: Cline is updating prd.json with additional user stories.',
 		prompt: {
 			workspaceAnalysis: 'Read the current workspace, especially prd.json in the workspace root, and understand the existing project goal and user stories.',
 			requestLine: request => `The user wants to append the following scope to the existing PRD: ${request}`,
@@ -1336,8 +1291,8 @@ const ENGLISH_PACK: HarnessLanguagePack = {
 				placeholder: 'Planning & Onboarding: choose a command',
 				items: [
 					{ kind: 'back', label: '$(arrow-left)  Back', description: 'Return to the Harness Runner main menu' },
-					{ kind: 'command', command: 'harness-runner.quickStart', label: '$(zap)  Generate PRD', description: 'Use Copilot to generate prd.json' },
-					{ kind: 'command', command: 'harness-runner.appendUserStories', label: '$(diff-added)  Append User Stories', description: 'Use Copilot to append new user stories to the existing prd.json' },
+					{ kind: 'command', command: 'harness-runner.quickStart', label: '$(zap)  Generate PRD', description: 'Use Cline to generate prd.json' },
+					{ kind: 'command', command: 'harness-runner.appendUserStories', label: '$(diff-added)  Append User Stories', description: 'Use Cline to append new user stories to the existing prd.json' },
 				],
 			},
 			guides: {
@@ -1403,7 +1358,7 @@ const ENGLISH_PACK: HarnessLanguagePack = {
 		openPrd: 'Open PRD',
 		missingPrdPlaceholder: 'prd.json was not found in the workspace root. How do you want to continue?',
 		provideChoice: { label: '$(file-directory) I already have this file', description: 'Select an existing prd.json file' },
-		generateChoice: { label: '$(sparkle) I do not have one, let Copilot generate it', description: 'Describe your goal and let Copilot generate prd.json' },
+		generateChoice: { label: '$(sparkle) I do not have one, let Cline generate it', description: 'Describe your goal and let Cline generate prd.json' },
 		provideDialogTitle: 'Select your prd.json file',
 		provideDialogOpenLabel: 'Use prd.json',
 		provideCancelled: 'HARNESS: Cancelled because no prd.json file was selected.',
@@ -1412,8 +1367,8 @@ const ENGLISH_PACK: HarnessLanguagePack = {
 		goalPrompt: 'What do you want to accomplish? For example: "Fix all TypeScript errors", "Add unit tests to all services", or "Migrate from jQuery to React"',
 		goalPlaceholder: 'Describe the goal you want to accomplish…',
 		goalCancelled: 'HARNESS: Cancelled because no goal description was provided.',
-		copiedPrompt: 'HARNESS: The prompt was copied to the clipboard. Paste it into Copilot Chat.',
-		generationStarted: 'HARNESS: Copilot is generating prd.json. Once it appears in the workspace root, run "HARNESS: Start".',
+		copiedPrompt: 'HARNESS: The prompt was copied to the clipboard. Paste it into the configured agent.',
+		generationStarted: 'HARNESS: Cline is generating prd.json. Once it appears in the workspace root, run "HARNESS: Start".',
 		prompt: {
 			workspaceAnalysis: 'Go through the entire codebase and understand the existing code.',
 			goalLine: goal => `The user wants to accomplish the following goal: ${goal}`,

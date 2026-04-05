@@ -1,7 +1,7 @@
 {
   "storyId": "US-001",
   "title": "盘点品牌命名与受影响入口",
-  "status": "pendingReview",
+  "status": "completed",
   "summary": "Completed a repository-wide audit of Ralph/ralph/ralph-runner references and wrote an explicit rename-boundary inventory before the actual rebrand stories continue.",
   "changedFiles": [
     "(unable to determine changed files automatically)"
@@ -41,8 +41,25 @@
   "evidenceGaps": [
     "Changed file scope could not be fully determined."
   ],
-  "approvalState": "pending",
-  "approvalHistory": [],
+  "approvalState": "approved",
+  "approvalUpdatedAt": "2026-04-05T01:58:53.073Z",
+  "approvalSummary": "approved at 2026-04-05T01:58:53.073Z; status=completed",
+  "approvalHistory": [
+    {
+      "action": "approved",
+      "createdAt": "2026-04-05T01:58:28.403Z",
+      "actor": "user",
+      "fromStatus": "pendingReview",
+      "toStatus": "pendingRelease"
+    },
+    {
+      "action": "approved",
+      "createdAt": "2026-04-05T01:58:53.073Z",
+      "actor": "user",
+      "fromStatus": "pendingRelease",
+      "toStatus": "completed"
+    }
+  ],
   "reviewSummary": {
     "totalScore": 100,
     "maxScore": 100,

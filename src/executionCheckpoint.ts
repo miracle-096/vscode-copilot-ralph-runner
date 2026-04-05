@@ -31,7 +31,7 @@ export interface SynthesizedExecutionCheckpointOptions {
 	unresolvedRisks?: string[];
 	nextStoryPrerequisites?: string[];
 	resumeRecommendation?: string;
-	source?: 'copilot' | 'synthesized';
+	source?: 'cline' | 'synthesized';
 }
 
 export function createEmptyExecutionCheckpoint(
@@ -231,6 +231,7 @@ export function normalizeExecutionCheckpoint(
 	if (!value) {
 		return fallback;
 	}
+	const rawSource = value.source as unknown;
 
 	return {
 		storyId,
@@ -247,7 +248,11 @@ export function normalizeExecutionCheckpoint(
 		reviewSummary: normalizeOptionalReviewSummary(value.reviewSummary),
 		reviewLoop: normalizeOptionalReviewLoop(value.reviewLoop),
 		updatedAt: normalizeOptionalString(value.updatedAt) ?? fallback.updatedAt,
-		source: value.source === 'copilot' || value.source === 'synthesized' ? value.source : undefined,
+		source: rawSource === 'cline' || rawSource === 'copilot'
+			? 'cline'
+			: rawSource === 'synthesized'
+				? 'synthesized'
+				: undefined,
 	};
 }
 

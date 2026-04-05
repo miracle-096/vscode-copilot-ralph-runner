@@ -140,7 +140,7 @@ import {
 	resolveWorkspaceReviewerAutoRefactorLimit,
 	resolveWorkspaceReviewerLoopEnabled,
 	resolveWorkspaceReviewerPassingScore,
-	shouldAbortCopilotWait,
+	shouldAbortClineWait,
 } from '../extension';
 // import * as myExtension from '../../extension';
 
@@ -187,12 +187,6 @@ suite('Extension Test Suite', () => {
 				configuration?: {
 					properties?: Record<string, unknown>;
 				};
-				chatParticipants?: Array<{
-					id: string;
-					name: string;
-					description?: string;
-					commands?: Array<{ name: string; description?: string; }>;
-				}>;
 			};
 		}>(packageJsonPath);
 		const englishLocalization = readManifestLocalization();
@@ -232,6 +226,9 @@ suite('Extension Test Suite', () => {
 			assert.strictEqual(typeof packageJson.contributes?.configuration?.properties?.['harness-runner.enableReviewerLoop'], 'object');
 			assert.strictEqual(typeof packageJson.contributes?.configuration?.properties?.['harness-runner.reviewPassingScore'], 'object');
 			assert.strictEqual(typeof packageJson.contributes?.configuration?.properties?.['harness-runner.maxAutoRefactorRounds'], 'object');
+			assert.strictEqual(typeof packageJson.contributes?.configuration?.properties?.['harness-runner.executionResponsePollMs'], 'object');
+			assert.strictEqual(typeof packageJson.contributes?.configuration?.properties?.['harness-runner.executionTimeoutMs'], 'object');
+			assert.strictEqual(typeof packageJson.contributes?.configuration?.properties?.['harness-runner.executionMinWaitMs'], 'object');
 			assert.strictEqual(typeof packageJson.contributes?.configuration?.properties?.['harness-runner.rootMenuOrder'], 'object');
 			const rootMenuOrderConfig = packageJson.contributes?.configuration?.properties?.['harness-runner.rootMenuOrder'] as {
 				items?: { enum?: string[]; };
@@ -249,11 +246,7 @@ suite('Extension Test Suite', () => {
 		assert.strictEqual(policyGateDefault.default?.completionRules?.some(rule => rule.id === 'require-fresh-knowledge'), true);
 		assert.strictEqual(policyGateDefault.default?.completionRules?.some(rule => rule.id === 'require-story-evidence-artifact'), true);
 
-		const contributedParticipants = packageJson.contributes?.chatParticipants ?? [];
-			assert.strictEqual(contributedParticipants.some(participant => participant.id === 'recent-graduates.harness-runner'), true);
-			assert.strictEqual(contributedParticipants.some(participant => participant.name === 'harness' && participant.commands?.some(command => command.name === 'harness-spec')), true);
-		assert.strictEqual(contributedParticipants.some(participant => resolveManifestString(participant.description, englishLocalization)?.includes('auto-send the final prompt to Copilot Chat')), true);
-			assert.strictEqual(contributedParticipants.some(participant => participant.commands?.some(command => resolveManifestString(command.description, englishLocalization)?.includes('auto-send the ready-to-use final version to Copilot Chat'))), true);
+		assert.strictEqual(Array.isArray((packageJson.contributes as { chatParticipants?: unknown[] } | undefined)?.chatParticipants), false);
 	});
 
 		test('user-visible Harness entry labels keep command ids stable and avoid legacy Ralph titles', () => {
@@ -263,13 +256,6 @@ suite('Extension Test Suite', () => {
 			const packageJson = readJsonFixture<{
 				contributes?: {
 					commands?: Array<{ command: string; title: string; }>;
-					chatParticipants?: Array<{
-						id: string;
-						name: string;
-						fullName?: string;
-						description?: string;
-						commands?: Array<{ name: string; description?: string; }>;
-					}>;
 				};
 			}>(packageJsonPath);
 			const englishLocalization = readManifestLocalization();
@@ -304,13 +290,7 @@ suite('Extension Test Suite', () => {
 			assert.strictEqual(englishCommandTitleById.get('harness-runner.customizeMenuOrder'), 'HARNESS: Customize Menu Order');
 			assert.strictEqual(englishCommandTitleById.get('harness-runner.openSettings'), 'HARNESS: Open Settings');
 
-			const contributedParticipant = packageJson.contributes?.chatParticipants?.find(participant => participant.id === 'recent-graduates.harness-runner');
-			assert.ok(contributedParticipant);
-			assert.strictEqual(contributedParticipant?.name, 'harness');
-			assert.strictEqual(contributedParticipant?.fullName, 'Harness Runner');
-			assert.strictEqual(contributedParticipant?.commands?.some(command => command.name === 'harness-spec'), true);
-			assert.strictEqual(resolveManifestString(contributedParticipant?.description, englishLocalization)?.includes('Harness Runner project constraints'), true);
-			assert.strictEqual(resolveManifestString(contributedParticipant?.description, chineseLocalization)?.includes('Harness Runner 项目约束'), true);
+			assert.strictEqual('chatParticipants' in (packageJson.contributes ?? {}), false);
 
 			const chinesePack = getHarnessLanguagePack('Chinese');
 			const constraintsItems = buildHarnessMenuQuickPickItems(chinesePack, 'constraints');
@@ -321,7 +301,6 @@ suite('Extension Test Suite', () => {
 			assert.strictEqual(constraintsItems.some(item => item.label.includes('RALPH')), false);
 			assert.strictEqual(guidesItems.some(item => item.label.includes('Harness Runner 指南')), true);
 			assert.strictEqual(constraintsItems.some(item => item.label.includes('为故事添加上下文')), true);
-			assert.strictEqual(chinesePack.chatSpec.missingConstraints.includes('@harness /harness-spec'), true);
 
 			const readme = fs.readFileSync(readmePath, 'utf8');
 			const agentMapSource = fs.readFileSync(agentMapPath, 'utf8');
@@ -344,7 +323,7 @@ suite('Extension Test Suite', () => {
 			}
 			assert.strictEqual(readme.includes('`HARNESS: 为故事添加上下文`'), true);
 			assert.strictEqual(readme.includes('`HARNESS: 审批故事`'), true);
-			assert.strictEqual(readme.includes('`@harness /harness-spec <你的需求>`'), true);
+			assert.strictEqual(readme.includes('`@harness /harness-spec <你的需求>`'), false);
 			assert.strictEqual(agentMapSource.includes('HARNESS: 初始化项目约束'), true);
 			assert.strictEqual(agentMapSource.includes('HARNESS: 为故事添加上下文'), true);
 			assert.strictEqual(agentMapSource.includes('HARNESS: 刷新源码上下文索引'), true);
@@ -771,14 +750,14 @@ suite('Extension Test Suite', () => {
 		assert.strictEqual(parseTaskSignalStatus('unknown'), 'none');
 	});
 
-	test('Standalone Copilot waits do not abort just because the runner is idle', () => {
-		assert.strictEqual(shouldAbortCopilotWait(false, true, false), true);
-		assert.strictEqual(shouldAbortCopilotWait(false, false, false), false);
-		assert.strictEqual(shouldAbortCopilotWait(true, false, true), true);
+	test('Standalone Cline waits do not abort just because the runner is idle', () => {
+		assert.strictEqual(shouldAbortClineWait(false, true, false), true);
+		assert.strictEqual(shouldAbortClineWait(false, false, false), false);
+		assert.strictEqual(shouldAbortClineWait(true, false, true), true);
 	});
 
 	test('Structured run log classifies polling output as noise and keeps actionable summaries', () => {
-		assert.strictEqual(classifyOutputMessage('  … still waiting for Copilot to complete task US-042 (status: inprogress, elapsed 20s)').category, 'noise');
+		assert.strictEqual(classifyOutputMessage('  … still waiting for Cline to complete task US-042 (status: inprogress, elapsed 20s)').category, 'noise');
 		assert.strictEqual(classifyOutputMessage('  WARNING: Task memory artifact missing for US-042; synthesizing fallback memory.').category, 'diagnostic');
 		assert.strictEqual(classifyOutputMessage('  Reviewer Agent scored US-042 at 91/100.').category, 'signal');
 		assert.ok(summarizeCommandOutput('line 1\n\nline 2\nline 3').includes('line 1 | line 2 | line 3'));
@@ -796,7 +775,7 @@ suite('Extension Test Suite', () => {
 			});
 
 			recorder.transitionPhase('preflight', 'Running preflight checks.');
-			recorder.recordOutput('  … still waiting for Copilot to complete task US-042 (status: inprogress, elapsed 20s)');
+			recorder.recordOutput('  … still waiting for Cline to complete task US-042 (status: inprogress, elapsed 20s)');
 			recorder.recordOutput('  WARNING: Task memory artifact missing for US-042; synthesizing fallback memory.');
 			recorder.recordOutput('  Reviewer Agent scored US-042 at 91/100.');
 			recorder.finalize('failed', 'Story failed after completion gates blocked finalization.');
@@ -809,7 +788,7 @@ suite('Extension Test Suite', () => {
 			assert.ok(logText?.includes('[preflight] [signal] Reviewer Agent scored US-042 at 91/100.'));
 			assert.ok(logText?.includes('Status: failed'));
 			assert.ok(logText?.includes('SkippedNoise: 1'));
-			assert.strictEqual(logText?.includes('still waiting for Copilot'), false);
+			assert.strictEqual(logText?.includes('still waiting for Cline'), false);
 		} finally {
 			fs.rmSync(workspaceRoot, { recursive: true, force: true });
 		}
@@ -1341,7 +1320,7 @@ suite('Extension Test Suite', () => {
 		assert.ok(prompt.includes('Write the JSON artifact directly to: d:/workspace/vscode-copilot-ralph-runner/.prd/design-context/shared/module-checkout-shell.design.json'));
 	});
 
-		test('Batch design matching prompt tells Copilot to omit unrelated stories', () => {
+		test('Batch design matching prompt tells Cline to omit unrelated stories', () => {
 			const prompt = buildStoryDesignContextBatchMatchPrompt({
 				workspaceRoot: 'd:/workspace/vscode-copilot-ralph-runner',
 				targetFilePath: 'd:/workspace/vscode-copilot-ralph-runner/.harness-runner/design-context-suggestions/design-context-match.json',
@@ -1847,7 +1826,7 @@ suite('Extension Test Suite', () => {
 			story: {
 				id: 'US-302',
 				title: 'Ordered prompt composition',
-				description: 'Refactor prompt construction into clearly ordered context sections for Copilot execution.',
+				description: 'Refactor prompt construction into clearly ordered context sections for Cline execution.',
 				acceptanceCriteria: Array.from({ length: 10 }, (_, index) => `Acceptance criterion ${index + 1}`),
 				priority: 2,
 			},
@@ -2048,7 +2027,7 @@ suite('Extension Test Suite', () => {
 				searchKeywords: ['review', 'loop'],
 				reviewSummary,
 				reviewLoop,
-				source: 'copilot',
+				source: 'cline',
 			});
 			writeExecutionCheckpoint(workspaceRoot, 'US-306', {
 				title: 'Review round-trip',
@@ -2063,7 +2042,7 @@ suite('Extension Test Suite', () => {
 				resumeRecommendation: 'Resume from the latest reviewed state.',
 				reviewSummary,
 				reviewLoop,
-				source: 'copilot',
+				source: 'cline',
 			}, 'completed');
 			writeStoryEvidence(workspaceRoot, 'US-306', {
 				title: 'Review round-trip',
@@ -2084,7 +2063,7 @@ suite('Extension Test Suite', () => {
 				approvalHistory: [],
 				reviewSummary,
 				reviewLoop,
-				source: 'copilot',
+				source: 'cline',
 			});
 
 			const taskMemory = readTaskMemory(workspaceRoot, 'US-306');
@@ -2239,7 +2218,7 @@ suite('Extension Test Suite', () => {
 
 			const report = evaluateKnowledgeCoverage(workspaceRoot, {
 				scope: 'run-completion',
-				promptText: 'Update /harness-spec and Agent Map guidance, plus the harness run workflow.',
+				promptText: 'Update the Cline handoff and Agent Map guidance, plus the harness run workflow.',
 				changedFiles: ['src/customKnowledge.ts'],
 			});
 
@@ -2514,7 +2493,7 @@ suite('Extension Test Suite', () => {
 				followUps: ['Add memory recall scoring'],
 				searchKeywords: ['design context', 'prompt injection'],
 				relatedStories: ['US-013'],
-				source: 'copilot',
+				source: 'cline',
 			});
 
 			assert.ok(fs.existsSync(memoryPath));
@@ -2619,7 +2598,7 @@ suite('Extension Test Suite', () => {
 				unresolvedRisks: ['None at handoff time'],
 				nextStoryPrerequisites: ['Review the persisted checkpoint before starting the next related story'],
 				resumeRecommendation: 'Continue with the next pending story.',
-				source: 'copilot',
+				source: 'cline',
 			}, 'completed');
 
 			assert.strictEqual(hasExecutionCheckpointArtifact(workspaceRoot, storyId), true);
@@ -2635,7 +2614,7 @@ suite('Extension Test Suite', () => {
 				unresolvedRisks: ['The rerun failure still needs investigation'],
 				nextStoryPrerequisites: ['Resolve the blocking failure before rerunning the story'],
 				resumeRecommendation: 'Inspect the workspace and retry once the failure is fixed.',
-				source: 'copilot',
+				source: 'cline',
 			}, 'failed');
 
 			assert.strictEqual(overwrittenPath, firstPath);

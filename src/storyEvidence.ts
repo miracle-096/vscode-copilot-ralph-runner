@@ -36,7 +36,7 @@ export interface SynthesizedStoryEvidenceOptions {
 	tests?: StoryEvidenceTestResult[];
 	taskMemory?: TaskMemoryArtifact;
 	checkpoint?: ExecutionCheckpointArtifact;
-	source?: 'copilot' | 'synthesized';
+	source?: 'cline' | 'synthesized';
 }
 
 export interface ApplyStoryApprovalDecisionOptions {
@@ -161,6 +161,7 @@ export function normalizeStoryEvidence(
 	const riskLevel = value?.riskLevel === 'low' || value?.riskLevel === 'medium' || value?.riskLevel === 'high'
 		? value.riskLevel
 		: fallback.riskLevel;
+	const rawSource = value?.source as unknown;
 
 	return {
 		storyId,
@@ -189,7 +190,11 @@ export function normalizeStoryEvidence(
 		reviewSummary: normalizeOptionalReviewSummary(value?.reviewSummary),
 		reviewLoop: normalizeOptionalReviewLoop(value?.reviewLoop),
 		generatedAt: typeof value?.generatedAt === 'string' && value.generatedAt.trim().length > 0 ? value.generatedAt : fallback.generatedAt,
-		source: value?.source === 'copilot' ? 'copilot' : value?.source === 'synthesized' ? 'synthesized' : undefined,
+		source: rawSource === 'cline' || rawSource === 'copilot'
+			? 'cline'
+			: rawSource === 'synthesized'
+				? 'synthesized'
+				: undefined,
 	};
 }
 

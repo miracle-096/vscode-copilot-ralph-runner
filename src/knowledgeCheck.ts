@@ -47,11 +47,11 @@ const COVERAGE_HINTS: ReadonlyArray<CoverageHint> = [
 		label: 'Harness run flow',
 	},
 	{
-		id: 'harness-spec',
-		matchKeywords: ['/harness-spec', 'harness spec', 'chat participant', '提示词'],
+		id: 'cline-handoff',
+		matchKeywords: ['cline handoff', 'prompt handoff', 'prompt injection', '提示词'],
 		modules: ['extension', 'projectConstraints', 'promptContext'],
-		runbookKeywords: ['/harness-spec', 'harness spec', 'copilot chat'],
-		label: '/harness-spec flow',
+		runbookKeywords: ['cline', 'startnewtask', 'harness handoff'],
+		label: 'Cline handoff flow',
 	},
 	{
 		id: 'agent-map',
@@ -71,7 +71,7 @@ const COVERAGE_HINTS: ReadonlyArray<CoverageHint> = [
 		id: 'prompt',
 		matchKeywords: ['prompt', '提示词', 'context section', '上下文'],
 		modules: ['promptContext', 'projectConstraints'],
-		runbookKeywords: ['prompt', '提示词', 'copilot chat'],
+		runbookKeywords: ['prompt', '提示词', 'cline'],
 		label: 'Prompt composition flow',
 	},
 ];
@@ -86,7 +86,7 @@ export function createEmptyKnowledgeCheckReport(scope: KnowledgeCheckScope, stor
 		issues: [],
 		relevantModules: [],
 		checkedArtifacts: [],
-		source: 'copilot',
+		source: 'cline',
 	};
 }
 
@@ -113,7 +113,7 @@ export function evaluateKnowledgeCoverage(workspaceRoot: string, input: Knowledg
 			'README.md',
 			relativePath(workspaceRoot, getEditableProjectConstraintsPath(workspaceRoot)),
 		],
-		source: 'copilot',
+		source: 'cline',
 	};
 }
 
@@ -255,7 +255,7 @@ function collectStaleDocumentationIssues(
 		staleDetails,
 		[
 			'Regenerate .harness-runner/agent-map/overview.json and knowledge-catalog.json after the workflow change settles.',
-			'Update README.md or other operator-facing guidance if the run flow, /harness-spec flow, or delivery expectations changed.',
+			'Update README.md or other operator-facing guidance if the run flow, Cline handoff flow, or delivery expectations changed.',
 		],
 		relevantSourceFiles.map(filePath => relativePath(workspaceRoot, filePath)),
 	)];

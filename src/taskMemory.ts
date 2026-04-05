@@ -245,6 +245,7 @@ export function normalizeTaskMemory(value: Partial<TaskMemoryArtifact> | null | 
 	if (!value) {
 		return fallback;
 	}
+	const rawSource = value.source as unknown;
 	return {
 		storyId,
 		title: normalizeOptionalString(value.title) ?? fallback.title,
@@ -263,7 +264,11 @@ export function normalizeTaskMemory(value: Partial<TaskMemoryArtifact> | null | 
 		reviewSummary: normalizeOptionalReviewSummary(value.reviewSummary),
 		reviewLoop: normalizeOptionalReviewLoop(value.reviewLoop),
 		createdAt: normalizeOptionalString(value.createdAt) ?? fallback.createdAt,
-		source: value.source === 'copilot' || value.source === 'synthesized' ? value.source : undefined,
+		source: rawSource === 'cline' || rawSource === 'copilot'
+			? 'cline'
+			: rawSource === 'synthesized'
+				? 'synthesized'
+				: undefined,
 	};
 }
 

@@ -35,7 +35,7 @@ export interface StoryReviewNormalizationOptions {
 	refactorPerformed?: boolean;
 	refactorSummary?: string;
 	reviewedAt?: string;
-	source?: 'copilot' | 'synthesized';
+	source?: 'cline' | 'synthesized';
 }
 
 export interface StoryReviewLoopOptions {
@@ -505,8 +505,11 @@ function normalizeEndedReason(value: unknown): StoryReviewLoopEndedReason | unde
 	return value === 'passed' || value === 'max-rounds' ? value : undefined;
 }
 
-function normalizeSource(value: unknown): 'copilot' | 'synthesized' | undefined {
-	return value === 'copilot' || value === 'synthesized' ? value : undefined;
+function normalizeSource(value: unknown): 'cline' | 'synthesized' | undefined {
+	if (value === 'cline' || value === 'copilot') {
+		return 'cline';
+	}
+	return value === 'synthesized' ? 'synthesized' : undefined;
 }
 
 function toStringArray(value: unknown): string[] {
