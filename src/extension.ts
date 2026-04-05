@@ -145,7 +145,14 @@ import {
 	getSourceContextIndexPath as resolveSourceContextIndexPath,
 	getTaskMemoryPath as resolveTaskMemoryPath,
 } from './workspacePaths';
-import { getLocalizedStoryStatus, getHarnessLanguagePack, normalizeHarnessLanguage } from './localization';
+import {
+	HarnessLanguagePack,
+	HarnessMenuItem,
+	HarnessMenuNode,
+	getLocalizedStoryStatus,
+	getHarnessLanguagePack,
+	normalizeHarnessLanguage,
+} from './localization';
 
 function getConfig() {
 	const cfg = vscode.workspace.getConfiguration('harness-runner');
@@ -243,6 +250,118 @@ export function resolveWorkspaceReviewerAutoRefactorLimit(
 
 function getLanguagePack() {
 	return getHarnessLanguagePack(getConfig().LANGUAGE);
+}
+
+const HARNESS_ROOT_MENU_ORDER_SETTING = 'rootMenuOrder';
+
+export interface HarnessMenuQuickPickEntry extends vscode.QuickPickItem {
+	menuItem: HarnessMenuItem;
+}
+
+interface HarnessMenuOrderQuickPickEntry extends vscode.QuickPickItem {
+	target: string;
+	menuItem: Extract<HarnessMenuItem, { kind: 'submenu'; }>;
+}
+
+function getHarnessMenuNode(languagePack: HarnessLanguagePack, menuId: string): HarnessMenuNode {
+	const node = languagePack.menu.nodes[menuId];
+	if (!node) {
+		throw new Error(`Unknown Harness menu node: ${menuId}`);
+	}
+	return node;
+}
+
+function getHarnessRootMenuIds(languagePack: HarnessLanguagePack): string[] {
+	return getHarnessMenuNode(languagePack, languagePack.menu.rootId).items.flatMap(menuItem =>
+		menuItem.kind === 'submenu' ? [menuItem.target] : []
+	);
+}
+
+export function normalizeHarnessRootMenuOrder(configuredValue: unknown, defaultOrder: readonly string[]): string[] {
+	const configuredOrder = Array.isArray(configuredValue)
+		? configuredValue.filter((value): value is string => typeof value === 'string')
+		: [];
+	const normalized: string[] = [];
+	const seen = new Set<string>();
+	const validTargets = new Set(defaultOrder);
+
+	for (const target of configuredOrder) {
+		if (!validTargets.has(target) || seen.has(target)) {
+			continue;
+		}
+		seen.add(target);
+		normalized.push(target);
+	}
+
+	for (const target of defaultOrder) {
+		if (seen.has(target)) {
+			continue;
+		}
+		seen.add(target);
+		normalized.push(target);
+	}
+
+	return normalized;
+}
+
+function getHarnessMenuItems(languagePack: HarnessLanguagePack, menuId: string): HarnessMenuItem[] {
+	const items = [...getHarnessMenuNode(languagePack, menuId).items];
+	if (menuId !== languagePack.menu.rootId) {
+		return items;
+	}
+
+	const defaultOrder = getHarnessRootMenuIds(languagePack);
+	const configuredOrder = normalizeHarnessRootMenuOrder(
+		vscode.workspace.getConfiguration('harness-runner').get(HARNESS_ROOT_MENU_ORDER_SETTING),
+		defaultOrder,
+	);
+	const orderMap = new Map(configuredOrder.map((target, index) => [target, index]));
+
+	return items
+		.map((menuItem, index) => ({
+			menuItem,
+			index,
+			order: menuItem.kind === 'submenu' ? (orderMap.get(menuItem.target) ?? configuredOrder.length + index) : configuredOrder.length + index,
+		}))
+		.sort((left, right) => left.order - right.order || left.index - right.index)
+		.map(entry => entry.menuItem);
+}
+
+export function buildHarnessMenuQuickPickItems(languagePack: HarnessLanguagePack, menuId: string): HarnessMenuQuickPickEntry[] {
+	return getHarnessMenuItems(languagePack, menuId).map(menuItem => ({
+		label: menuItem.label,
+		description: menuItem.description,
+		menuItem,
+	}));
+}
+
+export function resolveHarnessMenuSelection(
+	languagePack: HarnessLanguagePack,
+	menuStack: readonly string[],
+	menuItem: HarnessMenuItem,
+): { nextMenuStack: string[]; command?: string; exitMenu?: boolean; } {
+	switch (menuItem.kind) {
+		case 'command':
+			return {
+				nextMenuStack: [...menuStack],
+				command: menuItem.command,
+			};
+		case 'submenu':
+			getHarnessMenuNode(languagePack, menuItem.target);
+			return {
+				nextMenuStack: [...menuStack, menuItem.target],
+			};
+		case 'back':
+			if (menuStack.length <= 1) {
+				return {
+					nextMenuStack: [],
+					exitMenu: true,
+				};
+			}
+			return {
+				nextMenuStack: menuStack.slice(0, -1),
+			};
+	}
 }
 
 // ── Filesystem Task State Manager ────────────────────────────────────────────
@@ -717,6 +836,28 @@ function findNextPendingStory(prd: PrdFile, workspaceRoot: string): UserStory | 
 	}) || null;
 }
 
+export function getReplayStoryRange(prd: PrdFile, startStoryId: string): UserStory[] {
+	const sorted = [...prd.userStories].sort((a, b) => a.priority - b.priority);
+	const startIndex = sorted.findIndex(story => story.id === startStoryId);
+	if (startIndex === -1) {
+		return [];
+	}
+
+	return sorted.slice(startIndex);
+}
+
+export function isHarnessRunnerActive(workspaceRoot: string | undefined, runnerRunning: boolean): boolean {
+	if (runnerRunning) {
+		return true;
+	}
+
+	if (!workspaceRoot) {
+		return false;
+	}
+
+	return HarnessStateManager.getInProgressTaskId(workspaceRoot) !== null;
+}
+
 function normalizeProgressStatus(value: string): ProgressEntry['status'] | undefined {
 	if (value === 'done' || value === 'failed' || value === 'pending-review' || value === 'pending-release') {
 		return value;
@@ -770,6 +911,7 @@ export function activate(context: vscode.ExtensionContext) {
 		vscode.commands.registerCommand('harness-runner.status', () => showStatus()),
 		vscode.commands.registerCommand('harness-runner.reviewStoryApproval', () => reviewStoryApproval()),
 		vscode.commands.registerCommand('harness-runner.resetStep', () => resetStory()),
+		vscode.commands.registerCommand('harness-runner.rerunFailedStory', () => rerunFailedStory()),
 		vscode.commands.registerCommand('harness-runner.initProjectConstraints', () => initializeProjectConstraints()),
 		vscode.commands.registerCommand('harness-runner.refreshSourceContextIndex', () => refreshSourceContextIndexCommand()),
 		vscode.commands.registerCommand('harness-runner.previewSourceContextRecall', () => previewSourceContextRecall()),
@@ -777,6 +919,7 @@ export function activate(context: vscode.ExtensionContext) {
 		vscode.commands.registerCommand('harness-runner.recordDesignContext', () => recordDesignContext()),
 		vscode.commands.registerCommand('harness-runner.generateDesignContextDraft', () => generateVisualDesignContextDraft()),
 		vscode.commands.registerCommand('harness-runner.suggestStoryDesignContext', () => suggestStoryDesignContext()),
+		vscode.commands.registerCommand('harness-runner.customizeMenuOrder', () => customizeMenuOrder()),
 		vscode.commands.registerCommand('harness-runner.openSettings', () => {
 			vscode.commands.executeCommand('workbench.action.openSettings', 'harness-runner');
 		}),
@@ -1029,6 +1172,8 @@ async function startHarnessRunner(): Promise<void> {
 			// Write failure to progress.txt (prd.json is never modified)
 			writeProgressEntry(workspaceRoot, nextStory.id, 'failed', `${errMsg}; checkpoint persisted (${failedCheckpoint.source})`);
 			activeRunLog?.finalize('failed', `Story ${nextStory.id} failed with an unrecovered error.`);
+			vscode.window.showErrorMessage(`HARNESS：${nextStory.id} 执行失败，已停止自动运行。`);
+			break;
 		} finally {
 			clearPolicyBaseline(workspaceRoot, nextStory.id);
 			activeRunLog = null;
@@ -1202,7 +1347,7 @@ function refreshSourceContextIndexArtifact(
 
 function registerHarnessChatParticipant(context: vscode.ExtensionContext): void {
 	const participant = vscode.chat.createChatParticipant('recent-graduates.harness-runner', handleHarnessChatRequest);
-	participant.iconPath = vscode.Uri.joinPath(context.extensionUri, 'images', 'ralph_runner.ico');
+	participant.iconPath = vscode.Uri.joinPath(context.extensionUri, 'images', 'harness_runner.ico');
 	context.subscriptions.push(participant);
 }
 
@@ -2898,26 +3043,18 @@ async function showStatus(): Promise<void> {
 	const total = prd.userStories.length;
 	let completed = 0;
 	let failed = 0;
-	let awaitingReview = 0;
-	let awaitingRelease = 0;
+	let awaitingApproval = 0;
 	let pending = 0;
-	let highRisk = 0;
 	for (const story of prd.userStories) {
 		const status = HarnessStateManager.getStoryExecutionStatus(workspaceRoot, story.id);
 		if (status === 'completed') {
 			completed += 1;
 		} else if (status === 'failed') {
 			failed += 1;
-		} else if (status === 'pendingReview') {
-			awaitingReview += 1;
-		} else if (status === 'pendingRelease') {
-			awaitingRelease += 1;
+		} else if (status === 'pendingReview' || status === 'pendingRelease') {
+			awaitingApproval += 1;
 		} else if (status === 'none' || status === '未开始') {
 			pending += 1;
-		}
-
-		if (readStoryEvidence(workspaceRoot, story.id)?.riskLevel === 'high') {
-			highRisk += 1;
 		}
 	}
 	const inProgress = HarnessStateManager.getInProgressTaskId(workspaceRoot);
@@ -2928,11 +3065,9 @@ async function showStatus(): Promise<void> {
 		``,
 		`✅ ${languagePack.status.completed(completed, total)}`,
 		`❌ ${languagePack.status.failed(failed)}`,
-		`🟠 ${languagePack.status.awaitingReview(awaitingReview)}`,
-		`🟣 ${languagePack.status.awaitingRelease(awaitingRelease)}`,
-		`⚠️ ${languagePack.status.highRisk(highRisk)}`,
+		`🟣 ${languagePack.status.awaitingRelease(awaitingApproval)}`,
 		`⏳ ${languagePack.status.pending(pending)}`,
-		`🔄 ${languagePack.status.inProgress(inProgress)}`,
+		`🔄 ${languagePack.status.inProgress(isRunning ? inProgress : null)}`,
 		`📍 ${languagePack.status.next(nextPending ? `${nextPending.id} — ${nextPending.title}` : languagePack.status.allDone)}`,
 		``,
 		languagePack.status.running(isRunning)
@@ -3062,6 +3197,79 @@ async function resetStory(): Promise<void> {
 	}
 }
 
+function clearStoryForReplay(workspaceRoot: string, storyId: string): void {
+	removeProgressEntry(workspaceRoot, storyId);
+	HarnessStateManager.clearStalledTask(workspaceRoot, storyId);
+	HarnessStateManager.clearStoryExecutionStatus(workspaceRoot, storyId);
+	clearPolicyBaseline(workspaceRoot, storyId);
+
+	for (const filePath of [
+		resolveStoryEvidencePath(workspaceRoot, storyId),
+	]) {
+		try {
+			if (fs.existsSync(filePath)) {
+				fs.unlinkSync(filePath);
+			}
+		} catch {
+			// ignore cleanup failures during replay preparation
+		}
+	}
+}
+
+async function rerunFailedStory(): Promise<void> {
+	const languagePack = getLanguagePack();
+	if (isRunning) {
+		vscode.window.showWarningMessage(languagePack.runtime.alreadyRunning);
+		return;
+	}
+
+	const workspaceRoot = getWorkspaceRoot();
+	if (!workspaceRoot) { return; }
+
+	const prd = parsePrd(workspaceRoot);
+	if (!prd) {
+		vscode.window.showErrorMessage(languagePack.runtime.prdNotFoundRoot);
+		return;
+	}
+
+	const failedStories = [...prd.userStories]
+		.sort((a, b) => a.priority - b.priority)
+		.filter(story => HarnessStateManager.getStoryExecutionStatus(workspaceRoot, story.id) === 'failed');
+
+	if (failedStories.length === 0) {
+		vscode.window.showInformationMessage(languagePack.reset.noFailedStories);
+		return;
+	}
+
+	const selection = await vscode.window.showQuickPick(
+		failedStories.map(story => {
+			const progressEntry = getStoryProgress(workspaceRoot, story.id);
+			return {
+				label: `${story.id} — ${story.title}`,
+				description: progressEntry ? progressEntry.notes : languagePack.status.failed(1),
+				storyId: story.id,
+			};
+		}),
+		{
+			placeHolder: languagePack.reset.rerunPlaceholder,
+		}
+	);
+
+	if (!selection) {
+		return;
+	}
+
+	const replayStories = getReplayStoryRange(prd, selection.storyId);
+	for (const story of replayStories) {
+		clearStoryForReplay(workspaceRoot, story.id);
+	}
+
+	log(`Replay requested from ${selection.storyId}; cleared ${replayStories.length} stories from progress and status tracking.`);
+	vscode.window.showInformationMessage(languagePack.reset.rerunPrepared(selection.storyId, replayStories.length));
+	updateStatusBar('idle');
+	await startHarnessRunner();
+}
+
 async function maybePromptForManualApproval(
 	workspaceRoot: string,
 	story: UserStory,
@@ -3171,7 +3379,8 @@ function applyBuiltinRuleSelections(
 }
 
 function isStoryAwaitingApproval(evidence: StoryEvidenceArtifact): boolean {
-	return evidence.status === 'pendingReview' || evidence.status === 'pendingRelease';
+	return evidence.status === 'pendingRelease'
+		|| (evidence.status === 'pendingReview' && evidence.reviewSummary?.passed === true);
 }
 
 async function pickApprovalCandidate(candidates: Array<{ story: UserStory; evidence: StoryEvidenceArtifact; status: ReturnType<typeof HarnessStateManager.getStoryExecutionStatus>; }>) {
@@ -3194,8 +3403,8 @@ async function pickApprovalAction(storyId: string, evidence: StoryEvidenceArtifa
 	const languagePack = getLanguagePack();
 	const items: Array<vscode.QuickPickItem & { action: StoryApprovalAction; }> = [
 		{
-			label: evidence.status === 'pendingRelease' ? languagePack.approval.approveReleaseLabel : languagePack.approval.approveReviewLabel,
-			description: evidence.status === 'pendingRelease' ? languagePack.approval.approveReleaseDescription : languagePack.approval.approveReviewDescription,
+			label: languagePack.approval.approveLabel,
+			description: languagePack.approval.approveDescription,
 			action: 'approved',
 		},
 		{
@@ -3266,7 +3475,7 @@ function logApprovalReviewSummary(story: UserStory, evidence: StoryEvidenceArtif
 function describeApprovalAction(action: StoryApprovalAction): string {
 	const languagePack = getLanguagePack();
 	if (action === 'approved') {
-		return languagePack.approval.approveReviewLabel;
+		return languagePack.approval.approveLabel;
 	}
 	if (action === 'rejected') {
 		return languagePack.approval.rejectLabel;
@@ -4725,12 +4934,12 @@ function sleep(ms: number): Promise<void> {
 function updateStatusBar(state: 'idle' | 'running'): void {
 	if (!statusBarItem) { return; }
 	const languagePack = getLanguagePack();
+	const workspaceRoot = getWorkspaceRoot();
 	if (state === 'running') {
 		statusBarItem.text = languagePack.statusBar.runningText;
 		statusBarItem.tooltip = languagePack.statusBar.runningTooltip;
 		statusBarItem.backgroundColor = new vscode.ThemeColor('statusBarItem.warningBackground');
 	} else {
-		const workspaceRoot = getWorkspaceRoot();
 		const pendingApprovals = workspaceRoot ? getPendingApprovalCandidates(workspaceRoot).length : 0;
 		if (pendingApprovals > 0) {
 			statusBarItem.text = languagePack.statusBar.pendingApprovalsText(pendingApprovals);
@@ -4746,20 +4955,65 @@ function updateStatusBar(state: 'idle' | 'running'): void {
 
 async function showCommandMenu(): Promise<void> {
 	const languagePack = getLanguagePack();
-	const items: Array<vscode.QuickPickItem & { command: string }> = languagePack.menu.items.map(item => ({
-		label: item.label,
-		description: item.description,
-		command: item.command,
-	}));
+	let menuStack = [languagePack.menu.rootId];
 
-	const selected = await vscode.window.showQuickPick(items, {
-		placeHolder: languagePack.menu.placeholder,
-	});
+	while (menuStack.length > 0) {
+		const currentMenuId = menuStack[menuStack.length - 1];
+		const currentMenu = getHarnessMenuNode(languagePack, currentMenuId);
+		const selected = await vscode.window.showQuickPick(buildHarnessMenuQuickPickItems(languagePack, currentMenuId), {
+			placeHolder: currentMenu.placeholder,
+			matchOnDescription: true,
+		});
 
-	if (!selected) { return; }
-	if (selected.command) {
-		vscode.commands.executeCommand(selected.command);
+		if (!selected) {
+			return;
+		}
+
+		const resolution = resolveHarnessMenuSelection(languagePack, menuStack, selected.menuItem);
+		if (resolution.command) {
+			await vscode.commands.executeCommand(resolution.command);
+			return;
+		}
+		if (resolution.exitMenu) {
+			return;
+		}
+		menuStack = resolution.nextMenuStack;
 	}
+}
+
+async function customizeMenuOrder(): Promise<void> {
+	const languagePack = getLanguagePack();
+	const remainingEntries: HarnessMenuOrderQuickPickEntry[] = buildHarnessMenuQuickPickItems(languagePack, languagePack.menu.rootId)
+		.flatMap(entry => entry.menuItem.kind === 'submenu'
+			? [{
+				label: entry.label,
+				description: entry.description,
+				target: entry.menuItem.target,
+				menuItem: entry.menuItem,
+			}]
+			: []);
+	const orderedTargets: string[] = [];
+
+	while (remainingEntries.length > 0) {
+		const selection = await vscode.window.showQuickPick(remainingEntries, {
+			placeHolder: languagePack.menu.customizeOrder.placeholder(orderedTargets.length + 1, getHarnessRootMenuIds(languagePack).length),
+			matchOnDescription: true,
+		});
+		if (!selection) {
+			return;
+		}
+
+		orderedTargets.push(selection.target);
+		const selectionIndex = remainingEntries.findIndex(entry => entry.target === selection.target);
+		remainingEntries.splice(selectionIndex, 1);
+	}
+
+	await vscode.workspace.getConfiguration('harness-runner').update(
+		HARNESS_ROOT_MENU_ORDER_SETTING,
+		orderedTargets,
+		vscode.ConfigurationTarget.Workspace,
+	);
+	vscode.window.showInformationMessage(languagePack.menu.customizeOrder.saved);
 }
 
 function showHelpDocument(kind: HarnessHelpDocumentKind): void {

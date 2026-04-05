@@ -38,6 +38,10 @@
         "title": "HARNESS: 开始执行"
       },
       {
+        "command": "harness-runner.rerunFailedStory",
+        "title": "HARNESS: 重新执行失败故事"
+      },
+      {
         "command": "harness-runner.stop",
         "title": "HARNESS: 停止执行"
       },
@@ -47,7 +51,7 @@
       },
       {
         "command": "harness-runner.reviewStoryApproval",
-        "title": "HARNESS: 审批高风险故事"
+        "title": "HARNESS: 审批故事"
       },
       {
         "command": "harness-runner.resetStep",
@@ -63,7 +67,7 @@
       },
       {
         "command": "harness-runner.previewSourceContextRecall",
-        "title": "HARNESS: 预览故事源上下文"
+        "title": "HARNESS: 为故事添加上下文"
       },
       {
         "command": "harness-runner.generateAgentMap",
@@ -76,6 +80,10 @@
       {
         "command": "harness-runner.openSettings",
         "title": "HARNESS: 打开设置"
+      },
+      {
+        "command": "harness-runner.customizeMenuOrder",
+        "title": "HARNESS: 自定义菜单排序"
       },
       {
         "command": "harness-runner.showMenu",
@@ -317,6 +325,15 @@
             "Plugin runtime UI uses English, and project-constraint initialization generates English Git commit rules."
           ],
           "description": "切换 Harness Runner 的运行时语言。修改后若要更新项目约束中的语言相关规则，需要重新初始化项目约束。"
+        },
+        "harness-runner.rootMenuOrder": {
+          "type": "array",
+          "items": {
+            "type": "string",
+            "enum": ["planning", "constraints", "execution", "settings"]
+          },
+          "default": ["planning", "constraints", "execution", "settings"],
+          "markdownDescription": "自定义一级菜单顺序。可用值依次为 `planning`、`constraints`、`execution`、`settings`；缺失或重复值会在运行时自动回退到默认顺序。"
         }
       }
     }
@@ -349,5 +366,5 @@
     "@vscode/test-cli": "^0.0.12",
     "@vscode/test-electron": "^2.5.2"
   },
-  "icon": "images/ralph_runner.ico"
+  "icon": "images/harness_runner.ico"
 }

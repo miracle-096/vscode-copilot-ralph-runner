@@ -289,6 +289,7 @@ function buildRunbook(projectConstraints: GeneratedProjectConstraints): AgentMap
 			],
 			commands: [
 				'Harness Runner: 初始化项目约束',
+				'Harness Runner: 为故事添加上下文',
 				'Harness Runner: 刷新源码上下文索引',
 				'Harness Runner: 生成 Agent Map',
 			],

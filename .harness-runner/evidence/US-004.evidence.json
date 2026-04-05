@@ -1,0 +1,58 @@
+{
+  "storyId": "US-004",
+  "title": "重命名命令标题与聊天指令入口",
+  "source": "copilot",
+  "changedFiles": [
+    "README.md",
+    "package.json",
+    "src/agentMap.ts",
+    "src/extension.ts",
+    "src/helpManual.ts",
+    "src/localization.ts",
+    "src/test/extension.test.ts",
+    "images/harness_runner.ico"
+  ],
+  "tests": [
+    {
+      "command": "npm run compile",
+      "status": "passed"
+    },
+    {
+      "command": "node -e runtime-surface-check",
+      "status": "passed"
+    },
+    {
+      "command": "npm test",
+      "status": "failed",
+      "details": "单个既有失败与项目约束标题语言有关，不在本故事改动面内。"
+    }
+  ],
+  "riskLevel": "medium",
+  "riskReasons": [
+    "变更触达 package.json 贡献点、聊天参与者入口和菜单本地化，属于发布可见面。",
+    "全量测试未完全通过，虽然当前失败点与本故事无直接耦合。"
+  ],
+  "releaseNotes": [
+    "命令面板与状态栏菜单统一使用 Harness 品牌。",
+    "聊天参与者入口展示为 harness，slash command 使用 harness-spec。",
+    "故事上下文入口改名为“为故事添加上下文”，避免旧品牌暴露。"
+  ],
+  "rollbackHints": [
+    "如需回滚，仅需回退 package.json、src/localization.ts、src/extension.ts、src/helpManual.ts、src/agentMap.ts、src/test/extension.test.ts 与图标文件重命名。",
+    "由于 command id 未改动，回滚不会影响持久化配置键或外部自动化触发契约。"
+  ],
+  "followUps": [
+    "修复项目约束标题语言测试失败。",
+    "评估是否需要继续清理 README 和仓库元数据里的 Ralph 历史字样。"
+  ],
+  "recommendFeatureFlag": false,
+  "evidenceGaps": [
+    "未获得全量测试全绿结果。"
+  ],
+  "architectureNotes": [
+    "当前改动集中在用户可见入口层，未深入修改故事执行编排、工件协议或持久化状态机。",
+    "菜单定义与入口执行分离，说明当前变更面具备可审计性和可回滚性。"
+  ],
+  "auditableStatus": "completed",
+  "finalStatus": "completed"
+}

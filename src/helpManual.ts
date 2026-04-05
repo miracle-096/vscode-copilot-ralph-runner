@@ -68,11 +68,11 @@ function getChineseHelpContent(kind: HarnessHelpDocumentKind): HarnessHelpConten
 				{
 					title: 'Harness 菜单里有什么',
 					paragraphs: [
-						'Harness 状态栏按钮和快捷键 Alt+R 都会打开命令菜单。菜单覆盖从生成 PRD、追加故事，到初始化项目约束、刷新源码上下文、录入设计描述、开始执行、审批和查看状态的一整条链路。'
+						'Harness 状态栏按钮和快捷键 Alt+R 都会打开命令菜单。一级菜单会把约束相关动作收纳到“Harness 约束设置”，从而把执行检查、项目约束、设计描述、故事上下文和 Agent Map 放到同一个二级目录中。'
 					],
 					steps: [
 						'生成 PRD 或追加用户故事',
-						'初始化项目约束、刷新源码上下文、按需生成 Agent Map',
+						'进入“Harness 约束设置”，初始化项目约束、为故事添加上下文、按需生成 Agent Map',
 						'对 UI 敏感故事补充设计描述',
 						'开始执行，后续通过状态、审批和重置命令继续管理'
 					]
@@ -93,8 +93,8 @@ function getChineseHelpContent(kind: HarnessHelpDocumentKind): HarnessHelpConten
 				steps: [
 					'打开 Harness 菜单，先执行“生成 PRD”，描述项目目标或想完成的里程碑。',
 					'确认 prd.json 生成后，如有需要执行“追加用户故事”，继续细化下一批故事。',
-					'执行“初始化项目约束”，让 Harness 扫描脚本、目录、README 和配置文件，产出基础规则。',
-					'执行“刷新源码上下文索引”，为后续故事提供入口文件、模块提示和热点路径。',
+					'进入“Harness 约束设置”，执行“初始化项目约束”，让 Harness 扫描脚本、目录、README 和配置文件，产出基础规则。',
+					'继续在“Harness 约束设置”里执行“为故事添加上下文”或“刷新源码上下文索引”，为后续故事提供入口文件、模块提示和热点路径。',
 					'如果项目偏界面驱动，再执行“界面设计描述”，补充设计稿、截图、布局约束或复用目标。',
 					'最后执行“开始执行”，让 Harness 按 PRD 的优先级逐个推进故事。'
 				],
@@ -111,11 +111,11 @@ function getChineseHelpContent(kind: HarnessHelpDocumentKind): HarnessHelpConten
 				],
 				steps: [
 					'先确认工作区根目录已有或准备好 prd.json，必要时使用“追加用户故事”把当前需求并入现有 PRD。',
-					'优先执行“初始化项目约束”，把已有脚本、目录规范、Git 规则和交付要求收进 Harness。',
-					'执行“刷新源码上下文索引”，必要时再执行“生成 Agent Map”，让模块、规则入口和知识缺口可被后续故事引用。',
+					'优先进入“Harness 约束设置”，执行“初始化项目约束”，把已有脚本、目录规范、Git 规则和交付要求收进 Harness。',
+					'继续在“Harness 约束设置”里执行“为故事添加上下文”或“刷新源码上下文索引”，必要时再执行“生成 Agent Map”，让模块、规则入口和知识缺口可被后续故事引用。',
 					'如果部分故事有 UI 或交互变化，再为这些故事执行“界面设计描述”。',
 					'检查配置执行检查、审批模式和 Reviewer 评分设置是否符合团队要求，然后再执行“开始执行”。',
-					'执行过程中结合“查看状态”“审批高风险故事”“重置故事”管理进度和风险。'
+					'执行过程中结合“查看状态”“审批故事”“重置故事”管理进度和风险。'
 				],
 				bullets: [
 					'已有项目更适合先补项目约束与上下文，而不是直接开跑',
@@ -168,7 +168,7 @@ function getEnglishHelpContent(kind: HarnessHelpDocumentKind): HarnessHelpConten
 				{
 					title: 'What You Get In The Menu',
 					paragraphs: [
-						'The status bar button and Alt+R open the Harness menu. From there you can generate or append PRD stories, initialize project constraints, refresh source context, manage design notes, start execution, review approvals, and inspect status.'
+						'The status bar button and Alt+R open the Harness menu. Constraint-related actions now live under a dedicated Harness Constraint Settings submenu so run checks, project constraints, design notes, story context, and Agent Map stay grouped together.'
 					]
 				}
 			]
@@ -187,8 +187,8 @@ function getEnglishHelpContent(kind: HarnessHelpDocumentKind): HarnessHelpConten
 				steps: [
 					'Open the Harness menu and run Generate PRD.',
 					'After prd.json exists, use Append User Stories whenever you need to expand the plan.',
-					'Run Initialize Project Constraints to collect scripts, folders, README signals, and configuration rules.',
-					'Run Refresh Source Context Index so later stories can reuse entry files, module hints, and hotspot paths.',
+					'Open Harness Constraint Settings and run Initialize Project Constraints to collect scripts, folders, README signals, and configuration rules.',
+					'Stay in Harness Constraint Settings to run Add Story Context or Refresh Source Context Index so later stories can reuse entry files, module hints, and hotspot paths.',
 					'If UI work is involved, add UI Design Notes before execution.',
 					'Run Start to let Harness execute the story queue in priority order.'
 				]
@@ -200,8 +200,8 @@ function getEnglishHelpContent(kind: HarnessHelpDocumentKind): HarnessHelpConten
 				],
 				steps: [
 					'Confirm prd.json exists or append the current requirement into the existing PRD.',
-					'Initialize Project Constraints before large execution passes.',
-					'Refresh Source Context Index and, when useful, Generate Agent Map for module and rule discovery.',
+					'Open Harness Constraint Settings and initialize project constraints before large execution passes.',
+					'Stay in Harness Constraint Settings to add story context or refresh the source-context index, and then generate Agent Map when module and rule discovery matters.',
 					'Add UI Design Notes only for stories that truly need design-sensitive guidance.',
 					'Configure run checks, approval mode, and Reviewer scoring settings if your team wants stronger governance before execution.',
 					'Use Start, Show Status, Review Approval, and Reset Story as the operational loop.'

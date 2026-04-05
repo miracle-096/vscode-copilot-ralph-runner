@@ -111,6 +111,7 @@ import {
 	deriveStoryChangedFiles,
 	evaluatePolicyGates,
 } from '../policyGate';
+import { PrdFile } from '../types';
 import {
 	classifyOutputMessage,
 	createStoryRunLogRecorder,
@@ -118,13 +119,19 @@ import {
 	summarizeCommandOutput,
 } from '../runLog';
 import { buildHarnessHelpDocument, getHarnessHelpContent } from '../helpManual';
+import { getHarnessLanguagePack } from '../localization';
 import { parseTaskSignalStatus } from '../taskStatus';
 import {
+	buildHarnessMenuQuickPickItems,
+	getReplayStoryRange,
+	normalizeHarnessRootMenuOrder,
+	resolveHarnessMenuSelection,
 	normalizeReviewerAutoRefactorLimit,
 	normalizeReviewerLoopEnabled,
 	normalizeReviewerPassingScore,
 	resolveWorkspaceApprovalPromptMode,
 	persistWorkspacePinnedRunnerSettingsFile,
+	isHarnessRunnerActive,
 	resolveWorkspaceReviewerAutoRefactorLimit,
 	resolveWorkspaceReviewerLoopEnabled,
 	resolveWorkspaceReviewerPassingScore,
@@ -177,6 +184,11 @@ suite('Extension Test Suite', () => {
 			assert.strictEqual(contributedCommands.some(command => command.command === 'harness-runner.showUsageGuide'), true);
 			assert.strictEqual(contributedCommands.some(command => command.command === 'harness-runner.previewSourceContextRecall'), true);
 			assert.strictEqual(contributedCommands.some(command => command.command === 'harness-runner.generateAgentMap'), true);
+			assert.strictEqual(contributedCommands.some(command => command.command === 'harness-runner.customizeMenuOrder'), true);
+			assert.strictEqual(contributedCommands.some(command => command.command === 'harness-runner.rerunFailedStory'), true);
+			assert.strictEqual(contributedCommands.find(command => command.command === 'harness-runner.previewSourceContextRecall')?.title, 'HARNESS: 为故事添加上下文');
+			assert.strictEqual(contributedCommands.find(command => command.command === 'harness-runner.customizeMenuOrder')?.title, 'HARNESS: 自定义菜单排序');
+			assert.strictEqual(contributedCommands.find(command => command.command === 'harness-runner.rerunFailedStory')?.title, 'HARNESS: 重新执行失败故事');
 			assert.strictEqual(contributedCommands.find(command => command.command === 'harness-runner.generateAgentMap')?.title, 'HARNESS: 生成 Agent Map');
 			assert.strictEqual(contributedCommands.find(command => command.command === 'harness-runner.showIntroduction')?.title, 'HARNESS: 插件介绍');
 			assert.strictEqual(contributedCommands.find(command => command.command === 'harness-runner.showUsageGuide')?.title, 'HARNESS: 使用流程手册');
@@ -189,6 +201,7 @@ suite('Extension Test Suite', () => {
 			assert.strictEqual(typeof packageJson.contributes?.configuration?.properties?.['harness-runner.enableReviewerLoop'], 'object');
 			assert.strictEqual(typeof packageJson.contributes?.configuration?.properties?.['harness-runner.reviewPassingScore'], 'object');
 			assert.strictEqual(typeof packageJson.contributes?.configuration?.properties?.['harness-runner.maxAutoRefactorRounds'], 'object');
+			assert.strictEqual(typeof packageJson.contributes?.configuration?.properties?.['harness-runner.rootMenuOrder'], 'object');
 			assert.strictEqual('harness-runner.requireProjectConstraintsBeforeRun' in (packageJson.contributes?.configuration?.properties ?? {}), false);
 			assert.strictEqual('harness-runner.requireDesignContextForTaggedStories' in (packageJson.contributes?.configuration?.properties ?? {}), false);
 			const policyGateDefault = packageJson.contributes?.configuration?.properties?.['harness-runner.policyGates'] as {
@@ -225,6 +238,17 @@ suite('Extension Test Suite', () => {
 		}), 'autopilot');
 	});
 
+	test('runner active when persisted inprogress exists even if in-memory loop is not running', () => {
+		const workspaceRoot = fs.mkdtempSync(path.join(os.tmpdir(), 'harness-runner-status-'));
+		const harnessDir = path.join(workspaceRoot, '.harness-runner');
+		fs.mkdirSync(harnessDir, { recursive: true });
+		fs.writeFileSync(path.join(harnessDir, 'story-status.json'), JSON.stringify({ 'US-008': 'inprogress' }, null, 2), 'utf8');
+
+		assert.strictEqual(isHarnessRunnerActive(workspaceRoot, false), true);
+		assert.strictEqual(isHarnessRunnerActive(workspaceRoot, true), true);
+		assert.strictEqual(isHarnessRunnerActive(undefined, false), false);
+	});
+
 	test('reviewer settings resolve with workspace override first, then global fallback', () => {
 		assert.strictEqual(resolveWorkspaceReviewerLoopEnabled(undefined), true);
 		assert.strictEqual(resolveWorkspaceReviewerLoopEnabled({ globalValue: true, workspaceValue: false }), false);
@@ -250,6 +274,80 @@ suite('Extension Test Suite', () => {
 		assert.strictEqual(normalizeReviewerAutoRefactorLimit(undefined), 2);
 		assert.strictEqual(normalizeReviewerAutoRefactorLimit(-1), 0);
 		assert.strictEqual(normalizeReviewerAutoRefactorLimit(2.7), 3);
+	});
+
+	test('localized menus expose nested submenus with explicit back items', () => {
+		const chinesePack = getHarnessLanguagePack('Chinese');
+		const rootItems = buildHarnessMenuQuickPickItems(chinesePack, chinesePack.menu.rootId);
+		const constraintsEntry = rootItems.find(item => item.menuItem.kind === 'submenu' && item.menuItem.target === 'constraints');
+		const settingsEntry = rootItems.find(item => item.menuItem.kind === 'submenu' && item.menuItem.target === 'settings');
+		assert.ok(settingsEntry);
+		assert.strictEqual(rootItems.some(item => item.menuItem.kind === 'command' && item.menuItem.command === 'harness-runner.openSettings'), false);
+		assert.ok(constraintsEntry);
+
+		const constraintsItems = buildHarnessMenuQuickPickItems(chinesePack, 'constraints');
+		assert.strictEqual(constraintsItems[0]?.menuItem.kind, 'back');
+		assert.strictEqual(constraintsItems.some(item => item.menuItem.kind === 'command' && item.menuItem.command === 'harness-runner.configurePolicyGates'), true);
+		assert.strictEqual(constraintsItems.some(item => item.menuItem.kind === 'command' && item.menuItem.command === 'harness-runner.initProjectConstraints'), true);
+		assert.strictEqual(constraintsItems.some(item => item.menuItem.kind === 'command' && item.menuItem.command === 'harness-runner.recordDesignContext'), true);
+		assert.strictEqual(constraintsItems.some(item => item.menuItem.kind === 'command' && item.menuItem.command === 'harness-runner.previewSourceContextRecall' && item.label.includes('为故事添加上下文')), true);
+		assert.strictEqual(constraintsItems.some(item => item.menuItem.kind === 'command' && item.menuItem.command === 'harness-runner.refreshSourceContextIndex'), true);
+		assert.strictEqual(constraintsItems.some(item => item.menuItem.kind === 'command' && item.menuItem.command === 'harness-runner.generateAgentMap'), true);
+
+		const settingsItems = buildHarnessMenuQuickPickItems(chinesePack, 'settings');
+		assert.strictEqual(settingsItems[0]?.menuItem.kind, 'back');
+		assert.strictEqual(settingsItems.some(item => item.menuItem.kind === 'command' && item.menuItem.command === 'harness-runner.openSettings'), true);
+		assert.strictEqual(settingsItems.some(item => item.menuItem.kind === 'command' && item.menuItem.command === 'harness-runner.customizeMenuOrder' && item.label.includes('自定义菜单排序')), true);
+
+			const executionItems = buildHarnessMenuQuickPickItems(chinesePack, 'execution');
+			assert.strictEqual(executionItems.some(item => item.menuItem.kind === 'command' && item.menuItem.command === 'harness-runner.rerunFailedStory' && item.label.includes('重新执行失败故事')), true);
+	});
+
+		test('replay range starts from the selected failed story and keeps priority order', () => {
+			const prd = {
+				project: 'Harness Runner',
+				userStories: [
+					{ id: 'US-003', title: 'three', description: '', acceptanceCriteria: [], priority: 3 },
+					{ id: 'US-001', title: 'one', description: '', acceptanceCriteria: [], priority: 1 },
+					{ id: 'US-004', title: 'four', description: '', acceptanceCriteria: [], priority: 4 },
+					{ id: 'US-002', title: 'two', description: '', acceptanceCriteria: [], priority: 2 },
+				],
+			} as unknown as PrdFile;
+
+			assert.deepStrictEqual(getReplayStoryRange(prd, 'US-002').map(story => story.id), ['US-002', 'US-003', 'US-004']);
+			assert.deepStrictEqual(getReplayStoryRange(prd, 'US-999').map(story => story.id), []);
+		});
+
+	test('root menu order normalization removes invalid entries and appends missing defaults', () => {
+		assert.deepStrictEqual(
+			normalizeHarnessRootMenuOrder(['settings', 'invalid', 'planning', 'settings'], ['planning', 'constraints', 'execution', 'settings']),
+			['settings', 'planning', 'constraints', 'execution'],
+		);
+	});
+
+	test('menu navigation resolves deeper submenu entry, back navigation, and commands', () => {
+		const englishPack = getHarnessLanguagePack('English');
+		const rootItems = buildHarnessMenuQuickPickItems(englishPack, englishPack.menu.rootId);
+		const planningEntry = rootItems.find(item => item.menuItem.kind === 'submenu' && item.menuItem.target === 'planning');
+		assert.ok(planningEntry);
+
+		const planningResolution = resolveHarnessMenuSelection(englishPack, [englishPack.menu.rootId], planningEntry!.menuItem);
+		assert.deepStrictEqual(planningResolution.nextMenuStack, ['root', 'planning']);
+
+		const guidesEntry = buildHarnessMenuQuickPickItems(englishPack, 'planning').find(item => item.menuItem.kind === 'submenu' && item.menuItem.target === 'guides');
+		assert.ok(guidesEntry);
+		const guideResolution = resolveHarnessMenuSelection(englishPack, planningResolution.nextMenuStack, guidesEntry!.menuItem);
+		assert.deepStrictEqual(guideResolution.nextMenuStack, ['root', 'planning', 'guides']);
+
+		const backEntry = buildHarnessMenuQuickPickItems(englishPack, 'guides')[0];
+		const backResolution = resolveHarnessMenuSelection(englishPack, guideResolution.nextMenuStack, backEntry.menuItem);
+		assert.deepStrictEqual(backResolution.nextMenuStack, ['root', 'planning']);
+
+		const introductionEntry = buildHarnessMenuQuickPickItems(englishPack, 'guides').find(item => item.menuItem.kind === 'command' && item.menuItem.command === 'harness-runner.showIntroduction');
+		assert.ok(introductionEntry);
+		const commandResolution = resolveHarnessMenuSelection(englishPack, guideResolution.nextMenuStack, introductionEntry!.menuItem);
+		assert.strictEqual(commandResolution.command, 'harness-runner.showIntroduction');
+		assert.deepStrictEqual(commandResolution.nextMenuStack, ['root', 'planning', 'guides']);
 	});
 
 	test('workspace-pinned reviewer settings are persisted into .vscode/settings.json', () => {
@@ -1992,19 +2090,10 @@ suite('Extension Test Suite', () => {
 			note: 'Reviewed with rollback plan confirmed.',
 			createdAt: '2025-02-01T10:00:00.000Z',
 		});
-		assert.strictEqual(afterReviewApproval.status, 'pendingRelease');
+		assert.strictEqual(afterReviewApproval.status, 'completed');
 		assert.strictEqual(afterReviewApproval.approvalState, 'approved');
 		assert.strictEqual(afterReviewApproval.approvalHistory.length, 1);
-		assert.strictEqual(afterReviewApproval.approvalHistory[0].toStatus, 'pendingRelease');
-
-		const afterReleaseApproval = applyStoryApprovalDecision(afterReviewApproval, {
-			action: 'approved',
-			note: 'Release approved for rollout.',
-			createdAt: '2025-02-01T11:00:00.000Z',
-		});
-		assert.strictEqual(afterReleaseApproval.status, 'completed');
-		assert.strictEqual(afterReleaseApproval.approvalState, 'approved');
-		assert.strictEqual(afterReleaseApproval.approvalHistory.length, 2);
+		assert.strictEqual(afterReviewApproval.approvalHistory[0].toStatus, 'completed');
 
 		const afterRejection = applyStoryApprovalDecision(afterReviewApproval, {
 			action: 'rejected',

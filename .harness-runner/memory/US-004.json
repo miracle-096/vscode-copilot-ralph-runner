@@ -1,0 +1,88 @@
+{
+  "storyId": "US-004",
+  "title": "重命名命令标题与聊天指令入口",
+  "source": "copilot",
+  "summary": "将命令面板、状态栏菜单、聊天参与者入口和 slash command 的用户可见品牌入口统一到 Harness/harness，并补齐对应的菜单与命令映射校验。",
+  "changedFiles": [
+    "README.md",
+    "package.json",
+    "src/agentMap.ts",
+    "src/extension.ts",
+    "src/helpManual.ts",
+    "src/localization.ts",
+    "src/test/extension.test.ts",
+    "images/harness_runner.ico"
+  ],
+  "changedModules": [
+    "扩展贡献点与命令标题",
+    "聊天参与者与 slash command 入口",
+    "本地化菜单结构与状态文案",
+    "帮助文档与操作手册",
+    "命令/聊天入口测试覆盖"
+  ],
+  "keyDecisions": [
+    "保留既有 command id 与 chat participant id，不改触发标识，只替换用户可见标题、菜单标签和聊天入口命名。",
+    "将故事源上下文入口统一重命名为“为故事添加上下文”，避免继续暴露旧的预览命名和 Ralph 品牌。",
+    "把聊天参与者名称保持为 harness，slash command 保持为 harness-spec，并将图标资源名同步迁移到 harness_runner.ico。",
+    "通过本地化菜单节点集中管理用户可见菜单标签，减少后续再次重命名时在 extension.ts 中散落硬编码。"
+  ],
+  "constraintsConfirmed": [
+    "未修改 prd.json。",
+    "提交信息需使用中文。",
+    "命令、状态和入口变更同步更新 src/test/extension.test.ts。",
+    "运行期主工件目录仍保持 .harness-runner。"
+  ],
+  "architectureNotes": [
+    "命令 id、聊天指令名和用户可见标题被显式拆分，降低未来只改展示文案时误伤触发契约的风险。",
+    "可见菜单结构由 src/localization.ts 统一定义，extension.ts 只负责导航与执行，职责边界较清晰。",
+    "帮助文档、README 和 agent map 仅更新入口命名与路径提示，没有把运行逻辑耦合进文档模块。",
+    "回滚时可按 package.json 与 localization/extension/helpManual/test 这组文件整体回退，变更面相对集中。"
+  ],
+  "testsRun": [
+    {
+      "command": "npm run compile",
+      "status": "passed"
+    },
+    {
+      "command": "node -e runtime-surface-check",
+      "status": "passed",
+      "details": "验证 HARNESS 命令标题、聊天参与者 harness 和 slash command harness-spec 均已就位。"
+    },
+    {
+      "command": "npm test",
+      "status": "failed",
+      "details": "存在与本故事无关的既有失败：Project constraint initialization writes readable artifacts for prompt injection，期望标题为 Harness Project Constraints，实际为 Harness 项目约束。"
+    }
+  ],
+  "risks": [
+    "全量测试仍有 1 个与项目约束标题语言相关的既有失败，未在本故事中处理。",
+    "README 仍保留部分非运行时 Ralph 历史文案，本故事只覆盖命令标题、菜单、状态栏和聊天入口。"
+  ],
+  "followUps": [
+    "单独处理项目约束标题语言不一致导致的测试失败。",
+    "如需彻底清理仓库品牌残留，可后续单开故事处理 README、仓库 URL 和测试临时目录命名中的 Ralph 字样。"
+  ],
+  "searchKeywords": [
+    "HARNESS: 为故事添加上下文",
+    "HARNESS: 审批故事",
+    "harness-spec",
+    "chatParticipants",
+    "status bar menu",
+    "command titles"
+  ],
+  "reviewSummary": {
+    "acceptanceCriteriaCovered": [
+      "命令面板、状态栏菜单和聊天参与者使用 Harness/harness。",
+      "聊天参与者名称与 slash command 不再暴露 ralph 旧命名。",
+      "命令标题重命名后仍保持原 command id 触发映射。"
+    ],
+    "residualConcern": "全量测试未完全通过，但失败点与本故事改动面不直接相关。"
+  },
+  "reviewLoop": {
+    "recommended": true,
+    "focus": [
+      "检查 README 与帮助文档中的入口命名是否与实际命令完全一致。",
+      "复核 package.json 中聊天参与者与命令贡献点是否满足发布面要求。"
+    ]
+  }
+}

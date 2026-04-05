@@ -4,6 +4,42 @@ export const SUPPORTED_HARNESS_LANGUAGES = ['Chinese', 'English'] as const;
 
 export type SupportedHarnessLanguage = typeof SUPPORTED_HARNESS_LANGUAGES[number];
 
+export interface HarnessMenuCommandItem {
+	kind: 'command';
+	command: string;
+	label: string;
+	description: string;
+}
+
+export interface HarnessMenuSubmenuItem {
+	kind: 'submenu';
+	target: string;
+	label: string;
+	description: string;
+}
+
+export interface HarnessMenuBackItem {
+	kind: 'back';
+	label: string;
+	description: string;
+}
+
+export type HarnessMenuItem = HarnessMenuCommandItem | HarnessMenuSubmenuItem | HarnessMenuBackItem;
+
+export interface HarnessMenuNode {
+	placeholder: string;
+	items: HarnessMenuItem[];
+}
+
+export interface HarnessMenuDefinition {
+	rootId: string;
+	nodes: Record<string, HarnessMenuNode>;
+	customizeOrder: {
+		placeholder: (currentStep: number, totalSteps: number) => string;
+		saved: string;
+	};
+}
+
 export interface HarnessLanguagePack {
 	language: SupportedHarnessLanguage;
 	projectConstraintsTitle: string;
@@ -59,17 +95,18 @@ export interface HarnessLanguagePack {
 		noTrackedStories: string;
 		placeholder: string;
 		storyReset: (storyId: string) => string;
+		noFailedStories: string;
+		rerunPlaceholder: string;
+		rerunPrepared: (storyId: string, storyCount: number) => string;
 	};
 	approval: {
 		noReviewableStories: string;
 		storyPlaceholder: string;
 		actionPlaceholder: (storyId: string) => string;
-		approveReviewLabel: string;
-		approveReleaseLabel: string;
+		approveLabel: string;
 		rejectLabel: string;
 		addNoteLabel: string;
-		approveReviewDescription: string;
-		approveReleaseDescription: string;
+		approveDescription: string;
 		rejectDescription: string;
 		addNoteDescription: string;
 		noteTitle: (storyId: string) => string;
@@ -369,8 +406,12 @@ export interface HarnessLanguagePack {
 		};
 	};
 	menu: {
-		placeholder: string;
-		items: Array<{ command: string; label: string; description: string; }>;
+		rootId: string;
+		nodes: Record<string, HarnessMenuNode>;
+		customizeOrder: {
+			placeholder: (currentStep: number, totalSteps: number) => string;
+			saved: string;
+		};
 	};
 	help: {
 		introductionTitle: string;
@@ -430,7 +471,7 @@ const CHINESE_PACK: HarnessLanguagePack = {
 		runningText: '$(sync~spin) Harness Runner',
 		runningTooltip: 'Harness Runner：任务执行中，点击打开菜单',
 		pendingApprovalsText: count => `$(pass-filled) Harness Runner ${count}`,
-		pendingApprovalsTooltip: count => `Harness Runner：当前有 ${count} 个待审批故事，点击打开命令菜单或直接运行“HARNESS: 审批高风险故事”`,
+		pendingApprovalsTooltip: count => `Harness Runner：当前有 ${count} 个待审批故事，点击打开命令菜单或直接运行“HARNESS: 审批故事”`,
 	},
 	runtime: {
 		alreadyRunning: 'HARNESS 已在运行中。',
@@ -451,10 +492,10 @@ const CHINESE_PACK: HarnessLanguagePack = {
 		title: project => `HARNESS 状态 — ${project}`,
 		completed: (completed, total) => `已完成: ${completed}/${total}`,
 		failed: failed => `失败: ${failed}`,
-		awaitingReview: count => `待评审: ${count}`,
-		awaitingRelease: count => `待发布: ${count}`,
+		awaitingRelease: count => `待审批: ${count}`,
+		awaitingReview: count => `待审批: ${count}`,
 		highRisk: count => `高风险: ${count}`,
-		pending: pending => `待处理: ${pending}`,
+		pending: pending => `未开始: ${pending}`,
 		inProgress: storyId => `进行中: ${storyId || '无'}`,
 		next: nextLabel => `下一个: ${nextLabel}`,
 		running: running => `运行中: ${running ? '是' : '否'}`,
@@ -468,17 +509,18 @@ const CHINESE_PACK: HarnessLanguagePack = {
 		noTrackedStories: '没有可重置的已完成或失败故事。',
 		placeholder: '选择要重置的用户故事',
 		storyReset: storyId => `故事 ${storyId} 已重置。`,
+		noFailedStories: '当前没有可重新执行的失败故事。',
+		rerunPlaceholder: '选择一个失败故事，并从该故事开始重新执行',
+		rerunPrepared: (storyId, storyCount) => `HARNESS：已从 ${storyId} 开始重置 ${storyCount} 个故事，正在重新执行。`,
 	},
 	approval: {
-		noReviewableStories: '当前没有需要人工审批的高风险故事。',
+		noReviewableStories: '当前没有需要人工审批的故事。',
 		storyPlaceholder: '选择要审批的故事',
 		actionPlaceholder: storyId => `选择对 ${storyId} 执行的审批操作`,
-		approveReviewLabel: '批准评审',
-		approveReleaseLabel: '批准发布',
+		approveLabel: '批准审批',
 		rejectLabel: '拒绝并退回评审',
 		addNoteLabel: '补充审批说明',
-		approveReviewDescription: '确认当前评审结果，并推进到下一审批阶段',
-		approveReleaseDescription: '确认可以结束人工审批并完成故事',
+		approveDescription: '在完整预览后给出审批结果，并完成该故事',
 		rejectDescription: '把故事退回待评审，并记录拒绝原因',
 		addNoteDescription: '只补充审批备注，不改变当前状态',
 		noteTitle: storyId => `审批说明 — ${storyId}`,
@@ -573,14 +615,14 @@ const CHINESE_PACK: HarnessLanguagePack = {
 		success: filePath => `HARNESS：源码上下文索引已刷新：${filePath}`,
 		openIndex: '打开索引',
 		failed: message => `HARNESS：刷新源码上下文索引失败：${message}`,
-		previewPlaceholder: '选择一个故事以预览相关仓库源上下文',
-		previewTitle: '相关仓库源上下文预览',
+		previewPlaceholder: '选择一个故事以添加相关仓库源上下文',
+		previewTitle: '为故事添加上下文',
 		previewStory: (storyId, title) => `故事：${storyId} — ${title}`,
 		previewScore: score => `分数：${score}`,
 		previewReasons: reasons => `原因：${reasons.join('; ')}`,
 		previewValue: value => `线索：${value}`,
-		previewReady: (storyId, matchCount) => `HARNESS：已为 ${storyId} 预览 ${matchCount} 条相关仓库源上下文。`,
-		noMatches: storyId => `HARNESS：${storyId} 当前没有命中足够的仓库源上下文，将回退到现有提示构建流程。`,
+		previewReady: (storyId, matchCount) => `HARNESS：已为 ${storyId} 准备 ${matchCount} 条相关仓库源上下文。`,
+		noMatches: storyId => `HARNESS：${storyId} 当前没有命中足够的仓库源上下文，将继续沿用现有提示构建流程。`,
 	},
 	agentMap: {
 		success: gapCount => `HARNESS：Agent Map 已生成。总览页与知识目录页已写入 .harness-runner/agent-map/，当前显式记录 ${gapCount} 个知识缺口。`,
@@ -778,25 +820,71 @@ const CHINESE_PACK: HarnessLanguagePack = {
 		},
 	},
 	menu: {
-		placeholder: 'Harness Runner：选择一个命令',
-		items: [
-			{ command: 'harness-runner.configurePolicyGates', label: '$(settings-gear)  配置执行检查', description: '通过可视化界面启用或关闭内置检查项和审批提示模式' },
-			{ command: 'harness-runner.initProjectConstraints', label: '$(symbol-key)  初始化项目约束', description: '扫描仓库并生成可编辑和机器可读的项目规则' },
-			{ command: 'harness-runner.recordDesignContext', label: '$(device-camera-video)  界面设计描述', description: '一个入口处理当前故事和批量复用，支持自动整理、单独匹配和批量匹配' },
-			{ command: 'harness-runner.previewSourceContextRecall', label: '$(search)  预览故事源上下文', description: '为选中的故事预览最相关的模块、文件和工程线索' },
-			{ command: 'harness-runner.refreshSourceContextIndex', label: '$(repo)  刷新源码上下文索引', description: '扫描仓库并更新轻量 source context 索引工件' },
-			{ command: 'harness-runner.generateAgentMap', label: '$(book)  生成 Agent Map', description: '生成轻量仓库总览页和知识目录页，供智能体导航规则、模块与执行 runbook' },
-			{ command: 'harness-runner.reviewStoryApproval', label: '$(pass-filled)  审批高风险故事', description: '对待人工审批的高风险故事执行批准、拒绝或补充说明' },
-			{ command: 'harness-runner.quickStart', label: '$(zap)  生成 PRD', description: '通过 Copilot 生成 prd.json' },
-			{ command: 'harness-runner.appendUserStories', label: '$(diff-added)  追加用户故事', description: '通过 Copilot 基于现有 prd.json 追加新的用户故事' },
-			{ command: 'harness-runner.start', label: '$(play)  开始执行', description: '开始或继续自动任务循环' },
-			{ command: 'harness-runner.stop', label: '$(debug-stop)  停止执行', description: '取消当前运行' },
-			{ command: 'harness-runner.status', label: '$(info)  查看状态', description: '显示用户故事进度摘要' },
-			{ command: 'harness-runner.resetStep', label: '$(debug-restart)  重置故事', description: '重置某个已完成的用户故事' },
-			{ command: 'harness-runner.openSettings', label: '$(gear)  打开设置', description: '配置 Harness Runner 选项' },
-			{ command: 'harness-runner.showIntroduction', label: '$(hubot)  插件介绍', description: '查看 Harness Runner 的定位、能力边界和适用场景' },
-			{ command: 'harness-runner.showUsageGuide', label: '$(library)  使用流程手册', description: '查看空项目和已存在项目两种起点下的推荐流程' },
-		],
+		rootId: 'root',
+		nodes: {
+			root: {
+				placeholder: 'Harness Runner：选择一个菜单',
+				items: [
+					{ kind: 'submenu', target: 'planning', label: '$(zap)  规划与入门', description: '集中处理 PRD 生成、故事追加和帮助文档入口' },
+					{ kind: 'submenu', target: 'constraints', label: '$(symbol-key)  Harness 约束设置', description: '统一进入执行检查、项目约束、设计描述、故事上下文和 Agent Map 相关能力' },
+					{ kind: 'submenu', target: 'execution', label: '$(rocket)  执行与审批', description: '集中触发开始、停止、状态查看、审批和故事重置' },
+					{ kind: 'submenu', target: 'settings', label: '$(gear)  设置', description: '统一进入运行设置、打开设置和菜单排序入口' },
+				],
+			},
+			planning: {
+				placeholder: '规划与入门：选择一个命令',
+				items: [
+					{ kind: 'back', label: '$(arrow-left)  返回上一级', description: '回到 Harness Runner 主菜单' },
+					{ kind: 'command', command: 'harness-runner.quickStart', label: '$(zap)  生成 PRD', description: '通过 Copilot 生成 prd.json' },
+					{ kind: 'command', command: 'harness-runner.appendUserStories', label: '$(diff-added)  追加用户故事', description: '通过 Copilot 基于现有 prd.json 追加新的用户故事' },
+					{ kind: 'submenu', target: 'guides', label: '$(library)  指南与帮助', description: '查看插件介绍和推荐使用流程' },
+				],
+			},
+			guides: {
+				placeholder: '指南与帮助：选择一个文档',
+				items: [
+					{ kind: 'back', label: '$(arrow-left)  返回上一级', description: '回到规划与入门菜单' },
+					{ kind: 'command', command: 'harness-runner.showIntroduction', label: '$(hubot)  插件介绍', description: '查看 Harness Runner 的定位、能力边界和适用场景' },
+					{ kind: 'command', command: 'harness-runner.showUsageGuide', label: '$(library)  使用流程手册', description: '查看空项目和已存在项目两种起点下的推荐流程' },
+				],
+			},
+			constraints: {
+				placeholder: 'Harness 约束设置：选择一个命令',
+				items: [
+					{ kind: 'back', label: '$(arrow-left)  返回上一级', description: '回到 Harness Runner 主菜单' },
+					{ kind: 'command', command: 'harness-runner.configurePolicyGates', label: '$(settings-gear)  配置执行检查', description: '通过可视化界面启用或关闭内置检查项和审批提示模式' },
+					{ kind: 'command', command: 'harness-runner.initProjectConstraints', label: '$(symbol-key)  初始化项目约束', description: '扫描仓库并生成可编辑和机器可读的项目规则' },
+					{ kind: 'command', command: 'harness-runner.recordDesignContext', label: '$(device-camera-video)  界面设计描述', description: '一个入口处理当前故事和批量复用，支持自动整理、单独匹配和批量匹配' },
+					{ kind: 'command', command: 'harness-runner.previewSourceContextRecall', label: '$(search)  为故事添加上下文', description: '为选中的故事补充最相关的模块、文件和工程线索' },
+					{ kind: 'command', command: 'harness-runner.refreshSourceContextIndex', label: '$(repo)  刷新源码上下文索引', description: '扫描仓库并更新轻量 source context 索引工件' },
+					{ kind: 'command', command: 'harness-runner.generateAgentMap', label: '$(book)  生成 Agent Map', description: '生成轻量仓库总览页和知识目录页，供智能体导航规则、模块与执行 runbook' },
+				],
+			},
+			execution: {
+				placeholder: '执行与审批：选择一个命令',
+				items: [
+					{ kind: 'back', label: '$(arrow-left)  返回上一级', description: '回到 Harness Runner 主菜单' },
+					{ kind: 'command', command: 'harness-runner.start', label: '$(play)  开始执行', description: '开始或继续自动任务循环' },
+						{ kind: 'command', command: 'harness-runner.rerunFailedStory', label: '$(debug-rerun)  重新执行失败故事', description: '选择一个失败故事，并从该故事开始重新执行其后续链路' },
+					{ kind: 'command', command: 'harness-runner.stop', label: '$(debug-stop)  停止执行', description: '取消当前运行' },
+					{ kind: 'command', command: 'harness-runner.status', label: '$(info)  查看状态', description: '显示用户故事进度摘要' },
+						{ kind: 'command', command: 'harness-runner.reviewStoryApproval', label: '$(pass-filled)  审批故事', description: '对待人工审批的故事执行批准、拒绝或补充说明' },
+					{ kind: 'command', command: 'harness-runner.resetStep', label: '$(debug-restart)  重置故事', description: '重置某个已完成的用户故事' },
+				],
+			},
+			settings: {
+				placeholder: '设置：选择一个命令',
+				items: [
+					{ kind: 'back', label: '$(arrow-left)  返回上一级', description: '回到 Harness Runner 主菜单' },
+					{ kind: 'command', command: 'harness-runner.openSettings', label: '$(gear)  打开设置', description: '配置 Harness Runner 选项' },
+					{ kind: 'command', command: 'harness-runner.customizeMenuOrder', label: '$(list-ordered)  自定义菜单排序', description: '调整一级菜单的显示顺序，并写回工作区设置' },
+				],
+			},
+		},
+		customizeOrder: {
+			placeholder: (currentStep, totalSteps) => `自定义菜单排序：选择第 ${currentStep}/${totalSteps} 个一级菜单`,
+			saved: 'HARNESS：一级菜单排序已更新。',
+		},
 	},
 	help: {
 		introductionTitle: 'Harness 插件介绍',
@@ -881,10 +969,10 @@ const ENGLISH_PACK: HarnessLanguagePack = {
 		title: project => `HARNESS Status — ${project}`,
 		completed: (completed, total) => `Completed: ${completed}/${total}`,
 		failed: failed => `Failed: ${failed}`,
-		awaitingReview: count => `Awaiting Review: ${count}`,
-		awaitingRelease: count => `Awaiting Release: ${count}`,
+		awaitingRelease: count => `Awaiting Approval: ${count}`,
+		awaitingReview: count => `Awaiting Approval: ${count}`,
 		highRisk: count => `High Risk: ${count}`,
-		pending: pending => `Pending: ${pending}`,
+		pending: pending => `Not Started: ${pending}`,
 		inProgress: storyId => `In Progress: ${storyId || 'None'}`,
 		next: nextLabel => `Next: ${nextLabel}`,
 		running: running => `Running: ${running ? 'Yes' : 'No'}`,
@@ -898,17 +986,18 @@ const ENGLISH_PACK: HarnessLanguagePack = {
 		noTrackedStories: 'There are no completed or failed stories to reset.',
 		placeholder: 'Select the user story to reset',
 		storyReset: storyId => `Story ${storyId} has been reset.`,
+		noFailedStories: 'There are no failed stories available to rerun.',
+		rerunPlaceholder: 'Choose a failed story and restart execution from that story',
+		rerunPrepared: (storyId, storyCount) => `HARNESS: Reset ${storyCount} stories starting from ${storyId}. Restarting execution now.`,
 	},
 	approval: {
-		noReviewableStories: 'There are currently no high-risk stories waiting for manual approval.',
+		noReviewableStories: 'There are currently no stories waiting for manual approval.',
 		storyPlaceholder: 'Choose a story to review',
 		actionPlaceholder: storyId => `Choose the approval action for ${storyId}`,
-		approveReviewLabel: 'Approve Review',
-		approveReleaseLabel: 'Approve Release',
+		approveLabel: 'Approve Story',
 		rejectLabel: 'Reject Back To Review',
 		addNoteLabel: 'Add Approval Note',
-		approveReviewDescription: 'Confirm the review outcome and advance to the next approval stage',
-		approveReleaseDescription: 'Confirm the story can exit manual approval and be marked complete',
+		approveDescription: 'After a full preview, record the approval outcome and complete the story',
 		rejectDescription: 'Send the story back to pending review and record why it was rejected',
 		addNoteDescription: 'Record an approval note without changing the current status',
 		noteTitle: storyId => `Approval Note — ${storyId}`,
@@ -1003,14 +1092,14 @@ const ENGLISH_PACK: HarnessLanguagePack = {
 		success: filePath => `HARNESS: Source context index refreshed at ${filePath}`,
 		openIndex: 'Open Index',
 		failed: message => `HARNESS: Failed to refresh the source context index: ${message}`,
-		previewPlaceholder: 'Choose a story to preview relevant repository source context',
-		previewTitle: 'Relevant Source Context Preview',
+		previewPlaceholder: 'Choose a story to add relevant repository source context',
+		previewTitle: 'Add Story Context',
 		previewStory: (storyId, title) => `Story: ${storyId} — ${title}`,
 		previewScore: score => `Score: ${score}`,
 		previewReasons: reasons => `Reasons: ${reasons.join('; ')}`,
 		previewValue: value => `Hint: ${value}`,
-		previewReady: (storyId, matchCount) => `HARNESS: Previewed ${matchCount} relevant source-context matches for ${storyId}.`,
-		noMatches: storyId => `HARNESS: No strong repository source-context matches were found for ${storyId}. Falling back to the existing prompt flow.`,
+		previewReady: (storyId, matchCount) => `HARNESS: Prepared ${matchCount} relevant source-context matches for ${storyId}.`,
+		noMatches: storyId => `HARNESS: No strong repository source-context matches were found for ${storyId}. The existing prompt flow will continue.`,
 	},
 	agentMap: {
 		success: gapCount => `HARNESS: Agent Map generated. The overview and knowledge catalog were written to .harness-runner/agent-map/ with ${gapCount} explicit knowledge gaps recorded.`,
@@ -1208,25 +1297,71 @@ const ENGLISH_PACK: HarnessLanguagePack = {
 		},
 	},
 	menu: {
-		placeholder: 'Harness Runner: choose a command',
-		items: [
-			{ command: 'harness-runner.showIntroduction', label: '$(hubot)  Introduction', description: 'Read what Harness Runner does, where it fits, and what the menu is for' },
-			{ command: 'harness-runner.showUsageGuide', label: '$(library)  Usage Guide', description: 'Read the recommended flow for empty projects and existing repositories' },
-			{ command: 'harness-runner.configurePolicyGates', label: '$(settings-gear)  Configure Run Checks', description: 'Use a visual flow to enable built-in checks and choose the approval prompt mode' },
-			{ command: 'harness-runner.initProjectConstraints', label: '$(symbol-key)  Initialize Project Constraints', description: 'Scan the repository and generate editable and machine-readable project rules' },
-			{ command: 'harness-runner.refreshSourceContextIndex', label: '$(repo)  Refresh Source Context Index', description: 'Scan the repository and update the lightweight source-context index artifact' },
-			{ command: 'harness-runner.previewSourceContextRecall', label: '$(search)  Preview Story Source Context', description: 'Preview the most relevant modules, files, and engineering hints for a selected story' },
-			{ command: 'harness-runner.generateAgentMap', label: '$(book)  Generate Agent Map', description: 'Generate a lightweight repository overview and knowledge catalog for agent navigation' },
-			{ command: 'harness-runner.recordDesignContext', label: '$(device-camera-video)  UI Design Notes', description: 'One entry for story-only work and reusable batch matching, with simpler plain-language prompts' },
-			{ command: 'harness-runner.quickStart', label: '$(zap)  Generate PRD', description: 'Use Copilot to generate prd.json' },
-			{ command: 'harness-runner.appendUserStories', label: '$(diff-added)  Append User Stories', description: 'Use Copilot to append new user stories to the existing prd.json' },
-			{ command: 'harness-runner.start', label: '$(play)  Start', description: 'Start or resume the automated task loop' },
-			{ command: 'harness-runner.stop', label: '$(debug-stop)  Stop', description: 'Cancel the current run' },
-			{ command: 'harness-runner.status', label: '$(info)  Show Status', description: 'Show a summary of user story progress' },
-			{ command: 'harness-runner.reviewStoryApproval', label: '$(pass-filled)  Review Approval', description: 'Approve, reject, or annotate high-risk stories waiting for manual review' },
-			{ command: 'harness-runner.resetStep', label: '$(debug-restart)  Reset Story', description: 'Reset a completed or failed user story' },
-			{ command: 'harness-runner.openSettings', label: '$(gear)  Open Settings', description: 'Configure Harness Runner options' },
-		],
+		rootId: 'root',
+		nodes: {
+			root: {
+				placeholder: 'Harness Runner: choose a menu',
+				items: [
+					{ kind: 'submenu', target: 'planning', label: '$(zap)  Planning & Onboarding', description: 'Open PRD generation, story append, and help entries from one place' },
+					{ kind: 'submenu', target: 'constraints', label: '$(symbol-key)  Harness Constraint Settings', description: 'Open run checks, project constraints, design notes, story context, and Agent Map flows from one place' },
+					{ kind: 'submenu', target: 'execution', label: '$(rocket)  Execution & Review', description: 'Trigger start, stop, status, approvals, and story reset actions from one place' },
+					{ kind: 'submenu', target: 'settings', label: '$(gear)  Settings', description: 'Open runner settings, VS Code settings, and menu ordering from one place' },
+				],
+			},
+			planning: {
+				placeholder: 'Planning & Onboarding: choose a command',
+				items: [
+					{ kind: 'back', label: '$(arrow-left)  Back', description: 'Return to the Harness Runner main menu' },
+					{ kind: 'command', command: 'harness-runner.quickStart', label: '$(zap)  Generate PRD', description: 'Use Copilot to generate prd.json' },
+					{ kind: 'command', command: 'harness-runner.appendUserStories', label: '$(diff-added)  Append User Stories', description: 'Use Copilot to append new user stories to the existing prd.json' },
+					{ kind: 'submenu', target: 'guides', label: '$(library)  Guides & Help', description: 'Read the introduction and recommended usage flow' },
+				],
+			},
+			guides: {
+				placeholder: 'Guides & Help: choose a document',
+				items: [
+					{ kind: 'back', label: '$(arrow-left)  Back', description: 'Return to Planning & Onboarding' },
+					{ kind: 'command', command: 'harness-runner.showIntroduction', label: '$(hubot)  Introduction', description: 'Read what Harness Runner does, where it fits, and what the menu is for' },
+					{ kind: 'command', command: 'harness-runner.showUsageGuide', label: '$(library)  Usage Guide', description: 'Read the recommended flow for empty projects and existing repositories' },
+				],
+			},
+			constraints: {
+				placeholder: 'Harness Constraint Settings: choose a command',
+				items: [
+					{ kind: 'back', label: '$(arrow-left)  Back', description: 'Return to the Harness Runner main menu' },
+					{ kind: 'command', command: 'harness-runner.configurePolicyGates', label: '$(settings-gear)  Configure Run Checks', description: 'Use a visual flow to enable built-in checks and choose the approval prompt mode' },
+					{ kind: 'command', command: 'harness-runner.initProjectConstraints', label: '$(symbol-key)  Initialize Project Constraints', description: 'Scan the repository and generate editable and machine-readable project rules' },
+					{ kind: 'command', command: 'harness-runner.recordDesignContext', label: '$(device-camera-video)  UI Design Notes', description: 'One entry for story-only work and reusable batch matching, with simpler plain-language prompts' },
+					{ kind: 'command', command: 'harness-runner.previewSourceContextRecall', label: '$(search)  Add Story Context', description: 'Attach the most relevant modules, files, and engineering hints to a selected story' },
+					{ kind: 'command', command: 'harness-runner.refreshSourceContextIndex', label: '$(repo)  Refresh Source Context Index', description: 'Scan the repository and update the lightweight source-context index artifact' },
+					{ kind: 'command', command: 'harness-runner.generateAgentMap', label: '$(book)  Generate Agent Map', description: 'Generate a lightweight repository overview and knowledge catalog for agent navigation' },
+				],
+			},
+			execution: {
+				placeholder: 'Execution & Review: choose a command',
+				items: [
+					{ kind: 'back', label: '$(arrow-left)  Back', description: 'Return to the Harness Runner main menu' },
+					{ kind: 'command', command: 'harness-runner.start', label: '$(play)  Start', description: 'Start or resume the automated task loop' },
+						{ kind: 'command', command: 'harness-runner.rerunFailedStory', label: '$(debug-rerun)  Rerun Failed Story', description: 'Choose a failed story and restart execution from that story onward' },
+					{ kind: 'command', command: 'harness-runner.stop', label: '$(debug-stop)  Stop', description: 'Cancel the current run' },
+					{ kind: 'command', command: 'harness-runner.status', label: '$(info)  Show Status', description: 'Show a summary of user story progress' },
+						{ kind: 'command', command: 'harness-runner.reviewStoryApproval', label: '$(pass-filled)  Review Approval', description: 'Approve, reject, or annotate stories waiting for manual approval' },
+					{ kind: 'command', command: 'harness-runner.resetStep', label: '$(debug-restart)  Reset Story', description: 'Reset a completed or failed user story' },
+				],
+			},
+			settings: {
+				placeholder: 'Settings: choose a command',
+				items: [
+					{ kind: 'back', label: '$(arrow-left)  Back', description: 'Return to the Harness Runner main menu' },
+					{ kind: 'command', command: 'harness-runner.openSettings', label: '$(gear)  Open Settings', description: 'Configure Harness Runner options' },
+					{ kind: 'command', command: 'harness-runner.customizeMenuOrder', label: '$(list-ordered)  Customize Menu Order', description: 'Adjust the top-level menu order and save it into workspace settings' },
+				],
+			},
+		},
+		customizeOrder: {
+			placeholder: (currentStep, totalSteps) => `Customize menu order: choose top-level item ${currentStep}/${totalSteps}`,
+			saved: 'HARNESS: Top-level menu order updated.',
+		},
 	},
 	help: {
 		introductionTitle: 'Harness Introduction',
@@ -1297,7 +1432,7 @@ export function getLocalizedStoryStatus(status: StoryExecutionStatus | 'none', l
 				case 'pendingReview':
 					return 'Pending Review';
 				case 'pendingRelease':
-					return 'Pending Release';
+					return 'Pending Approval';
 			case 'completed':
 				return 'Completed';
 			case 'failed':
@@ -1314,7 +1449,7 @@ export function getLocalizedStoryStatus(status: StoryExecutionStatus | 'none', l
 		return '待评审';
 	}
 	if (status === 'pendingRelease') {
-		return '待发布';
+		return '待审批';
 	}
 	return status;
 }
