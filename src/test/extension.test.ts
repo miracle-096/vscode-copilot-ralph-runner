@@ -603,6 +603,7 @@ suite('Extension Test Suite', () => {
 
 	test('Harness guide merges introduction and workflows into chapter-based content', () => {
 		const chineseGuide = getHarnessGuideContent('Chinese');
+		const chineseGuideDocument = buildHarnessGuideDocument('Chinese');
 		const englishGuideDocument = buildHarnessGuideDocument('English');
 		const engineeringChapter = chineseGuide.chapters.find(chapter => chapter.id === 'harness-engineering');
 
@@ -614,6 +615,12 @@ suite('Extension Test Suite', () => {
 		assert.ok(engineeringChapter);
 		assert.ok(engineeringChapter?.sections.some(section => section.title === 'Harness Engineering 在解决什么'));
 		assert.ok(engineeringChapter?.sections.some(section => section.bullets?.includes('复杂任务要靠分块推进、显式 handoff 和外置状态，而不是把所有工作塞进一个会话')));
+		assert.ok(chineseGuideDocument.html.includes('<h2>目录</h2>'));
+		assert.ok(chineseGuideDocument.html.includes('章节 1'));
+		assert.ok(chineseGuideDocument.html.includes('<details id="overview" class="chapter-shell guide-toggle">'));
+		assert.ok(chineseGuideDocument.html.includes('<details class="card section-card guide-toggle" data-section-index="1">'));
+		assert.strictEqual(chineseGuideDocument.html.includes('<details id="overview" class="chapter-shell guide-toggle" open>'), false);
+		assert.ok(chineseGuideDocument.html.includes('data-target-chapter="overview"'));
 		assert.ok(englishGuideDocument.html.includes('Recommended Workflows'));
 		assert.ok(englishGuideDocument.html.includes('What Harness Engineering Means Here'));
 		assert.ok(englishGuideDocument.html.includes('human steer, agent execute'));
@@ -622,6 +629,7 @@ suite('Extension Test Suite', () => {
 		assert.ok(englishGuideDocument.html.includes('Chapter 1'));
 		assert.ok(englishGuideDocument.html.includes('<nav>'));
 		assert.ok(englishGuideDocument.html.includes('<ol>'));
+		assert.ok(englishGuideDocument.html.includes('window.addEventListener(\'hashchange\''));
 	});
 
 	test('Agent map generation writes overview and knowledge catalog with explicit gaps', () => {

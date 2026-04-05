@@ -1,0 +1,128 @@
+{
+  "storyId": "US-011",
+  "title": "融合 harness-engineering 资料丰富指南",
+  "summary": "完成 US-011：将 harness-engineering 资料中的定义、失败模式与护栏实践压缩并映射进现有 Harness-runner 指南章节模型，使指南能同时解释插件是什么、如何使用，以及 Harness 的工程化含义。",
+  "changedFiles": [
+    "src/helpManual.ts",
+    "src/test/extension.test.ts",
+    ".harness-runner/memory/US-011.json",
+    ".harness-runner/checkpoints/US-011.checkpoint.json",
+    ".harness-runner/evidence/US-011.evidence.json",
+    ".harness-runner/story-status.json"
+  ],
+  "changedModules": [
+    "指南章节内容与叙事对齐",
+    "指南融合回归测试",
+    "US-011 故事审计工件"
+  ],
+  "architectureNotes": [
+    "继续保持 src/helpManual.ts 只负责指南内容模型与 HTML 渲染，未把 harness-engineering 资料解析、命令注册或菜单路由混入该模块。",
+    "本轮不新增任何命令或导航层级，而是在既有 chapter 模型里吸收外部概念，保持 help 内容层与 extension/localization 的运行时边界稳定。",
+    "harness-engineering 的定义、失败模式和护栏被直接映射到现有 artifacts、policy gates、Reviewer loop 与 Agent Map，优先复用现有能力而非复制一套平行术语。",
+    "回滚切口集中在 src/helpManual.ts 的章节文本、src/test/extension.test.ts 的融合断言，以及本故事生成的 .harness-runner 工件；若需回退，可整体撤销该故事提交而无需影响菜单或运行主链路。"
+  ],
+  "keyDecisions": [
+    "把 harness-engineering 资料从“后续可并入”改为“已经融合进指南”的内容状态，而不是继续保留占位文案。",
+    "新增一个专门的 Harness 工程化章节，用来解释运行环境、失败模式和护栏设计，并把这些概念映射到插件现有能力。",
+    "保留原有指南入口与章节模型，不新增命令、不改菜单结构，只增强章节内容。",
+    "测试层改为断言指南已经覆盖 harness-engineering 的关键叙事，避免以后退化回预留型文案。"
+  ],
+  "patternsUsed": [],
+  "constraintsConfirmed": [
+    "未修改 prd.json。",
+    "变更范围限定在指南实现、测试和 .harness-runner 审计工件内。",
+    "至少执行了一个与故事直接相关的验证命令。",
+    "完成信号继续写入 .harness-runner/story-status.json。",
+    "提交信息需使用中文 conventional commit。"
+  ],
+  "testsRun": [
+    "2026-04-05: npm run compile -> passed.",
+    "2026-04-05: npm test -- --grep \"Harness guide merges introduction and workflows into chapter-based content\" -> passed."
+  ],
+  "risks": [
+    "当前验证聚焦于内容模型和 HTML 输出，尚未增加真实 VS Code webview 宿主中的端到端导航验证。",
+    "指南中的 harness-engineering 内容是结合仓库资料做的产品化压缩总结，后续若要展示来源元数据还需要额外设计字段。"
+  ],
+  "followUps": [
+    "如果后续还要继续吸收 harness-engineering 资料，可在章节模型上补充 source metadata，而不是新增独立帮助入口。",
+    "如果 reviewer 希望更强的可追溯性，可为章节补充来源摘要或 source tag，但应继续保持文案与插件能力一一映射。",
+    "若团队希望覆盖 live webview 体验，可后续补充 VS Code host 层面的导航或快照测试。"
+  ],
+  "searchKeywords": [
+    "harness-engineering",
+    "Human Steer Agent Execute",
+    "structured handoff",
+    "guardrails",
+    "Harness 的工程化含义",
+    "What Harness Engineering Means Here",
+    "guide chapters"
+  ],
+  "relatedStories": [],
+  "reviewSummary": {
+    "totalScore": 100,
+    "maxScore": 100,
+    "passingScore": 65,
+    "passed": true,
+    "reviewPass": 1,
+    "maxReviewerPasses": 3,
+    "maxAutoRefactorRounds": 2,
+    "dimensions": [
+      {
+        "dimension": "architectureConsistency",
+        "label": "Architecture Consistency",
+        "score": 25,
+        "summary": "Reviewer loop disabled in workspace settings.",
+        "issues": [],
+        "recommendations": [
+          "Reviewer loop disabled in workspace settings."
+        ]
+      },
+      {
+        "dimension": "acceptanceCoverage",
+        "label": "Acceptance Coverage",
+        "score": 25,
+        "summary": "Reviewer loop disabled in workspace settings.",
+        "issues": [],
+        "recommendations": [
+          "Reviewer loop disabled in workspace settings."
+        ]
+      },
+      {
+        "dimension": "changeScopeControl",
+        "label": "Change Scope Control",
+        "score": 25,
+        "summary": "Reviewer loop disabled in workspace settings.",
+        "issues": [],
+        "recommendations": [
+          "Reviewer loop disabled in workspace settings."
+        ]
+      },
+      {
+        "dimension": "verifiability",
+        "label": "Verifiability",
+        "score": 25,
+        "summary": "Reviewer loop disabled in workspace settings.",
+        "issues": [],
+        "recommendations": [
+          "Reviewer loop disabled in workspace settings."
+        ]
+      }
+    ],
+    "findings": [],
+    "recommendations": [
+      "Reviewer loop disabled in workspace settings."
+    ],
+    "refactorPerformed": false,
+    "reviewedAt": "2026-04-05T07:57:05.874Z",
+    "source": "synthesized"
+  },
+  "reviewLoop": {
+    "reviewerPasses": 1,
+    "autoRefactorRounds": 0,
+    "maxAutoRefactorRounds": 2,
+    "endedReason": "passed",
+    "lastReviewedAt": "2026-04-05T07:57:05.874Z"
+  },
+  "createdAt": "2026-04-05T15:55:30+08:00",
+  "source": "copilot"
+}

@@ -29,7 +29,7 @@ export function buildHarnessGuideDocument(language: SupportedHarnessLanguage): H
 	const content = getHarnessGuideContent(language);
 	return {
 		title: content.title,
-		html: renderGuideHtml(content),
+		html: renderGuideHtml(content, language),
 	};
 }
 
@@ -429,33 +429,44 @@ function getEnglishGuideContent(): HarnessGuideContent {
 	};
 }
 
-function renderGuideHtml(content: HarnessGuideContent): string {
+function renderGuideHtml(content: HarnessGuideContent, language: SupportedHarnessLanguage): string {
+	const uiText = getGuideUiText(language);
 	const navigationHtml = content.chapters.map((chapter, index) => `
-		<a href="#${chapter.id}" class="chapter-link">
-			<span class="eyebrow">Chapter ${index + 1}</span>
+		<a href="#${chapter.id}" class="chapter-link" data-target-chapter="${chapter.id}">
+			<span class="eyebrow">${escapeHtml(uiText.chapterLabel)} ${index + 1}</span>
 			<strong>${escapeHtml(chapter.title)}</strong>
 			<span>${escapeHtml(chapter.summary)}</span>
 		</a>
 	`).join('');
 
 	const chapterHtml = content.chapters.map((chapter, index) => `
-		<section id="${chapter.id}" class="chapter-shell">
-			<div class="chapter-header">
-				<p class="chapter-index">Chapter ${index + 1}</p>
-				<h2>${escapeHtml(chapter.title)}</h2>
+		<details id="${chapter.id}" class="chapter-shell guide-toggle">
+			<summary class="chapter-header">
+				<div class="chapter-heading">
+					<p class="chapter-index">${escapeHtml(uiText.chapterLabel)} ${index + 1}</p>
+					<h2>${escapeHtml(chapter.title)}</h2>
+				</div>
 				<p class="chapter-summary">${escapeHtml(chapter.summary)}</p>
+				<span class="toggle-hint" aria-hidden="true"></span>
+			</summary>
+			<div class="chapter-body">
+				<div class="chapter-grid">
+					${chapter.sections.map((section, sectionIndex) => `
+						<details class="card section-card guide-toggle" data-section-index="${sectionIndex + 1}">
+							<summary class="section-header">
+								<span class="section-title">${escapeHtml(section.title)}</span>
+								<span class="toggle-hint" aria-hidden="true"></span>
+							</summary>
+							<div class="section-body">
+								${section.paragraphs.map(paragraph => `<p>${escapeHtml(paragraph)}</p>`).join('')}
+								${renderList(section.bullets, 'ul')}
+								${renderList(section.steps, 'ol')}
+							</div>
+						</details>
+					`).join('')}
+				</div>
 			</div>
-			<div class="chapter-grid">
-				${chapter.sections.map(section => `
-					<section class="card">
-						<h3>${escapeHtml(section.title)}</h3>
-						${section.paragraphs.map(paragraph => `<p>${escapeHtml(paragraph)}</p>`).join('')}
-						${renderList(section.bullets, 'ul')}
-						${renderList(section.steps, 'ol')}
-					</section>
-				`).join('')}
-			</div>
-		</section>
+		</details>
 	`).join('');
 
 	return `<!DOCTYPE html>
@@ -536,14 +547,30 @@ function renderGuideHtml(content: HarnessGuideContent): string {
 				gap: 18px;
 			}
 			.chapter-shell {
-				display: grid;
-				gap: 14px;
+				border-radius: 18px;
+				border: 1px solid var(--border);
+				background: color-mix(in srgb, var(--bg) 96%, var(--accent) 4%);
+				overflow: hidden;
 			}
 			.chapter-header {
+				list-style: none;
+				display: grid;
+				grid-template-columns: minmax(0, 1fr) auto;
+				gap: 10px 18px;
 				padding: 18px 20px;
-				border-radius: 16px;
-				border: 1px solid var(--border);
 				background: linear-gradient(135deg, var(--accent-soft), transparent 70%);
+				cursor: pointer;
+			}
+			.chapter-header::-webkit-details-marker,
+			.section-header::-webkit-details-marker {
+				display: none;
+			}
+			.chapter-heading {
+				display: grid;
+				gap: 8px;
+			}
+			.chapter-body {
+				padding: 0 18px 18px;
 			}
 			h1 {
 				margin: 0 0 10px;
@@ -555,20 +582,63 @@ function renderGuideHtml(content: HarnessGuideContent): string {
 				line-height: 1.6;
 			}
 			.chapter-summary {
-				margin: 8px 0 0;
+				margin: 0;
 				color: var(--muted);
 				line-height: 1.6;
+				align-self: center;
 			}
 			.chapter-grid {
 				display: grid;
 				gap: 16px;
 			}
 			.card {
-				padding: 20px 22px;
 				border-radius: 16px;
 				border: 1px solid var(--border);
 				background: var(--card);
 				box-shadow: 0 8px 24px rgba(0, 0, 0, 0.08);
+				overflow: hidden;
+			}
+			.section-card {
+				padding: 0;
+			}
+			.section-header {
+				list-style: none;
+				display: flex;
+				align-items: center;
+				justify-content: space-between;
+				gap: 16px;
+				padding: 18px 20px;
+				cursor: pointer;
+			}
+			.section-title {
+				font-size: 19px;
+				font-weight: 600;
+			}
+			.section-body {
+				padding: 0 20px 20px;
+			}
+			.guide-toggle > summary:focus-visible {
+				outline: 2px solid color-mix(in srgb, var(--accent) 60%, white 40%);
+				outline-offset: -2px;
+			}
+			.toggle-hint {
+				display: inline-flex;
+				align-items: center;
+				justify-content: center;
+				width: 28px;
+				height: 28px;
+				border-radius: 999px;
+				background: color-mix(in srgb, var(--accent) 18%, transparent);
+				color: var(--accent);
+				font-size: 16px;
+				font-weight: 700;
+				flex-shrink: 0;
+			}
+			.guide-toggle > summary .toggle-hint::before {
+				content: '+';
+			}
+			.guide-toggle[open] > summary .toggle-hint::before {
+				content: '−';
 			}
 			h2,
 			h3 {
@@ -580,12 +650,32 @@ function renderGuideHtml(content: HarnessGuideContent): string {
 			h3 {
 				font-size: 19px;
 			}
+			.section-body > :first-child {
+				margin-top: 0;
+			}
+			.section-body > :last-child {
+				margin-bottom: 0;
+			}
 			p, li {
 				line-height: 1.7;
 			}
 			ul, ol {
 				margin: 14px 0 0;
 				padding-left: 22px;
+			}
+			@media (max-width: 640px) {
+				.chapter-header {
+					grid-template-columns: 1fr;
+				}
+				.section-header {
+					padding: 16px;
+				}
+				.chapter-body {
+					padding: 0 14px 14px;
+				}
+				.section-body {
+					padding: 0 16px 16px;
+				}
 			}
 			@media (max-width: 900px) {
 				.layout {
@@ -601,8 +691,7 @@ function renderGuideHtml(content: HarnessGuideContent): string {
 				}
 				header,
 				nav,
-				.chapter-header,
-				.card {
+				.chapter-header {
 					padding: 16px;
 				}
 				h1 {
@@ -619,14 +708,56 @@ function renderGuideHtml(content: HarnessGuideContent): string {
 			</header>
 			<div class="layout">
 				<nav>
-					<h2>Contents</h2>
+					<h2>${escapeHtml(uiText.contentsTitle)}</h2>
 					${navigationHtml}
 				</nav>
 				<div class="content">${chapterHtml}</div>
 			</div>
 		</main>
+		<script>
+			(function () {
+				const openChapterById = (chapterId) => {
+					if (!chapterId) {
+						return;
+					}
+
+					const chapter = document.getElementById(chapterId);
+					if (!chapter || chapter.tagName !== 'DETAILS') {
+						return;
+					}
+
+					chapter.open = true;
+				};
+
+				document.querySelectorAll('[data-target-chapter]').forEach((link) => {
+					link.addEventListener('click', () => {
+						openChapterById(link.getAttribute('data-target-chapter'));
+					});
+				});
+
+				if (window.location.hash) {
+					openChapterById(window.location.hash.slice(1));
+				}
+
+				window.addEventListener('hashchange', () => {
+					openChapterById(window.location.hash.slice(1));
+				});
+			})();
+		</script>
 	</body>
 	</html>`;
+}
+
+function getGuideUiText(language: SupportedHarnessLanguage): { contentsTitle: string; chapterLabel: string } {
+	return language === 'English'
+		? {
+			contentsTitle: 'Contents',
+			chapterLabel: 'Chapter',
+		}
+		: {
+			contentsTitle: '目录',
+			chapterLabel: '章节',
+		};
 }
 
 function renderList(values: string[] | undefined, kind: 'ul' | 'ol'): string {
