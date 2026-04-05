@@ -1,0 +1,129 @@
+{
+  "storyId": "US-008",
+  "title": "实现一级菜单顺序模型与持久化存储",
+  "summary": "完成 US-008：为一级菜单顺序补齐显式的数据模型与工作区持久化 seam。当前实现使用稳定的 submenu target 作为一级菜单标识，通过 harness-runner.rootMenuOrder 设置恢复根菜单顺序，并新增对 .vscode/settings.json 写盘与配置重载恢复的回归测试。",
+  "changedFiles": [
+    "src/extension.ts",
+    "src/test/extension.test.ts",
+    "README.md",
+    ".harness-runner/memory/US-008.json",
+    ".harness-runner/checkpoints/US-008.checkpoint.json",
+    ".harness-runner/evidence/US-008.evidence.json",
+    ".harness-runner/story-status.json"
+  ],
+  "changedModules": [
+    "一级菜单顺序持久化逻辑",
+    "根菜单排序恢复测试",
+    "README 设置项说明",
+    "US-008 故事审计工件"
+  ],
+  "architectureNotes": [
+    "一级菜单排序继续只作用于 root 节点，不扩散到子菜单层级；extension.ts 仍负责运行时读取、归一化和执行菜单排序，避免把持久化细节泄露到 localization.ts。",
+    "本次新增 persistWorkspacePinnedRootMenuOrderFile，复用现有 workspace settings 写盘模式，把 .vscode/settings.json 作为明确的回滚与审计 seam，而不是让持久化只隐含在 VS Code 配置 API 调用里。",
+    "稳定标识仍使用 submenu target，例如 planning、constraints、execution、settings，不依赖中英文显示文案，因此语言切换不会破坏顺序恢复。",
+    "回滚边界集中在 extension.ts、extension.test.ts、README.md 和 US-008 工件；如果后续需要扩展到用户级存储或子菜单排序，可在当前 rootMenuOrder seam 外单独拆故事，而不必回写整个菜单树。"
+  ],
+  "keyDecisions": [
+    "保留 harness-runner.rootMenuOrder 作为一级菜单顺序的唯一持久化配置键。",
+    "通过显式写入工作区 .vscode/settings.json 来固定持久化位置，同时继续让运行时从 VS Code 配置读取恢复值。",
+    "继续使用 submenu target 作为排序主键，不引入基于 label 的排序或额外映射表。",
+    "用两类回归测试分别覆盖写盘行为和扩展重载后的顺序恢复。"
+  ],
+  "patternsUsed": [],
+  "constraintsConfirmed": [
+    "未修改 prd.json。",
+    "一级菜单排序只影响根级 submenu 顺序，不改变命令 id 与子菜单结构。",
+    "持久化位置明确落在工作区设置 .vscode/settings.json。",
+    "完成前已生成 task memory、execution checkpoint、story evidence 与 completion signal。",
+    "Git 提交将使用中文 conventional commit。"
+  ],
+  "testsRun": [
+    "2026-04-05: npm run compile -> passed.",
+    "2026-04-05: npm test -> relevant root-menu persistence tests passed; suite still has 2 known unrelated failures in project-constraints title wording and story-evidence approval-state assertions."
+  ],
+  "risks": [
+    "customizeMenuOrder 当前显式落盘到工作区 .vscode/settings.json，尚未提供写入 User 全局设置的交互分支；如果未来需要跨工作区共享菜单顺序，应单开故事设计配置作用域。",
+    "运行时仍通过 vscode.workspace.getConfiguration 读取 rootMenuOrder；当前测试通过 stub 验证恢复逻辑，但没有在扩展宿主里做真实重启级别的端到端测试。"
+  ],
+  "followUps": [
+    "如需支持用户级别的菜单顺序偏好，可在 settings 子菜单里补一个作用域选择流程，并保持当前 workspace seam 兼容。",
+    "如需扩展到二级或更深层菜单排序，应单独设计配置结构，避免与现有 rootMenuOrder 语义混淆。"
+  ],
+  "searchKeywords": [
+    "rootMenuOrder",
+    "persistWorkspacePinnedRootMenuOrderFile",
+    "normalizeHarnessRootMenuOrder",
+    ".vscode/settings.json",
+    "buildHarnessMenuQuickPickItems",
+    "一级菜单顺序",
+    "自定义菜单排序"
+  ],
+  "relatedStories": [],
+  "reviewSummary": {
+    "totalScore": 100,
+    "maxScore": 100,
+    "passingScore": 65,
+    "passed": true,
+    "reviewPass": 1,
+    "maxReviewerPasses": 3,
+    "maxAutoRefactorRounds": 2,
+    "dimensions": [
+      {
+        "dimension": "architectureConsistency",
+        "label": "Architecture Consistency",
+        "score": 25,
+        "summary": "Reviewer loop disabled in workspace settings.",
+        "issues": [],
+        "recommendations": [
+          "Reviewer loop disabled in workspace settings."
+        ]
+      },
+      {
+        "dimension": "acceptanceCoverage",
+        "label": "Acceptance Coverage",
+        "score": 25,
+        "summary": "Reviewer loop disabled in workspace settings.",
+        "issues": [],
+        "recommendations": [
+          "Reviewer loop disabled in workspace settings."
+        ]
+      },
+      {
+        "dimension": "changeScopeControl",
+        "label": "Change Scope Control",
+        "score": 25,
+        "summary": "Reviewer loop disabled in workspace settings.",
+        "issues": [],
+        "recommendations": [
+          "Reviewer loop disabled in workspace settings."
+        ]
+      },
+      {
+        "dimension": "verifiability",
+        "label": "Verifiability",
+        "score": 25,
+        "summary": "Reviewer loop disabled in workspace settings.",
+        "issues": [],
+        "recommendations": [
+          "Reviewer loop disabled in workspace settings."
+        ]
+      }
+    ],
+    "findings": [],
+    "recommendations": [
+      "Reviewer loop disabled in workspace settings."
+    ],
+    "refactorPerformed": false,
+    "reviewedAt": "2026-04-05T07:28:43.618Z",
+    "source": "synthesized"
+  },
+  "reviewLoop": {
+    "reviewerPasses": 1,
+    "autoRefactorRounds": 0,
+    "maxAutoRefactorRounds": 2,
+    "endedReason": "passed",
+    "lastReviewedAt": "2026-04-05T07:28:43.618Z"
+  },
+  "createdAt": "2026-04-05T15:27:52.4906394+08:00",
+  "source": "copilot"
+}

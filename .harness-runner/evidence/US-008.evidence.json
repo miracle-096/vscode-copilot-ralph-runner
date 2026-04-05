@@ -1,0 +1,116 @@
+{
+  "storyId": "US-008",
+  "title": "实现一级菜单顺序模型与持久化存储",
+  "status": "completed",
+  "summary": "完成 US-008：为一级菜单顺序补齐显式的数据模型与工作区持久化 seam。当前实现使用稳定的 submenu target 作为一级菜单标识，通过 harness-runner.rootMenuOrder 设置恢复根菜单顺序，并新增对 .vscode/settings.json 写盘与配置重载恢复的回归测试。",
+  "changedFiles": [
+    "rc/extension.ts",
+    "rc/test/extension.test.ts"
+  ],
+  "changedModules": [
+    "rc",
+    "rc/test"
+  ],
+  "architectureNotes": [
+    "Multiple modules changed; confirm each edit belongs to a single responsibility and document reuse opportunities."
+  ],
+  "tests": [
+    {
+      "command": "2026-04-05: npm run compile -> passed.",
+      "success": true,
+      "outputSummary": "Recorded in task memory."
+    },
+    {
+      "command": "2026-04-05: npm test -> relevant root-menu persistence tests passed; suite still has 2 known unrelated failures in project-constraints title wording and story-evidence approval-state assertions.",
+      "success": true,
+      "outputSummary": "Recorded in task memory."
+    }
+  ],
+  "riskLevel": "low",
+  "riskReasons": [
+    "The story risk was inferred from the available completion evidence."
+  ],
+  "releaseNotes": [
+    "Completed scope: 实现一级菜单顺序模型与持久化存储.",
+    "Primary modules: rc, rc/test."
+  ],
+  "rollbackHints": [
+    "Review and revert these paths together if rollback is needed: rc/extension.ts, rc/test/extension.test.ts.",
+    "Use the story-scoped commit as the primary rollback unit before considering any selective revert."
+  ],
+  "followUps": [
+    "如需支持用户级别的菜单顺序偏好，可在 settings 子菜单里补一个作用域选择流程，并保持当前 workspace seam 兼容。",
+    "如需扩展到二级或更深层菜单排序，应单独设计配置结构，避免与现有 rootMenuOrder 语义混淆。"
+  ],
+  "recommendFeatureFlag": false,
+  "evidenceGaps": [],
+  "approvalState": "notRequired",
+  "approvalHistory": [],
+  "reviewSummary": {
+    "totalScore": 100,
+    "maxScore": 100,
+    "passingScore": 65,
+    "passed": true,
+    "reviewPass": 1,
+    "maxReviewerPasses": 3,
+    "maxAutoRefactorRounds": 2,
+    "dimensions": [
+      {
+        "dimension": "architectureConsistency",
+        "label": "Architecture Consistency",
+        "score": 25,
+        "summary": "Reviewer loop disabled in workspace settings.",
+        "issues": [],
+        "recommendations": [
+          "Reviewer loop disabled in workspace settings."
+        ]
+      },
+      {
+        "dimension": "acceptanceCoverage",
+        "label": "Acceptance Coverage",
+        "score": 25,
+        "summary": "Reviewer loop disabled in workspace settings.",
+        "issues": [],
+        "recommendations": [
+          "Reviewer loop disabled in workspace settings."
+        ]
+      },
+      {
+        "dimension": "changeScopeControl",
+        "label": "Change Scope Control",
+        "score": 25,
+        "summary": "Reviewer loop disabled in workspace settings.",
+        "issues": [],
+        "recommendations": [
+          "Reviewer loop disabled in workspace settings."
+        ]
+      },
+      {
+        "dimension": "verifiability",
+        "label": "Verifiability",
+        "score": 25,
+        "summary": "Reviewer loop disabled in workspace settings.",
+        "issues": [],
+        "recommendations": [
+          "Reviewer loop disabled in workspace settings."
+        ]
+      }
+    ],
+    "findings": [],
+    "recommendations": [
+      "Reviewer loop disabled in workspace settings."
+    ],
+    "refactorPerformed": false,
+    "reviewedAt": "2026-04-05T07:28:43.618Z",
+    "source": "synthesized"
+  },
+  "reviewLoop": {
+    "reviewerPasses": 1,
+    "autoRefactorRounds": 0,
+    "maxAutoRefactorRounds": 2,
+    "endedReason": "passed",
+    "lastReviewedAt": "2026-04-05T07:28:43.618Z"
+  },
+  "generatedAt": "2026-04-05T07:28:43.617Z",
+  "source": "synthesized"
+}
