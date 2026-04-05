@@ -144,6 +144,30 @@ import {
 } from '../extension';
 // import * as myExtension from '../../extension';
 
+type ManifestLocalization = Record<string, string>;
+
+function readJsonFixture<T>(filePath: string): T {
+	return JSON.parse(fs.readFileSync(filePath, 'utf8')) as T;
+}
+
+function readManifestLocalization(locale?: 'zh-cn'): ManifestLocalization {
+	const suffix = locale ? `.nls.${locale}.json` : '.nls.json';
+	return readJsonFixture<ManifestLocalization>(path.resolve(__dirname, `../../package${suffix}`));
+}
+
+function resolveManifestString(value: string | undefined, localization: ManifestLocalization): string | undefined {
+	if (!value) {
+		return value;
+	}
+
+	const match = /^%(.+)%$/.exec(value.trim());
+	if (!match) {
+		return value;
+	}
+
+	return localization[match[1]] ?? value;
+}
+
 suite('Extension Test Suite', () => {
 	vscode.window.showInformationMessage('Start all tests.');
 
@@ -154,7 +178,7 @@ suite('Extension Test Suite', () => {
 
 	test('Package exposes a single user-facing UI design command', () => {
 		const packageJsonPath = path.resolve(__dirname, '../../package.json');
-		const packageJson = JSON.parse(fs.readFileSync(packageJsonPath, 'utf8')) as {
+		const packageJson = readJsonFixture<{
 				name?: string;
 				displayName?: string;
 			contributes?: {
@@ -170,7 +194,9 @@ suite('Extension Test Suite', () => {
 					commands?: Array<{ name: string; description?: string; }>;
 				}>;
 			};
-		};
+		}>(packageJsonPath);
+		const englishLocalization = readManifestLocalization();
+		const chineseLocalization = readManifestLocalization('zh-cn');
 		const contributedCommands = packageJson.contributes?.commands ?? [];
 		const designCommands = contributedCommands.filter(command =>
 			[
@@ -183,21 +209,23 @@ suite('Extension Test Suite', () => {
 			assert.strictEqual(packageJson.name, 'harness-runner');
 			assert.strictEqual(packageJson.displayName, 'Harness Runner');
 			assert.deepStrictEqual(designCommands.map(command => command.command), ['harness-runner.recordDesignContext']);
-			assert.strictEqual(designCommands[0]?.title, 'HARNESS: 界面设计描述');
+			assert.strictEqual(resolveManifestString(designCommands[0]?.title, chineseLocalization), 'HARNESS: 界面设计描述');
+			assert.strictEqual(resolveManifestString(designCommands[0]?.title, englishLocalization), 'HARNESS: UI Design Notes');
 			assert.strictEqual(contributedCommands.some(command => command.command === 'harness-runner.recallTaskMemory'), false);
 			assert.strictEqual(contributedCommands.some(command => command.command === 'harness-runner.showGuide'), true);
 			assert.strictEqual(contributedCommands.some(command => command.command === 'harness-runner.previewSourceContextRecall'), true);
 			assert.strictEqual(contributedCommands.some(command => command.command === 'harness-runner.generateAgentMap'), true);
 			assert.strictEqual(contributedCommands.some(command => command.command === 'harness-runner.customizeMenuOrder'), true);
 			assert.strictEqual(contributedCommands.some(command => command.command === 'harness-runner.rerunFailedStory'), true);
-			assert.strictEqual(contributedCommands.find(command => command.command === 'harness-runner.previewSourceContextRecall')?.title, 'HARNESS: 为故事添加上下文');
-			assert.strictEqual(contributedCommands.find(command => command.command === 'harness-runner.customizeMenuOrder')?.title, 'HARNESS: 自定义菜单排序');
-			assert.strictEqual(contributedCommands.find(command => command.command === 'harness-runner.rerunFailedStory')?.title, 'HARNESS: 重新执行失败故事');
-			assert.strictEqual(contributedCommands.find(command => command.command === 'harness-runner.generateAgentMap')?.title, 'HARNESS: 生成 Agent Map');
-			assert.strictEqual(contributedCommands.find(command => command.command === 'harness-runner.showGuide')?.title, 'HARNESS: Harness-runner 指南');
+			assert.strictEqual(resolveManifestString(contributedCommands.find(command => command.command === 'harness-runner.previewSourceContextRecall')?.title, chineseLocalization), 'HARNESS: 为故事添加上下文');
+			assert.strictEqual(resolveManifestString(contributedCommands.find(command => command.command === 'harness-runner.customizeMenuOrder')?.title, chineseLocalization), 'HARNESS: 自定义菜单排序');
+			assert.strictEqual(resolveManifestString(contributedCommands.find(command => command.command === 'harness-runner.rerunFailedStory')?.title, chineseLocalization), 'HARNESS: 重新执行失败故事');
+			assert.strictEqual(resolveManifestString(contributedCommands.find(command => command.command === 'harness-runner.generateAgentMap')?.title, chineseLocalization), 'HARNESS: 生成 Agent Map');
+			assert.strictEqual(resolveManifestString(contributedCommands.find(command => command.command === 'harness-runner.showGuide')?.title, chineseLocalization), 'HARNESS: Harness Runner 指南');
+			assert.strictEqual(resolveManifestString(contributedCommands.find(command => command.command === 'harness-runner.showGuide')?.title, englishLocalization), 'HARNESS: Harness Runner Guide');
 			assert.strictEqual(contributedCommands.some(command => command.command === 'harness-runner.reviewStoryApproval'), true);
 			assert.strictEqual(contributedCommands.some(command => command.command === 'harness-runner.configurePolicyGates'), true);
-			assert.strictEqual(contributedCommands.find(command => command.command === 'harness-runner.configurePolicyGates')?.title, 'HARNESS: 配置执行检查');
+			assert.strictEqual(resolveManifestString(contributedCommands.find(command => command.command === 'harness-runner.configurePolicyGates')?.title, chineseLocalization), 'HARNESS: 配置执行检查');
 			assert.strictEqual(packageJson.contributes?.keybindings?.some(binding => binding.command === 'harness-runner.showMenu' && binding.key === 'alt+r'), true);
 			assert.strictEqual(typeof packageJson.contributes?.configuration?.properties?.['harness-runner.policyGates'], 'object');
 			assert.strictEqual(typeof packageJson.contributes?.configuration?.properties?.['harness-runner.approvalPromptMode'], 'object');
@@ -205,6 +233,14 @@ suite('Extension Test Suite', () => {
 			assert.strictEqual(typeof packageJson.contributes?.configuration?.properties?.['harness-runner.reviewPassingScore'], 'object');
 			assert.strictEqual(typeof packageJson.contributes?.configuration?.properties?.['harness-runner.maxAutoRefactorRounds'], 'object');
 			assert.strictEqual(typeof packageJson.contributes?.configuration?.properties?.['harness-runner.rootMenuOrder'], 'object');
+			const rootMenuOrderConfig = packageJson.contributes?.configuration?.properties?.['harness-runner.rootMenuOrder'] as {
+				items?: { enum?: string[]; };
+				default?: string[];
+				markdownDescription?: string;
+			};
+			assert.deepStrictEqual(rootMenuOrderConfig.items?.enum, ['planning', 'guides', 'constraints', 'execution', 'settings']);
+			assert.deepStrictEqual(rootMenuOrderConfig.default, ['planning', 'guides', 'constraints', 'execution', 'settings']);
+			assert.strictEqual(resolveManifestString(rootMenuOrderConfig.markdownDescription, englishLocalization)?.includes('guides'), true);
 			assert.strictEqual('harness-runner.requireProjectConstraintsBeforeRun' in (packageJson.contributes?.configuration?.properties ?? {}), false);
 			assert.strictEqual('harness-runner.requireDesignContextForTaggedStories' in (packageJson.contributes?.configuration?.properties ?? {}), false);
 			const policyGateDefault = packageJson.contributes?.configuration?.properties?.['harness-runner.policyGates'] as {
@@ -216,26 +252,30 @@ suite('Extension Test Suite', () => {
 		const contributedParticipants = packageJson.contributes?.chatParticipants ?? [];
 			assert.strictEqual(contributedParticipants.some(participant => participant.id === 'recent-graduates.harness-runner'), true);
 			assert.strictEqual(contributedParticipants.some(participant => participant.name === 'harness' && participant.commands?.some(command => command.name === 'harness-spec')), true);
-		assert.strictEqual(contributedParticipants.some(participant => participant.description?.includes('auto-send the final prompt to Copilot Chat')), true);
-			assert.strictEqual(contributedParticipants.some(participant => participant.commands?.some(command => command.name === 'harness-spec' && command.description?.includes('auto-send the ready-to-use final version to Copilot Chat'))), true);
+		assert.strictEqual(contributedParticipants.some(participant => resolveManifestString(participant.description, englishLocalization)?.includes('auto-send the final prompt to Copilot Chat')), true);
+			assert.strictEqual(contributedParticipants.some(participant => participant.commands?.some(command => resolveManifestString(command.description, englishLocalization)?.includes('auto-send the ready-to-use final version to Copilot Chat'))), true);
 	});
 
 		test('user-visible Harness entry labels keep command ids stable and avoid legacy Ralph titles', () => {
 			const packageJsonPath = path.resolve(__dirname, '../../package.json');
 			const readmePath = path.resolve(__dirname, '../../README.md');
 			const agentMapPath = path.resolve(__dirname, '../../src/agentMap.ts');
-			const packageJson = JSON.parse(fs.readFileSync(packageJsonPath, 'utf8')) as {
+			const packageJson = readJsonFixture<{
 				contributes?: {
 					commands?: Array<{ command: string; title: string; }>;
 					chatParticipants?: Array<{
 						id: string;
 						name: string;
 						fullName?: string;
+						description?: string;
 						commands?: Array<{ name: string; description?: string; }>;
 					}>;
 				};
-			};
-			const commandTitleById = new Map((packageJson.contributes?.commands ?? []).map(command => [command.command, command.title]));
+			}>(packageJsonPath);
+			const englishLocalization = readManifestLocalization();
+			const chineseLocalization = readManifestLocalization('zh-cn');
+			const commandTitleById = new Map((packageJson.contributes?.commands ?? []).map(command => [command.command, resolveManifestString(command.title, chineseLocalization)]));
+			const englishCommandTitleById = new Map((packageJson.contributes?.commands ?? []).map(command => [command.command, resolveManifestString(command.title, englishLocalization)]));
 			const expectedCommandTitles = new Map<string, string>([
 				['harness-runner.start', 'HARNESS: 开始执行'],
 				['harness-runner.stop', 'HARNESS: 停止执行'],
@@ -248,27 +288,38 @@ suite('Extension Test Suite', () => {
 				['harness-runner.generateAgentMap', 'HARNESS: 生成 Agent Map'],
 				['harness-runner.recordDesignContext', 'HARNESS: 界面设计描述'],
 				['harness-runner.openSettings', 'HARNESS: 打开设置'],
+				['harness-runner.customizeMenuOrder', 'HARNESS: 自定义菜单排序'],
 				['harness-runner.showMenu', 'HARNESS: 显示菜单'],
 				['harness-runner.quickStart', 'HARNESS: 生成 PRD'],
 				['harness-runner.appendUserStories', 'HARNESS: 追加用户故事'],
+				['harness-runner.showGuide', 'HARNESS: Harness Runner 指南'],
+				['harness-runner.rerunFailedStory', 'HARNESS: 重新执行失败故事'],
+				['harness-runner.configurePolicyGates', 'HARNESS: 配置执行检查'],
 			]);
 
 			for (const [commandId, expectedTitle] of expectedCommandTitles) {
 				assert.strictEqual(commandTitleById.get(commandId), expectedTitle);
 			}
+			assert.strictEqual(englishCommandTitleById.get('harness-runner.showGuide'), 'HARNESS: Harness Runner Guide');
+			assert.strictEqual(englishCommandTitleById.get('harness-runner.customizeMenuOrder'), 'HARNESS: Customize Menu Order');
+			assert.strictEqual(englishCommandTitleById.get('harness-runner.openSettings'), 'HARNESS: Open Settings');
 
 			const contributedParticipant = packageJson.contributes?.chatParticipants?.find(participant => participant.id === 'recent-graduates.harness-runner');
 			assert.ok(contributedParticipant);
 			assert.strictEqual(contributedParticipant?.name, 'harness');
 			assert.strictEqual(contributedParticipant?.fullName, 'Harness Runner');
 			assert.strictEqual(contributedParticipant?.commands?.some(command => command.name === 'harness-spec'), true);
+			assert.strictEqual(resolveManifestString(contributedParticipant?.description, englishLocalization)?.includes('Harness Runner project constraints'), true);
+			assert.strictEqual(resolveManifestString(contributedParticipant?.description, chineseLocalization)?.includes('Harness Runner 项目约束'), true);
 
 			const chinesePack = getHarnessLanguagePack('Chinese');
 			const constraintsItems = buildHarnessMenuQuickPickItems(chinesePack, 'constraints');
+			const guidesItems = buildHarnessMenuQuickPickItems(chinesePack, 'guides');
 			assert.strictEqual(chinesePack.statusBar.idleText.includes('Harness Runner'), true);
 			assert.strictEqual(chinesePack.statusBar.runningText.includes('Harness Runner'), true);
 			assert.strictEqual(chinesePack.statusBar.pendingApprovalsText(2).includes('Harness Runner'), true);
 			assert.strictEqual(constraintsItems.some(item => item.label.includes('RALPH')), false);
+			assert.strictEqual(guidesItems.some(item => item.label.includes('Harness Runner 指南')), true);
 			assert.strictEqual(constraintsItems.some(item => item.label.includes('为故事添加上下文')), true);
 			assert.strictEqual(chinesePack.chatSpec.missingConstraints.includes('@harness /harness-spec'), true);
 
@@ -607,7 +658,7 @@ suite('Extension Test Suite', () => {
 		const englishGuideDocument = buildHarnessGuideDocument('English');
 		const engineeringChapter = chineseGuide.chapters.find(chapter => chapter.id === 'harness-engineering');
 
-		assert.strictEqual(chineseGuide.title, 'Harness-runner 指南');
+		assert.strictEqual(chineseGuide.title, 'Harness Runner 指南');
 		assert.ok(chineseGuide.chapters.some(chapter => chapter.title === '理解 Harness Runner'));
 		assert.ok(chineseGuide.chapters.some(chapter => chapter.title === 'Harness 的工程化含义'));
 		assert.ok(chineseGuide.chapters.some(chapter => chapter.title === '推荐使用流程'));
@@ -621,7 +672,9 @@ suite('Extension Test Suite', () => {
 		assert.ok(chineseGuideDocument.html.includes('<details class="card section-card guide-toggle" data-section-index="1">'));
 		assert.strictEqual(chineseGuideDocument.html.includes('<details id="overview" class="chapter-shell guide-toggle" open>'), false);
 		assert.ok(chineseGuideDocument.html.includes('data-target-chapter="overview"'));
+		assert.ok(chineseGuideDocument.html.includes('Harness Runner 指南：查看统一指南入口'));
 		assert.ok(englishGuideDocument.html.includes('Recommended Workflows'));
+		assert.ok(englishGuideDocument.html.includes('Harness Runner Guide'));
 		assert.ok(englishGuideDocument.html.includes('What Harness Engineering Means Here'));
 		assert.ok(englishGuideDocument.html.includes('human steer, agent execute'));
 		assert.ok(englishGuideDocument.html.includes('How The Guardrails Map To This Extension'));

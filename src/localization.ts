@@ -842,7 +842,7 @@ const CHINESE_PACK: HarnessLanguagePack = {
 				placeholder: 'Harness Runner：选择一个菜单',
 				items: [
 					{ kind: 'submenu', target: 'planning', label: '$(zap)  规划与入门', description: '集中处理 PRD 生成、故事追加和帮助文档入口' },
-					{ kind: 'submenu', target: 'guides', label: '$(library)  Harness-runner 指南', description: '统一查看插件介绍、推荐流程和后续扩展资料入口' },
+					{ kind: 'submenu', target: 'guides', label: '$(library)  Harness Runner 指南', description: '统一查看 Harness Runner 介绍、推荐流程和后续扩展资料入口' },
 					{ kind: 'submenu', target: 'constraints', label: '$(symbol-key)  Harness 约束设置', description: '统一进入执行检查、项目约束、设计描述、故事上下文和 Agent Map 相关能力' },
 					{ kind: 'submenu', target: 'execution', label: '$(rocket)  执行与审批', description: '集中触发开始、停止、状态查看、审批和故事重置' },
 					{ kind: 'submenu', target: 'settings', label: '$(gear)  设置', description: '统一进入运行设置、打开设置和菜单排序入口' },
@@ -857,10 +857,10 @@ const CHINESE_PACK: HarnessLanguagePack = {
 				],
 			},
 			guides: {
-				placeholder: 'Harness-runner 指南：选择一个入口',
+				placeholder: 'Harness Runner 指南：选择一个入口',
 				items: [
 					{ kind: 'back', label: '$(arrow-left)  返回上一级', description: '回到 Harness Runner 主菜单' },
-					{ kind: 'command', command: 'harness-runner.showGuide', label: '$(book)  打开统一指南', description: '在同一份章节化文档中查看介绍、流程和扩展资料入口' },
+					{ kind: 'command', command: 'harness-runner.showGuide', label: '$(book)  打开 Harness Runner 指南', description: '在同一份章节化文档中查看介绍、流程和扩展资料入口' },
 				],
 			},
 			constraints: {
@@ -910,8 +910,8 @@ const CHINESE_PACK: HarnessLanguagePack = {
 		},
 	},
 	help: {
-		introductionTitle: 'Harness 插件介绍',
-		manualTitle: 'Harness 使用流程手册',
+		introductionTitle: 'Harness Runner 插件介绍',
+		manualTitle: 'Harness Runner 使用流程手册',
 	},
 	quickStart: {
 		existingPrd: 'HARNESS：工作区根目录中已存在 prd.json。',
@@ -1326,7 +1326,7 @@ const ENGLISH_PACK: HarnessLanguagePack = {
 				placeholder: 'Harness Runner: choose a menu',
 				items: [
 					{ kind: 'submenu', target: 'planning', label: '$(zap)  Planning & Onboarding', description: 'Open PRD generation, story append, and help entries from one place' },
-					{ kind: 'submenu', target: 'guides', label: '$(library)  Harness-runner Guide', description: 'Read the unified guide for product framing, workflow, and future reference material' },
+					{ kind: 'submenu', target: 'guides', label: '$(library)  Harness Runner Guide', description: 'Read the unified Harness Runner guide for product framing, workflow, and future reference material' },
 					{ kind: 'submenu', target: 'constraints', label: '$(symbol-key)  Harness Constraint Settings', description: 'Open run checks, project constraints, design notes, story context, and Agent Map flows from one place' },
 					{ kind: 'submenu', target: 'execution', label: '$(rocket)  Execution & Review', description: 'Trigger start, stop, status, approvals, and story reset actions from one place' },
 					{ kind: 'submenu', target: 'settings', label: '$(gear)  Settings', description: 'Open runner settings, VS Code settings, and menu ordering from one place' },
@@ -1341,10 +1341,10 @@ const ENGLISH_PACK: HarnessLanguagePack = {
 				],
 			},
 			guides: {
-				placeholder: 'Harness-runner Guide: choose an entry',
+				placeholder: 'Harness Runner Guide: choose an entry',
 				items: [
 					{ kind: 'back', label: '$(arrow-left)  Back', description: 'Return to the Harness Runner main menu' },
-					{ kind: 'command', command: 'harness-runner.showGuide', label: '$(book)  Open Unified Guide', description: 'Read the introduction, workflows, and future extension path in one chapter-based document' },
+					{ kind: 'command', command: 'harness-runner.showGuide', label: '$(book)  Open Harness Runner Guide', description: 'Read the introduction, workflows, and future extension path in one chapter-based document' },
 				],
 			},
 			constraints: {
@@ -1394,8 +1394,8 @@ const ENGLISH_PACK: HarnessLanguagePack = {
 		},
 	},
 	help: {
-		introductionTitle: 'Harness Introduction',
-		manualTitle: 'Harness Usage Guide',
+		introductionTitle: 'Harness Runner Introduction',
+		manualTitle: 'Harness Runner Usage Guide',
 	},
 	quickStart: {
 		existingPrd: 'HARNESS: prd.json already exists in the workspace root.',

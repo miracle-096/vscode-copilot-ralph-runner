@@ -41,7 +41,7 @@ export function getHarnessGuideContent(language: SupportedHarnessLanguage): Harn
 
 function getChineseGuideContent(): HarnessGuideContent {
 	return {
-		title: 'Harness-runner 指南',
+		title: 'Harness Runner 指南',
 		summary: '这个统一指南把插件介绍、推荐使用流程和 harness-engineering 中的定义、失败模式与工程实践收敛到同一份章节化体验里。',
 		chapters: [
 			{
@@ -128,10 +128,11 @@ function getChineseGuideContent(): HarnessGuideContent {
 					{
 						title: '一级菜单怎么分工',
 						paragraphs: [
-							'Harness 状态栏按钮和快捷键 Alt+R 都会打开主菜单。当前一级菜单按规划与入门、Harness 约束设置、执行与审批和设置分组，设置相关动作统一收纳到 settings 子菜单中。'
+							'Harness 状态栏按钮和快捷键 Alt+R 都会打开主菜单。当前一级菜单按规划与入门、Harness Runner 指南、Harness 约束设置、执行与审批和设置分组，设置相关动作统一收纳到 settings 子菜单中。'
 						],
 						bullets: [
 							'规划与入门：生成 PRD、追加用户故事',
+							'Harness Runner 指南：查看统一指南入口',
 							'Harness 约束设置：执行检查、项目约束、设计描述、故事上下文、源码上下文和 Agent Map',
 							'执行与审批：开始、停止、状态、审批、重置和失败故事重跑',
 							'设置：打开 VS Code 设置和自定义一级菜单排序'
@@ -247,7 +248,7 @@ function getChineseGuideContent(): HarnessGuideContent {
 
 function getEnglishGuideContent(): HarnessGuideContent {
 	return {
-		title: 'Harness-runner Guide',
+		title: 'Harness Runner Guide',
 		summary: 'This unified guide merges the product introduction, recommended usage flow, and the harness-engineering definition and practices into one chapter-based reading experience.',
 		chapters: [
 			{
@@ -329,10 +330,11 @@ function getEnglishGuideContent(): HarnessGuideContent {
 					{
 						title: 'How The Top-Level Menu Is Split',
 						paragraphs: [
-							'The status bar button and Alt+R open the main menu. Settings-related actions now live under a dedicated Settings submenu so opening VS Code settings and customizing the top-level menu order do not crowd the root menu.'
+							'The status bar button and Alt+R open the main menu. The top level is split into Planning & Onboarding, Harness Runner Guide, Harness Constraint Settings, Execution & Review, and Settings. Settings-related actions live under a dedicated Settings submenu so opening VS Code settings and customizing the top-level menu order do not crowd the root menu.'
 						],
 						bullets: [
 							'Planning & Onboarding: generate the PRD and append stories',
+							'Harness Runner Guide: open the unified guide entry',
 							'Harness Constraint Settings: run checks, constraints, design notes, story context, source context, and Agent Map',
 							'Execution & Review: start, stop, inspect status, approve, reset, and rerun failed stories',
 							'Settings: open VS Code settings and customize the top-level menu order'
