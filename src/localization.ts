@@ -842,6 +842,7 @@ const CHINESE_PACK: HarnessLanguagePack = {
 				placeholder: 'Harness Runner：选择一个菜单',
 				items: [
 					{ kind: 'submenu', target: 'planning', label: '$(zap)  规划与入门', description: '集中处理 PRD 生成、故事追加和帮助文档入口' },
+					{ kind: 'submenu', target: 'guides', label: '$(library)  Harness-runner 指南', description: '统一查看插件介绍、推荐流程和后续扩展资料入口' },
 					{ kind: 'submenu', target: 'constraints', label: '$(symbol-key)  Harness 约束设置', description: '统一进入执行检查、项目约束、设计描述、故事上下文和 Agent Map 相关能力' },
 					{ kind: 'submenu', target: 'execution', label: '$(rocket)  执行与审批', description: '集中触发开始、停止、状态查看、审批和故事重置' },
 					{ kind: 'submenu', target: 'settings', label: '$(gear)  设置', description: '统一进入运行设置、打开设置和菜单排序入口' },
@@ -853,15 +854,13 @@ const CHINESE_PACK: HarnessLanguagePack = {
 					{ kind: 'back', label: '$(arrow-left)  返回上一级', description: '回到 Harness Runner 主菜单' },
 					{ kind: 'command', command: 'harness-runner.quickStart', label: '$(zap)  生成 PRD', description: '通过 Copilot 生成 prd.json' },
 					{ kind: 'command', command: 'harness-runner.appendUserStories', label: '$(diff-added)  追加用户故事', description: '通过 Copilot 基于现有 prd.json 追加新的用户故事' },
-					{ kind: 'submenu', target: 'guides', label: '$(library)  指南与帮助', description: '查看插件介绍和推荐使用流程' },
 				],
 			},
 			guides: {
-				placeholder: '指南与帮助：选择一个文档',
+				placeholder: 'Harness-runner 指南：选择一个入口',
 				items: [
-					{ kind: 'back', label: '$(arrow-left)  返回上一级', description: '回到规划与入门菜单' },
-					{ kind: 'command', command: 'harness-runner.showIntroduction', label: '$(hubot)  插件介绍', description: '查看 Harness Runner 的定位、能力边界和适用场景' },
-					{ kind: 'command', command: 'harness-runner.showUsageGuide', label: '$(library)  使用流程手册', description: '查看空项目和已存在项目两种起点下的推荐流程' },
+					{ kind: 'back', label: '$(arrow-left)  返回上一级', description: '回到 Harness Runner 主菜单' },
+					{ kind: 'command', command: 'harness-runner.showGuide', label: '$(book)  打开统一指南', description: '在同一份章节化文档中查看介绍、流程和扩展资料入口' },
 				],
 			},
 			constraints: {
@@ -1327,6 +1326,7 @@ const ENGLISH_PACK: HarnessLanguagePack = {
 				placeholder: 'Harness Runner: choose a menu',
 				items: [
 					{ kind: 'submenu', target: 'planning', label: '$(zap)  Planning & Onboarding', description: 'Open PRD generation, story append, and help entries from one place' },
+					{ kind: 'submenu', target: 'guides', label: '$(library)  Harness-runner Guide', description: 'Read the unified guide for product framing, workflow, and future reference material' },
 					{ kind: 'submenu', target: 'constraints', label: '$(symbol-key)  Harness Constraint Settings', description: 'Open run checks, project constraints, design notes, story context, and Agent Map flows from one place' },
 					{ kind: 'submenu', target: 'execution', label: '$(rocket)  Execution & Review', description: 'Trigger start, stop, status, approvals, and story reset actions from one place' },
 					{ kind: 'submenu', target: 'settings', label: '$(gear)  Settings', description: 'Open runner settings, VS Code settings, and menu ordering from one place' },
@@ -1338,15 +1338,13 @@ const ENGLISH_PACK: HarnessLanguagePack = {
 					{ kind: 'back', label: '$(arrow-left)  Back', description: 'Return to the Harness Runner main menu' },
 					{ kind: 'command', command: 'harness-runner.quickStart', label: '$(zap)  Generate PRD', description: 'Use Copilot to generate prd.json' },
 					{ kind: 'command', command: 'harness-runner.appendUserStories', label: '$(diff-added)  Append User Stories', description: 'Use Copilot to append new user stories to the existing prd.json' },
-					{ kind: 'submenu', target: 'guides', label: '$(library)  Guides & Help', description: 'Read the introduction and recommended usage flow' },
 				],
 			},
 			guides: {
-				placeholder: 'Guides & Help: choose a document',
+				placeholder: 'Harness-runner Guide: choose an entry',
 				items: [
-					{ kind: 'back', label: '$(arrow-left)  Back', description: 'Return to Planning & Onboarding' },
-					{ kind: 'command', command: 'harness-runner.showIntroduction', label: '$(hubot)  Introduction', description: 'Read what Harness Runner does, where it fits, and what the menu is for' },
-					{ kind: 'command', command: 'harness-runner.showUsageGuide', label: '$(library)  Usage Guide', description: 'Read the recommended flow for empty projects and existing repositories' },
+					{ kind: 'back', label: '$(arrow-left)  Back', description: 'Return to the Harness Runner main menu' },
+					{ kind: 'command', command: 'harness-runner.showGuide', label: '$(book)  Open Unified Guide', description: 'Read the introduction, workflows, and future extension path in one chapter-based document' },
 				],
 			},
 			constraints: {

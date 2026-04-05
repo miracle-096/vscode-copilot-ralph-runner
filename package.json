@@ -22,12 +22,8 @@
   "contributes": {
     "commands": [
       {
-        "command": "harness-runner.showIntroduction",
-        "title": "HARNESS: 插件介绍"
-      },
-      {
-        "command": "harness-runner.showUsageGuide",
-        "title": "HARNESS: 使用流程手册"
+        "command": "harness-runner.showGuide",
+        "title": "HARNESS: Harness-runner 指南"
       },
       {
         "command": "harness-runner.configurePolicyGates",

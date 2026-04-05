@@ -75,7 +75,7 @@ import {
 	validateStoryReviewResult,
 } from './storyReview';
 import { parseTaskSignalStatus } from './taskStatus';
-import { buildHarnessHelpDocument, HarnessHelpDocumentKind } from './helpManual';
+import { buildHarnessGuideDocument } from './helpManual';
 import {
 	buildProjectConstraintChatAdvicePrompt,
 	buildProjectConstraintsInitializationPrompt,
@@ -1007,8 +1007,7 @@ export function activate(context: vscode.ExtensionContext) {
 
 	context.subscriptions.push(
 		vscode.commands.registerCommand('harness-runner.configurePolicyGates', () => configurePolicyGates()),
-		vscode.commands.registerCommand('harness-runner.showIntroduction', () => showHelpDocument('introduction')),
-		vscode.commands.registerCommand('harness-runner.showUsageGuide', () => showHelpDocument('manual')),
+		vscode.commands.registerCommand('harness-runner.showGuide', () => showGuideDocument()),
 		vscode.commands.registerCommand('harness-runner.start', () => startHarnessRunner()),
 		vscode.commands.registerCommand('harness-runner.stop', () => stopHarnessRunner()),
 		vscode.commands.registerCommand('harness-runner.status', () => showStatus()),
@@ -5108,11 +5107,11 @@ async function customizeMenuOrder(): Promise<void> {
 	vscode.window.showInformationMessage(languagePack.menu.customizeOrder.saved);
 }
 
-function showHelpDocument(kind: HarnessHelpDocumentKind): void {
+function showGuideDocument(): void {
 	const languagePack = getLanguagePack();
-	const document = buildHarnessHelpDocument(languagePack.language, kind);
+	const document = buildHarnessGuideDocument(languagePack.language);
 	const panel = vscode.window.createWebviewPanel(
-		'harnessHelp',
+		'harnessGuide',
 		document.title,
 		vscode.ViewColumn.Active,
 		{
@@ -5121,7 +5120,7 @@ function showHelpDocument(kind: HarnessHelpDocumentKind): void {
 		}
 	);
 
-	panel.iconPath = new vscode.ThemeIcon(kind === 'introduction' ? 'hubot' : 'library');
+	panel.iconPath = new vscode.ThemeIcon('library');
 	panel.webview.html = document.html;
 }
 

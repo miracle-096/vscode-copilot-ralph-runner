@@ -118,7 +118,7 @@ import {
 	readStoryRunLog,
 	summarizeCommandOutput,
 } from '../runLog';
-import { buildHarnessHelpDocument, getHarnessHelpContent } from '../helpManual';
+import { buildHarnessGuideDocument, getHarnessGuideContent } from '../helpManual';
 import { getHarnessLanguagePack } from '../localization';
 import {
 	buildHarnessMenuOrderEditorHtml,
@@ -185,8 +185,7 @@ suite('Extension Test Suite', () => {
 			assert.deepStrictEqual(designCommands.map(command => command.command), ['harness-runner.recordDesignContext']);
 			assert.strictEqual(designCommands[0]?.title, 'HARNESS: 界面设计描述');
 			assert.strictEqual(contributedCommands.some(command => command.command === 'harness-runner.recallTaskMemory'), false);
-			assert.strictEqual(contributedCommands.some(command => command.command === 'harness-runner.showIntroduction'), true);
-			assert.strictEqual(contributedCommands.some(command => command.command === 'harness-runner.showUsageGuide'), true);
+			assert.strictEqual(contributedCommands.some(command => command.command === 'harness-runner.showGuide'), true);
 			assert.strictEqual(contributedCommands.some(command => command.command === 'harness-runner.previewSourceContextRecall'), true);
 			assert.strictEqual(contributedCommands.some(command => command.command === 'harness-runner.generateAgentMap'), true);
 			assert.strictEqual(contributedCommands.some(command => command.command === 'harness-runner.customizeMenuOrder'), true);
@@ -195,8 +194,7 @@ suite('Extension Test Suite', () => {
 			assert.strictEqual(contributedCommands.find(command => command.command === 'harness-runner.customizeMenuOrder')?.title, 'HARNESS: 自定义菜单排序');
 			assert.strictEqual(contributedCommands.find(command => command.command === 'harness-runner.rerunFailedStory')?.title, 'HARNESS: 重新执行失败故事');
 			assert.strictEqual(contributedCommands.find(command => command.command === 'harness-runner.generateAgentMap')?.title, 'HARNESS: 生成 Agent Map');
-			assert.strictEqual(contributedCommands.find(command => command.command === 'harness-runner.showIntroduction')?.title, 'HARNESS: 插件介绍');
-			assert.strictEqual(contributedCommands.find(command => command.command === 'harness-runner.showUsageGuide')?.title, 'HARNESS: 使用流程手册');
+			assert.strictEqual(contributedCommands.find(command => command.command === 'harness-runner.showGuide')?.title, 'HARNESS: Harness-runner 指南');
 			assert.strictEqual(contributedCommands.some(command => command.command === 'harness-runner.reviewStoryApproval'), true);
 			assert.strictEqual(contributedCommands.some(command => command.command === 'harness-runner.configurePolicyGates'), true);
 			assert.strictEqual(contributedCommands.find(command => command.command === 'harness-runner.configurePolicyGates')?.title, 'HARNESS: 配置执行检查');
@@ -366,9 +364,11 @@ suite('Extension Test Suite', () => {
 	test('localized menus expose nested submenus with explicit back items', () => {
 		const chinesePack = getHarnessLanguagePack('Chinese');
 		const rootItems = buildHarnessMenuQuickPickItems(chinesePack, chinesePack.menu.rootId);
+		const guidesEntry = rootItems.find(item => item.menuItem.kind === 'submenu' && item.menuItem.target === 'guides');
 		const constraintsEntry = rootItems.find(item => item.menuItem.kind === 'submenu' && item.menuItem.target === 'constraints');
 		const settingsEntry = rootItems.find(item => item.menuItem.kind === 'submenu' && item.menuItem.target === 'settings');
 		assert.ok(settingsEntry);
+		assert.ok(guidesEntry);
 		assert.strictEqual(rootItems.some(item => item.menuItem.kind === 'command' && item.menuItem.command === 'harness-runner.openSettings'), false);
 		assert.ok(constraintsEntry);
 
@@ -394,7 +394,7 @@ suite('Extension Test Suite', () => {
 		const chinesePack = getHarnessLanguagePack('Chinese');
 		const expectedCommandsByMenu = new Map<string, string[]>([
 			['planning', ['harness-runner.quickStart', 'harness-runner.appendUserStories']],
-			['guides', ['harness-runner.showIntroduction', 'harness-runner.showUsageGuide']],
+			['guides', ['harness-runner.showGuide']],
 			['constraints', [
 				'harness-runner.configurePolicyGates',
 				'harness-runner.initProjectConstraints',
@@ -422,7 +422,7 @@ suite('Extension Test Suite', () => {
 
 		const rootSubmenus = buildHarnessMenuQuickPickItems(chinesePack, chinesePack.menu.rootId)
 			.flatMap(item => item.menuItem.kind === 'submenu' ? [item.menuItem.target] : []);
-		assert.deepStrictEqual(rootSubmenus, ['planning', 'constraints', 'execution', 'settings']);
+		assert.deepStrictEqual([...rootSubmenus].sort(), ['constraints', 'execution', 'guides', 'planning', 'settings']);
 	});
 
 		test('replay range starts from the selected failed story and keeps priority order', () => {
@@ -442,30 +442,30 @@ suite('Extension Test Suite', () => {
 
 	test('root menu order normalization removes invalid entries and appends missing defaults', () => {
 		assert.deepStrictEqual(
-			normalizeHarnessRootMenuOrder(['settings', 'invalid', 'planning', 'settings'], ['planning', 'constraints', 'execution', 'settings']),
-			['settings', 'planning', 'constraints', 'execution'],
+			normalizeHarnessRootMenuOrder(['settings', 'invalid', 'planning', 'settings'], ['planning', 'guides', 'constraints', 'execution', 'settings']),
+			['settings', 'planning', 'guides', 'constraints', 'execution'],
 		);
 	});
 
 	test('menu order editor payload requires the full unique submenu set', () => {
 		assert.deepStrictEqual(
 			normalizeHarnessMenuOrderEditorPayload(
-				['settings', 'planning', 'constraints', 'execution'],
-				['planning', 'constraints', 'execution', 'settings'],
+				['settings', 'planning', 'guides', 'constraints', 'execution'],
+				['planning', 'guides', 'constraints', 'execution', 'settings'],
 			),
-			['settings', 'planning', 'constraints', 'execution'],
+			['settings', 'planning', 'guides', 'constraints', 'execution'],
 		);
 		assert.strictEqual(
 			normalizeHarnessMenuOrderEditorPayload(
 				['settings', 'planning', 'execution'],
-				['planning', 'constraints', 'execution', 'settings'],
+				['planning', 'guides', 'constraints', 'execution', 'settings'],
 			),
 			undefined,
 		);
 		assert.strictEqual(
 			normalizeHarnessMenuOrderEditorPayload(
-				['settings', 'planning', 'planning', 'execution'],
-				['planning', 'constraints', 'execution', 'settings'],
+				['settings', 'planning', 'planning', 'constraints', 'execution'],
+				['planning', 'guides', 'constraints', 'execution', 'settings'],
 			),
 			undefined,
 		);
@@ -506,11 +506,11 @@ suite('Extension Test Suite', () => {
 			'harness-runner.language': 'Chinese',
 		}, null, 2));
 
-		const persistedPath = persistWorkspacePinnedRootMenuOrderFile(workspaceRoot, ['settings', 'planning', 'constraints', 'execution']);
+		const persistedPath = persistWorkspacePinnedRootMenuOrderFile(workspaceRoot, ['settings', 'planning', 'guides', 'constraints', 'execution']);
 		assert.strictEqual(persistedPath, settingsPath);
 
 		const persisted = JSON.parse(fs.readFileSync(settingsPath, 'utf8')) as Record<string, unknown>;
-		assert.deepStrictEqual(persisted['harness-runner.rootMenuOrder'], ['settings', 'planning', 'constraints', 'execution']);
+		assert.deepStrictEqual(persisted['harness-runner.rootMenuOrder'], ['settings', 'planning', 'guides', 'constraints', 'execution']);
 		assert.strictEqual('ralph-runner.rootMenuOrder' in persisted, false);
 		assert.strictEqual(persisted['harness-runner.language'], 'Chinese');
 	});
@@ -523,7 +523,7 @@ suite('Extension Test Suite', () => {
 			if (section === 'harness-runner') {
 				return {
 					get: (key: string) => key === 'rootMenuOrder'
-						? ['settings', 'planning', 'execution', 'constraints']
+						? ['settings', 'planning', 'guides', 'execution', 'constraints']
 						: undefined,
 				} as vscode.WorkspaceConfiguration;
 			}
@@ -534,7 +534,7 @@ suite('Extension Test Suite', () => {
 			const englishPack = getHarnessLanguagePack('English');
 			const rootSubmenus = buildHarnessMenuQuickPickItems(englishPack, englishPack.menu.rootId)
 				.flatMap(item => item.menuItem.kind === 'submenu' ? [item.menuItem.target] : []);
-			assert.deepStrictEqual(rootSubmenus, ['settings', 'planning', 'execution', 'constraints']);
+			assert.deepStrictEqual(rootSubmenus, ['settings', 'planning', 'guides', 'execution', 'constraints']);
 		} finally {
 			(vscode.workspace as typeof vscode.workspace & {
 				getConfiguration: typeof vscode.workspace.getConfiguration;
@@ -552,19 +552,22 @@ suite('Extension Test Suite', () => {
 		assert.deepStrictEqual(planningResolution.nextMenuStack, ['root', 'planning']);
 
 		const guidesEntry = buildHarnessMenuQuickPickItems(englishPack, 'planning').find(item => item.menuItem.kind === 'submenu' && item.menuItem.target === 'guides');
-		assert.ok(guidesEntry);
-		const guideResolution = resolveHarnessMenuSelection(englishPack, planningResolution.nextMenuStack, guidesEntry!.menuItem);
-		assert.deepStrictEqual(guideResolution.nextMenuStack, ['root', 'planning', 'guides']);
+		assert.strictEqual(guidesEntry, undefined);
+
+		const rootGuidesEntry = rootItems.find(item => item.menuItem.kind === 'submenu' && item.menuItem.target === 'guides');
+		assert.ok(rootGuidesEntry);
+		const guideResolution = resolveHarnessMenuSelection(englishPack, [englishPack.menu.rootId], rootGuidesEntry!.menuItem);
+		assert.deepStrictEqual(guideResolution.nextMenuStack, ['root', 'guides']);
 
 		const backEntry = buildHarnessMenuQuickPickItems(englishPack, 'guides')[0];
 		const backResolution = resolveHarnessMenuSelection(englishPack, guideResolution.nextMenuStack, backEntry.menuItem);
-		assert.deepStrictEqual(backResolution.nextMenuStack, ['root', 'planning']);
+		assert.deepStrictEqual(backResolution.nextMenuStack, ['root']);
 
-		const introductionEntry = buildHarnessMenuQuickPickItems(englishPack, 'guides').find(item => item.menuItem.kind === 'command' && item.menuItem.command === 'harness-runner.showIntroduction');
-		assert.ok(introductionEntry);
-		const commandResolution = resolveHarnessMenuSelection(englishPack, guideResolution.nextMenuStack, introductionEntry!.menuItem);
-		assert.strictEqual(commandResolution.command, 'harness-runner.showIntroduction');
-		assert.deepStrictEqual(commandResolution.nextMenuStack, ['root', 'planning', 'guides']);
+		const guideEntry = buildHarnessMenuQuickPickItems(englishPack, 'guides').find(item => item.menuItem.kind === 'command' && item.menuItem.command === 'harness-runner.showGuide');
+		assert.ok(guideEntry);
+		const commandResolution = resolveHarnessMenuSelection(englishPack, guideResolution.nextMenuStack, guideEntry!.menuItem);
+		assert.strictEqual(commandResolution.command, 'harness-runner.showGuide');
+		assert.deepStrictEqual(commandResolution.nextMenuStack, ['root', 'guides']);
 	});
 
 	test('workspace-pinned reviewer settings are persisted into .vscode/settings.json', () => {
@@ -598,18 +601,27 @@ suite('Extension Test Suite', () => {
 			assert.strictEqual('ralph-runner.reviewPassingScore' in persisted, false);
 	});
 
-	test('Harness help documents cover introduction and split manual flows', () => {
-		const chineseIntro = getHarnessHelpContent('Chinese', 'introduction');
-		const chineseManual = getHarnessHelpContent('Chinese', 'manual');
-		const englishManualDocument = buildHarnessHelpDocument('English', 'manual');
+	test('Harness guide merges introduction and workflows into chapter-based content', () => {
+		const chineseGuide = getHarnessGuideContent('Chinese');
+		const englishGuideDocument = buildHarnessGuideDocument('English');
+		const engineeringChapter = chineseGuide.chapters.find(chapter => chapter.id === 'harness-engineering');
 
-		assert.strictEqual(chineseIntro.title, 'Harness 插件介绍');
-		assert.ok(chineseIntro.sections.some(section => section.title === 'Harness 是什么'));
-		assert.ok(chineseManual.sections.some(section => section.title === '空项目流程'));
-		assert.ok(chineseManual.sections.some(section => section.title === '已存在项目流程'));
-		assert.ok(englishManualDocument.html.includes('Empty Project Workflow'));
-		assert.ok(englishManualDocument.html.includes('Existing Project Workflow'));
-		assert.ok(englishManualDocument.html.includes('<ol>'));
+		assert.strictEqual(chineseGuide.title, 'Harness-runner 指南');
+		assert.ok(chineseGuide.chapters.some(chapter => chapter.title === '理解 Harness Runner'));
+		assert.ok(chineseGuide.chapters.some(chapter => chapter.title === 'Harness 的工程化含义'));
+		assert.ok(chineseGuide.chapters.some(chapter => chapter.title === '推荐使用流程'));
+		assert.ok(chineseGuide.chapters.some(chapter => chapter.title === '资料吸收与后续扩展'));
+		assert.ok(engineeringChapter);
+		assert.ok(engineeringChapter?.sections.some(section => section.title === 'Harness Engineering 在解决什么'));
+		assert.ok(engineeringChapter?.sections.some(section => section.bullets?.includes('复杂任务要靠分块推进、显式 handoff 和外置状态，而不是把所有工作塞进一个会话')));
+		assert.ok(englishGuideDocument.html.includes('Recommended Workflows'));
+		assert.ok(englishGuideDocument.html.includes('What Harness Engineering Means Here'));
+		assert.ok(englishGuideDocument.html.includes('human steer, agent execute'));
+		assert.ok(englishGuideDocument.html.includes('How The Guardrails Map To This Extension'));
+		assert.ok(englishGuideDocument.html.includes('Rules For Future Source Integration'));
+		assert.ok(englishGuideDocument.html.includes('Chapter 1'));
+		assert.ok(englishGuideDocument.html.includes('<nav>'));
+		assert.ok(englishGuideDocument.html.includes('<ol>'));
 	});
 
 	test('Agent map generation writes overview and knowledge catalog with explicit gaps', () => {
