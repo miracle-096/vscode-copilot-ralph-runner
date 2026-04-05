@@ -5,5 +5,8 @@
   "US-004": "completed",
   "US-005": "completed",
   "US-006": "completed",
-  "US-007": "inprogress"
+  "US-007": "completed",
+  "US-008": "completed",
+  "US-009": "pendingRelease",
+  "US-010": "inprogress"
 }
