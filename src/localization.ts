@@ -35,7 +35,15 @@ export interface HarnessMenuDefinition {
 	rootId: string;
 	nodes: Record<string, HarnessMenuNode>;
 	customizeOrder: {
-		placeholder: (currentStep: number, totalSteps: number) => string;
+		title: string;
+		description: string;
+		instructions: string;
+		unsavedChanges: string;
+		save: string;
+		cancel: string;
+		reset: string;
+		invalidOrder: string;
+		positionLabel: (currentStep: number, totalSteps: number) => string;
 		saved: string;
 	};
 }
@@ -409,7 +417,15 @@ export interface HarnessLanguagePack {
 		rootId: string;
 		nodes: Record<string, HarnessMenuNode>;
 		customizeOrder: {
-			placeholder: (currentStep: number, totalSteps: number) => string;
+			title: string;
+			description: string;
+			instructions: string;
+			unsavedChanges: string;
+			save: string;
+			cancel: string;
+			reset: string;
+			invalidOrder: string;
+			positionLabel: (currentStep: number, totalSteps: number) => string;
 			saved: string;
 		};
 	};
@@ -882,7 +898,15 @@ const CHINESE_PACK: HarnessLanguagePack = {
 			},
 		},
 		customizeOrder: {
-			placeholder: (currentStep, totalSteps) => `自定义菜单排序：选择第 ${currentStep}/${totalSteps} 个一级菜单`,
+			title: '自定义一级菜单排序',
+			description: '拖拽卡片以调整 Harness Runner 一级菜单的显示顺序。',
+			instructions: '拖拽卡片后点击“保存”会立即写入工作区设置并刷新主菜单；点击“取消”或直接关闭窗口不会保存。',
+			unsavedChanges: '检测到未保存的排序变更。',
+			save: '保存',
+			cancel: '取消',
+			reset: '恢复当前顺序',
+			invalidOrder: 'HARNESS：无法保存一级菜单排序，拖拽结果无效。',
+			positionLabel: (currentStep, totalSteps) => `第 ${currentStep} 项，共 ${totalSteps} 项`,
 			saved: 'HARNESS：一级菜单排序已更新。',
 		},
 	},
@@ -1359,7 +1383,15 @@ const ENGLISH_PACK: HarnessLanguagePack = {
 			},
 		},
 		customizeOrder: {
-			placeholder: (currentStep, totalSteps) => `Customize menu order: choose top-level item ${currentStep}/${totalSteps}`,
+			title: 'Customize Top-Level Menu Order',
+			description: 'Drag cards to rearrange the top-level Harness Runner menu groups.',
+			instructions: 'Drag cards into a new order, then choose Save to write workspace settings and refresh the main menu immediately. Cancel or closing the editor does not save changes.',
+			unsavedChanges: 'There are unsaved menu order changes.',
+			save: 'Save',
+			cancel: 'Cancel',
+			reset: 'Reset Current Order',
+			invalidOrder: 'HARNESS: Unable to save the top-level menu order because the drag result was invalid.',
+			positionLabel: (currentStep, totalSteps) => `Item ${currentStep} of ${totalSteps}`,
 			saved: 'HARNESS: Top-level menu order updated.',
 		},
 	},

@@ -153,6 +153,11 @@ import {
 	getHarnessLanguagePack,
 	normalizeHarnessLanguage,
 } from './localization';
+import {
+	buildHarnessMenuOrderEditorHtml,
+	HarnessMenuOrderEditorItem,
+	normalizeHarnessMenuOrderEditorPayload,
+} from './menuOrderEditor';
 
 function getConfig() {
 	const cfg = vscode.workspace.getConfiguration('harness-runner');
@@ -258,11 +263,6 @@ export interface HarnessMenuQuickPickEntry extends vscode.QuickPickItem {
 	menuItem: HarnessMenuItem;
 }
 
-interface HarnessMenuOrderQuickPickEntry extends vscode.QuickPickItem {
-	target: string;
-	menuItem: Extract<HarnessMenuItem, { kind: 'submenu'; }>;
-}
-
 function getHarnessMenuNode(languagePack: HarnessLanguagePack, menuId: string): HarnessMenuNode {
 	const node = languagePack.menu.nodes[menuId];
 	if (!node) {
@@ -333,6 +333,89 @@ export function buildHarnessMenuQuickPickItems(languagePack: HarnessLanguagePack
 		description: menuItem.description,
 		menuItem,
 	}));
+}
+
+function stripHarnessMenuLabelDecoration(label: string): string {
+	return label.replace(/\$\([^)]+\)\s*/g, '').trim();
+}
+
+function buildHarnessRootMenuOrderEditorItems(languagePack: HarnessLanguagePack): HarnessMenuOrderEditorItem[] {
+	return buildHarnessMenuQuickPickItems(languagePack, languagePack.menu.rootId)
+		.flatMap(entry => entry.menuItem.kind === 'submenu'
+			? [{
+				target: entry.menuItem.target,
+				label: stripHarnessMenuLabelDecoration(entry.label),
+				description: entry.description ?? '',
+			}]
+			: []);
+}
+
+async function showHarnessMenuOrderEditor(
+	languagePack: HarnessLanguagePack,
+	items: readonly HarnessMenuOrderEditorItem[],
+): Promise<string[] | undefined> {
+	const panel = vscode.window.createWebviewPanel(
+		'harnessMenuOrderEditor',
+		languagePack.menu.customizeOrder.title,
+		vscode.ViewColumn.Active,
+		{
+			enableScripts: true,
+			retainContextWhenHidden: false,
+		}
+	);
+	panel.iconPath = new vscode.ThemeIcon('list-ordered');
+	panel.webview.html = buildHarnessMenuOrderEditorHtml({
+		cspSource: panel.webview.cspSource,
+		items,
+		copy: {
+			title: languagePack.menu.customizeOrder.title,
+			description: languagePack.menu.customizeOrder.description,
+			instructions: languagePack.menu.customizeOrder.instructions,
+			unsavedChanges: languagePack.menu.customizeOrder.unsavedChanges,
+			save: languagePack.menu.customizeOrder.save,
+			cancel: languagePack.menu.customizeOrder.cancel,
+			reset: languagePack.menu.customizeOrder.reset,
+			positionLabel: languagePack.menu.customizeOrder.positionLabel,
+		},
+	});
+
+	const validTargets = items.map(item => item.target);
+	return new Promise<string[] | undefined>(resolve => {
+		let settled = false;
+		const disposables: vscode.Disposable[] = [];
+		const finish = (value: string[] | undefined) => {
+			if (settled) {
+				return;
+			}
+			settled = true;
+			while (disposables.length > 0) {
+				disposables.pop()?.dispose();
+			}
+			resolve(value);
+		};
+
+		disposables.push(panel.onDidDispose(() => finish(undefined)));
+		disposables.push(panel.webview.onDidReceiveMessage(message => {
+			if (message?.type === 'cancel') {
+				finish(undefined);
+				panel.dispose();
+				return;
+			}
+
+			if (message?.type !== 'save') {
+				return;
+			}
+
+			const orderedTargets = normalizeHarnessMenuOrderEditorPayload(message.order, validTargets);
+			if (!orderedTargets) {
+				void vscode.window.showErrorMessage(languagePack.menu.customizeOrder.invalidOrder);
+				return;
+			}
+
+			finish(orderedTargets);
+			panel.dispose();
+		}));
+	});
 }
 
 export function resolveHarnessMenuSelection(
@@ -681,6 +764,26 @@ export function persistWorkspacePinnedRunnerSettingsFile(
 	next['harness-runner.enableReviewerLoop'] = settings.enableReviewerLoop;
 	next['harness-runner.reviewPassingScore'] = settings.reviewPassingScore;
 	next['harness-runner.maxAutoRefactorRounds'] = settings.maxAutoRefactorRounds;
+
+	writeJsonFile(settingsPath, next);
+	return settingsPath;
+}
+
+export function persistWorkspacePinnedRootMenuOrderFile(
+	workspaceRoot: string,
+	orderedTargets: readonly string[],
+): string {
+	const settingsDir = path.join(workspaceRoot, '.vscode');
+	const settingsPath = path.join(settingsDir, 'settings.json');
+	if (!fs.existsSync(settingsDir)) {
+		fs.mkdirSync(settingsDir, { recursive: true });
+	}
+
+	const current = readJsonFile<Record<string, unknown>>(settingsPath) ?? {};
+	const next: Record<string, unknown> = { ...current };
+	delete next['ralph-runner.rootMenuOrder'];
+	delete next['harness-runner.rootMenuOrder'];
+	next['harness-runner.rootMenuOrder'] = [...orderedTargets];
 
 	writeJsonFile(settingsPath, next);
 	return settingsPath;
@@ -4983,31 +5086,20 @@ async function showCommandMenu(): Promise<void> {
 
 async function customizeMenuOrder(): Promise<void> {
 	const languagePack = getLanguagePack();
-	const remainingEntries: HarnessMenuOrderQuickPickEntry[] = buildHarnessMenuQuickPickItems(languagePack, languagePack.menu.rootId)
-		.flatMap(entry => entry.menuItem.kind === 'submenu'
-			? [{
-				label: entry.label,
-				description: entry.description,
-				target: entry.menuItem.target,
-				menuItem: entry.menuItem,
-			}]
-			: []);
-	const orderedTargets: string[] = [];
-
-	while (remainingEntries.length > 0) {
-		const selection = await vscode.window.showQuickPick(remainingEntries, {
-			placeHolder: languagePack.menu.customizeOrder.placeholder(orderedTargets.length + 1, getHarnessRootMenuIds(languagePack).length),
-			matchOnDescription: true,
-		});
-		if (!selection) {
-			return;
-		}
-
-		orderedTargets.push(selection.target);
-		const selectionIndex = remainingEntries.findIndex(entry => entry.target === selection.target);
-		remainingEntries.splice(selectionIndex, 1);
+	const workspaceRoot = getWorkspaceRoot();
+	if (!workspaceRoot) {
+		vscode.window.showWarningMessage(languagePack.common.noWorkspaceFolder);
+		return;
+	}
+	const orderedTargets = await showHarnessMenuOrderEditor(
+		languagePack,
+		buildHarnessRootMenuOrderEditorItems(languagePack),
+	);
+	if (!orderedTargets) {
+		return;
 	}
 
+	persistWorkspacePinnedRootMenuOrderFile(workspaceRoot, orderedTargets);
 	await vscode.workspace.getConfiguration('harness-runner').update(
 		HARNESS_ROOT_MENU_ORDER_SETTING,
 		orderedTargets,

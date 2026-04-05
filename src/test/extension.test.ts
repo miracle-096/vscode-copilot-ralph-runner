@@ -120,11 +120,16 @@ import {
 } from '../runLog';
 import { buildHarnessHelpDocument, getHarnessHelpContent } from '../helpManual';
 import { getHarnessLanguagePack } from '../localization';
+import {
+	buildHarnessMenuOrderEditorHtml,
+	normalizeHarnessMenuOrderEditorPayload,
+} from '../menuOrderEditor';
 import { parseTaskSignalStatus } from '../taskStatus';
 import {
 	buildHarnessMenuQuickPickItems,
 	getReplayStoryRange,
 	normalizeHarnessRootMenuOrder,
+	persistWorkspacePinnedRootMenuOrderFile,
 	resolveHarnessMenuSelection,
 	normalizeReviewerAutoRefactorLimit,
 	normalizeReviewerLoopEnabled,
@@ -440,6 +445,101 @@ suite('Extension Test Suite', () => {
 			normalizeHarnessRootMenuOrder(['settings', 'invalid', 'planning', 'settings'], ['planning', 'constraints', 'execution', 'settings']),
 			['settings', 'planning', 'constraints', 'execution'],
 		);
+	});
+
+	test('menu order editor payload requires the full unique submenu set', () => {
+		assert.deepStrictEqual(
+			normalizeHarnessMenuOrderEditorPayload(
+				['settings', 'planning', 'constraints', 'execution'],
+				['planning', 'constraints', 'execution', 'settings'],
+			),
+			['settings', 'planning', 'constraints', 'execution'],
+		);
+		assert.strictEqual(
+			normalizeHarnessMenuOrderEditorPayload(
+				['settings', 'planning', 'execution'],
+				['planning', 'constraints', 'execution', 'settings'],
+			),
+			undefined,
+		);
+		assert.strictEqual(
+			normalizeHarnessMenuOrderEditorPayload(
+				['settings', 'planning', 'planning', 'execution'],
+				['planning', 'constraints', 'execution', 'settings'],
+			),
+			undefined,
+		);
+	});
+
+	test('menu order editor html includes drag-and-drop save controls', () => {
+		const html = buildHarnessMenuOrderEditorHtml({
+			cspSource: 'vscode-webview://test',
+			items: [
+				{ target: 'planning', label: '规划与入门', description: '规划入口' },
+				{ target: 'settings', label: '设置', description: '设置入口' },
+			],
+			copy: {
+				title: '自定义一级菜单排序',
+				description: '拖拽卡片以调整顺序。',
+				instructions: '拖拽后点击保存。',
+				unsavedChanges: '有未保存变更。',
+				save: '保存',
+				cancel: '取消',
+				reset: '恢复当前顺序',
+				positionLabel: (current, total) => `第 ${current} 项，共 ${total} 项`,
+			},
+		});
+
+		assert.strictEqual(html.includes('draggable = true'), true);
+		assert.strictEqual(html.includes("type: 'save'"), true);
+		assert.strictEqual(html.includes('orderList'), true);
+		assert.strictEqual(html.includes('规划与入门'), true);
+	});
+
+	test('root menu order persistence writes workspace settings and clears legacy keys', () => {
+		const workspaceRoot = fs.mkdtempSync(path.join(os.tmpdir(), 'harness-root-menu-order-'));
+		const vscodeDir = path.join(workspaceRoot, '.vscode');
+		fs.mkdirSync(vscodeDir, { recursive: true });
+		const settingsPath = path.join(vscodeDir, 'settings.json');
+		fs.writeFileSync(settingsPath, JSON.stringify({
+			'ralph-runner.rootMenuOrder': ['execution'],
+			'harness-runner.language': 'Chinese',
+		}, null, 2));
+
+		const persistedPath = persistWorkspacePinnedRootMenuOrderFile(workspaceRoot, ['settings', 'planning', 'constraints', 'execution']);
+		assert.strictEqual(persistedPath, settingsPath);
+
+		const persisted = JSON.parse(fs.readFileSync(settingsPath, 'utf8')) as Record<string, unknown>;
+		assert.deepStrictEqual(persisted['harness-runner.rootMenuOrder'], ['settings', 'planning', 'constraints', 'execution']);
+		assert.strictEqual('ralph-runner.rootMenuOrder' in persisted, false);
+		assert.strictEqual(persisted['harness-runner.language'], 'Chinese');
+	});
+
+	test('root menu order restores persisted submenu sequence when configuration is reloaded', () => {
+		const originalGetConfiguration = vscode.workspace.getConfiguration;
+		(vscode.workspace as typeof vscode.workspace & {
+			getConfiguration: typeof vscode.workspace.getConfiguration;
+		}).getConfiguration = ((section?: string) => {
+			if (section === 'harness-runner') {
+				return {
+					get: (key: string) => key === 'rootMenuOrder'
+						? ['settings', 'planning', 'execution', 'constraints']
+						: undefined,
+				} as vscode.WorkspaceConfiguration;
+			}
+			return originalGetConfiguration(section);
+		}) as typeof vscode.workspace.getConfiguration;
+
+		try {
+			const englishPack = getHarnessLanguagePack('English');
+			const rootSubmenus = buildHarnessMenuQuickPickItems(englishPack, englishPack.menu.rootId)
+				.flatMap(item => item.menuItem.kind === 'submenu' ? [item.menuItem.target] : []);
+			assert.deepStrictEqual(rootSubmenus, ['settings', 'planning', 'execution', 'constraints']);
+		} finally {
+			(vscode.workspace as typeof vscode.workspace & {
+				getConfiguration: typeof vscode.workspace.getConfiguration;
+			}).getConfiguration = originalGetConfiguration;
+		}
 	});
 
 	test('menu navigation resolves deeper submenu entry, back navigation, and commands', () => {

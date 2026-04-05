@@ -168,7 +168,9 @@ function getEnglishHelpContent(kind: HarnessHelpDocumentKind): HarnessHelpConten
 				{
 					title: 'What You Get In The Menu',
 					paragraphs: [
-						'The status bar button and Alt+R open the Harness menu. Constraint-related actions now live under a dedicated Harness Constraint Settings submenu so run checks, project constraints, design notes, story context, and Agent Map stay grouped together.'
+						'The status bar button and Alt+R open the Harness menu. Constraint-related actions now live under a dedicated Harness Constraint Settings submenu so run checks, project constraints, design notes, story context, and Agent Map stay grouped together.',
+						'Settings-related actions now live under a dedicated Settings submenu so opening VS Code settings and customizing the top-level menu order stay grouped together without crowding the root menu.',
+						'The menu-order editor uses drag-and-drop cards, and only writes the new order after you explicitly save.'
 					]
 				}
 			]
@@ -203,6 +205,8 @@ function getEnglishHelpContent(kind: HarnessHelpDocumentKind): HarnessHelpConten
 					'Open Harness Constraint Settings and initialize project constraints before large execution passes.',
 					'Stay in Harness Constraint Settings to add story context or refresh the source-context index, and then generate Agent Map when module and rule discovery matters.',
 					'Add UI Design Notes only for stories that truly need design-sensitive guidance.',
+					'Open Settings when you need to jump into the VS Code settings surface or customize the top-level menu order for the current workspace.',
+					'Use drag-and-drop in the menu-order editor, then save only after the previewed order looks correct.',
 					'Configure run checks, approval mode, and Reviewer scoring settings if your team wants stronger governance before execution.',
 					'Use Start, Show Status, Review Approval, and Reset Story as the operational loop.'
 				]
