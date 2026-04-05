@@ -1,88 +1,126 @@
 {
   "storyId": "US-004",
   "title": "重命名命令标题与聊天指令入口",
-  "source": "copilot",
-  "summary": "将命令面板、状态栏菜单、聊天参与者入口和 slash command 的用户可见品牌入口统一到 Harness/harness，并补齐对应的菜单与命令映射校验。",
+  "summary": "在既有 Harness/harness 运行时重命名基础上，本轮补齐了 README 与 Agent Map 的命令入口标题对齐，并新增一条独立通过的回归测试来锁定 command id 映射与用户可见入口文案。",
   "changedFiles": [
     "README.md",
-    "package.json",
     "src/agentMap.ts",
-    "src/extension.ts",
-    "src/helpManual.ts",
-    "src/localization.ts",
     "src/test/extension.test.ts",
-    "images/harness_runner.ico"
+    ".harness-runner/memory/US-004.json",
+    ".harness-runner/checkpoints/US-004.checkpoint.json",
+    ".harness-runner/evidence/US-004.evidence.json",
+    ".harness-runner/story-status.json"
   ],
   "changedModules": [
-    "扩展贡献点与命令标题",
-    "聊天参与者与 slash command 入口",
-    "本地化菜单结构与状态文案",
-    "帮助文档与操作手册",
-    "命令/聊天入口测试覆盖"
-  ],
-  "keyDecisions": [
-    "保留既有 command id 与 chat participant id，不改触发标识，只替换用户可见标题、菜单标签和聊天入口命名。",
-    "将故事源上下文入口统一重命名为“为故事添加上下文”，避免继续暴露旧的预览命名和 Ralph 品牌。",
-    "把聊天参与者名称保持为 harness，slash command 保持为 harness-spec，并将图标资源名同步迁移到 harness_runner.ico。",
-    "通过本地化菜单节点集中管理用户可见菜单标签，减少后续再次重命名时在 extension.ts 中散落硬编码。"
-  ],
-  "constraintsConfirmed": [
-    "未修改 prd.json。",
-    "提交信息需使用中文。",
-    "命令、状态和入口变更同步更新 src/test/extension.test.ts。",
-    "运行期主工件目录仍保持 .harness-runner。"
+    "命令入口文档",
+    "Agent Map runbook",
+    "命令与聊天入口回归测试",
+    "执行工件与完成信号"
   ],
   "architectureNotes": [
-    "命令 id、聊天指令名和用户可见标题被显式拆分，降低未来只改展示文案时误伤触发契约的风险。",
-    "可见菜单结构由 src/localization.ts 统一定义，extension.ts 只负责导航与执行，职责边界较清晰。",
-    "帮助文档、README 和 agent map 仅更新入口命名与路径提示，没有把运行逻辑耦合进文档模块。",
-    "回滚时可按 package.json 与 localization/extension/helpManual/test 这组文件整体回退，变更面相对集中。"
+    "运行时重命名主链路仍集中在 package.json、src/localization.ts 和 src/extension.ts；本轮没有扩大该实现面，只补用户入口文档和验证层。",
+    "README 与 src/agentMap.ts 只同步实际命令标题与聊天入口，不引入新的运行逻辑，保持文档层与实现层职责分离。",
+    "命令 id 与展示名解耦仍是主要兼容与回滚 seam；若要回滚运行时入口，应继续把 package.json、src/localization.ts、src/extension.ts、src/test/extension.test.ts 和 images/harness_runner.ico 视为同一文件簇。",
+    "新增测试把 manifest、菜单、状态栏、聊天入口和入口文档放进同一条断言，降低后续单点改名导致的表层漂移风险。"
+  ],
+  "keyDecisions": [
+    "继续保留既有 command id 与 chat participant id，只约束用户可见标题、菜单标签和聊天入口名称。",
+    "将本轮文档改动收敛到 README 和 Agent Map 中与实际命令标题直接相关的入口文字，不扩展到全仓品牌叙事清理。",
+    "新增一条定向测试，集中校验 package.json、状态栏文案、菜单标签、聊天参与者、slash command、README 和 Agent Map 的入口名称一致性。"
+  ],
+  "patternsUsed": [],
+  "constraintsConfirmed": [
+    "未修改 prd.json。",
+    "提交信息需使用中文 conventional commit。",
+    "完成信号继续写入 .harness-runner/story-status.json。",
+    "运行期主工件目录仍保持 .harness-runner。"
   ],
   "testsRun": [
-    {
-      "command": "npm run compile",
-      "status": "passed"
-    },
-    {
-      "command": "node -e runtime-surface-check",
-      "status": "passed",
-      "details": "验证 HARNESS 命令标题、聊天参与者 harness 和 slash command harness-spec 均已就位。"
-    },
-    {
-      "command": "npm test",
-      "status": "failed",
-      "details": "存在与本故事无关的既有失败：Project constraint initialization writes readable artifacts for prompt injection，期望标题为 Harness Project Constraints，实际为 Harness 项目约束。"
-    }
+    "2026-04-05: npm run compile -> passed.",
+    "2026-04-05: npm test -- --grep \"user-visible Harness entry labels keep command ids stable and avoid legacy Ralph titles\" -> passed."
   ],
   "risks": [
-    "全量测试仍有 1 个与项目约束标题语言相关的既有失败，未在本故事中处理。",
-    "README 仍保留部分非运行时 Ralph 历史文案，本故事只覆盖命令标题、菜单、状态栏和聊天入口。"
+    "全量 npm test 的既有项目约束标题语言失败仍未在本故事处理范围内。",
+    "README 仍保留部分非命令入口的 RALPH 历史叙述与仓库 URL，超出本故事的命令标题/聊天入口责任面。"
   ],
   "followUps": [
-    "单独处理项目约束标题语言不一致导致的测试失败。",
-    "如需彻底清理仓库品牌残留，可后续单开故事处理 README、仓库 URL 和测试临时目录命名中的 Ralph 字样。"
+    "单独修复项目约束标题语言不一致导致的全量测试失败。",
+    "如需继续推进品牌统一，单开故事清理 README 叙事文案、仓库 URL 与测试临时目录中的 Ralph 历史命名。"
   ],
   "searchKeywords": [
     "HARNESS: 为故事添加上下文",
     "HARNESS: 审批故事",
+    "HARNESS: 显示菜单",
     "harness-spec",
     "chatParticipants",
-    "status bar menu",
     "command titles"
   ],
+  "relatedStories": [],
   "reviewSummary": {
-    "acceptanceCriteriaCovered": [
-      "命令面板、状态栏菜单和聊天参与者使用 Harness/harness。",
-      "聊天参与者名称与 slash command 不再暴露 ralph 旧命名。",
-      "命令标题重命名后仍保持原 command id 触发映射。"
+    "totalScore": 100,
+    "maxScore": 100,
+    "passingScore": 65,
+    "passed": true,
+    "reviewPass": 1,
+    "maxReviewerPasses": 3,
+    "maxAutoRefactorRounds": 2,
+    "dimensions": [
+      {
+        "dimension": "architectureConsistency",
+        "label": "Architecture Consistency",
+        "score": 25,
+        "summary": "Reviewer loop disabled in workspace settings.",
+        "issues": [],
+        "recommendations": [
+          "Reviewer loop disabled in workspace settings."
+        ]
+      },
+      {
+        "dimension": "acceptanceCoverage",
+        "label": "Acceptance Coverage",
+        "score": 25,
+        "summary": "Reviewer loop disabled in workspace settings.",
+        "issues": [],
+        "recommendations": [
+          "Reviewer loop disabled in workspace settings."
+        ]
+      },
+      {
+        "dimension": "changeScopeControl",
+        "label": "Change Scope Control",
+        "score": 25,
+        "summary": "Reviewer loop disabled in workspace settings.",
+        "issues": [],
+        "recommendations": [
+          "Reviewer loop disabled in workspace settings."
+        ]
+      },
+      {
+        "dimension": "verifiability",
+        "label": "Verifiability",
+        "score": 25,
+        "summary": "Reviewer loop disabled in workspace settings.",
+        "issues": [],
+        "recommendations": [
+          "Reviewer loop disabled in workspace settings."
+        ]
+      }
     ],
-    "residualConcern": "全量测试未完全通过，但失败点与本故事改动面不直接相关。"
+    "findings": [],
+    "recommendations": [
+      "Reviewer loop disabled in workspace settings."
+    ],
+    "refactorPerformed": false,
+    "reviewedAt": "2026-04-05T05:04:47.260Z",
+    "source": "synthesized"
   },
   "reviewLoop": {
-    "recommended": true,
-    "focus": [
-      "检查 README 与帮助文档中的入口命名是否与实际命令完全一致。",
-      "复核 package.json 中聊天参与者与命令贡献点是否满足发布面要求。"
-    ]
-  }
+    "reviewerPasses": 1,
+    "autoRefactorRounds": 0,
+    "maxAutoRefactorRounds": 2,
+    "endedReason": "passed",
+    "lastReviewedAt": "2026-04-05T05:04:47.260Z"
+  },
+  "createdAt": "2026-04-05T05:04:47.153Z",
+  "source": "copilot"
 }

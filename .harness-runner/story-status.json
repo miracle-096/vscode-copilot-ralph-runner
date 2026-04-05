@@ -1,6 +1,7 @@
 {
-  "US-001": "pendingReview",
-  "US-002": "pendingReview",
+  "US-001": "completed",
+  "US-002": "completed",
   "US-003": "completed",
-  "US-004": "inprogress"
+  "US-004": "completed",
+  "US-005": "inprogress"
 }

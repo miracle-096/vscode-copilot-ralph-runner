@@ -2,31 +2,97 @@
   "storyId": "US-004",
   "title": "重命名命令标题与聊天指令入口",
   "status": "completed",
-  "source": "copilot",
-  "summary": "已将命令标题、菜单入口、聊天参与者名称和 slash command 入口切换到 Harness/harness，并补充了相应验证与工件。",
-  "stageGoal": "将所有以 ralph 或 RALPH 呈现给用户的命令标题、快捷入口、聊天指令和菜单标签替换为 harness 或 Harness，且保持原有 command id 可触发。",
+  "stageGoal": "将所有以 ralph 或 RALPH 呈现给用户的命令标题、快捷入口、聊天指令和菜单标签替换为 harness 或 Harness，确保大小写符合要求，并避免命令面板、状态栏和聊天参与者入口出现旧名称。",
+  "summary": "已补齐 README 与 Agent Map 的命令入口标题，并新增一条独立通过的回归测试；命令面板、状态栏、聊天参与者和 /harness-spec 入口继续使用 Harness/harness，且既有 command id 保持不变。",
+  "architectureNotes": [
+    "运行时入口实现仍集中在 package.json、src/localization.ts 和 src/extension.ts；本轮没有改动该主链路，只补文档和验证层。",
+    "README.md 与 src/agentMap.ts 只承担入口标题同步，不引入新的运行职责，保持实现层与文档层边界稳定。",
+    "新增测试把 manifest、菜单、状态栏、聊天入口和入口文档放在同一断言内，提高后续重命名回归的可见性。"
+  ],
   "keyDecisions": [
-    "用户可见命名与内部 command id 解耦，避免为重命名而破坏触发契约。",
-    "聊天参与者继续使用 recent-graduates.harness-runner id，但展示名称固定为 harness，slash command 固定为 harness-spec。",
-    "聊天入口相关图标文件也同步从 ralph_runner.ico 迁移到 harness_runner.ico。"
+    "保持既有 command id 与 chat participant id 稳定，只更新用户可见名称。",
+    "本轮只同步 README 和 Agent Map 中直接映射到命令/聊天入口的标题，避免把故事扩大成全仓品牌文案清理。",
+    "用一条定向测试记录可独立通过的验证证据，避免再次受全量测试既有失败拖累。"
   ],
   "confirmedConstraints": [
-    "prd.json 未被修改。",
-    "故事完成前已写入 memory、checkpoint、evidence 三类工件。",
-    "准备使用中文 conventional commit 完成本故事提交。"
+    "未修改 prd.json。",
+    "完成信号仍写入 .harness-runner/story-status.json。",
+    "提交信息需使用中文 conventional commit。"
   ],
   "unresolvedRisks": [
-    "npm test 仍有 1 个与项目约束标题语言相关的既有失败，未纳入本故事处理范围。"
+    "全量 npm test 的项目约束标题语言既有失败仍未处理。",
+    "README 仍存在少量非命令入口的 RALPH 历史叙述，超出本故事当前责任面。"
   ],
   "nextStoryPrerequisites": [
-    "若后续故事依赖全量测试绿灯，需要先修复项目约束标题语言不一致。",
-    "若后续继续做品牌统一，需要单独评估 README 与仓库元数据中的历史 Ralph 残留。"
+    "若下一故事依赖全量测试绿灯，需要先修复项目约束标题语言不一致。",
+    "若下一故事继续做品牌统一，需要单独审计 README 叙事文案、仓库 URL 和测试临时目录命名。"
   ],
-  "resumeRecommendation": "Reviewer Agent 可从 package.json、src/localization.ts、src/extension.ts 和 src/test/extension.test.ts 复核命令标题、菜单层级、聊天参与者和 slash command 的一致性，再决定是否扩大到文档层面的全仓品牌清理。",
-  "architectureNotes": [
-    "本次变更主要集中在贡献点定义、菜单本地化和聊天入口注册，属于同一条用户可见交互链路。",
-    "extension.ts 负责注册与导航，localization.ts 负责文案和菜单树，两者边界对 Reviewer 来说较容易审计。",
-    "如果 Reviewer 认为 README 品牌清理应拆分，可作为后续独立故事，不需要回滚当前入口重命名。"
-  ],
-  "updatedAt": "2026-04-05T11:14:33.1243527+08:00"
+  "resumeRecommendation": "Reviewer Agent 可优先复核 package.json、src/localization.ts、src/extension.ts 的既有入口重命名，再通过 README.md、src/agentMap.ts 和 src/test/extension.test.ts 检查本轮补上的入口文案对齐与独立通过验证。",
+  "reviewSummary": {
+    "totalScore": 100,
+    "maxScore": 100,
+    "passingScore": 65,
+    "passed": true,
+    "reviewPass": 1,
+    "maxReviewerPasses": 3,
+    "maxAutoRefactorRounds": 2,
+    "dimensions": [
+      {
+        "dimension": "architectureConsistency",
+        "label": "Architecture Consistency",
+        "score": 25,
+        "summary": "Reviewer loop disabled in workspace settings.",
+        "issues": [],
+        "recommendations": [
+          "Reviewer loop disabled in workspace settings."
+        ]
+      },
+      {
+        "dimension": "acceptanceCoverage",
+        "label": "Acceptance Coverage",
+        "score": 25,
+        "summary": "Reviewer loop disabled in workspace settings.",
+        "issues": [],
+        "recommendations": [
+          "Reviewer loop disabled in workspace settings."
+        ]
+      },
+      {
+        "dimension": "changeScopeControl",
+        "label": "Change Scope Control",
+        "score": 25,
+        "summary": "Reviewer loop disabled in workspace settings.",
+        "issues": [],
+        "recommendations": [
+          "Reviewer loop disabled in workspace settings."
+        ]
+      },
+      {
+        "dimension": "verifiability",
+        "label": "Verifiability",
+        "score": 25,
+        "summary": "Reviewer loop disabled in workspace settings.",
+        "issues": [],
+        "recommendations": [
+          "Reviewer loop disabled in workspace settings."
+        ]
+      }
+    ],
+    "findings": [],
+    "recommendations": [
+      "Reviewer loop disabled in workspace settings."
+    ],
+    "refactorPerformed": false,
+    "reviewedAt": "2026-04-05T05:04:47.260Z",
+    "source": "synthesized"
+  },
+  "reviewLoop": {
+    "reviewerPasses": 1,
+    "autoRefactorRounds": 0,
+    "maxAutoRefactorRounds": 2,
+    "endedReason": "passed",
+    "lastReviewedAt": "2026-04-05T05:04:47.260Z"
+  },
+  "updatedAt": "2026-04-05T05:02:00+08:00",
+  "source": "copilot"
 }

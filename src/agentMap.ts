@@ -288,10 +288,10 @@ function buildRunbook(projectConstraints: GeneratedProjectConstraints): AgentMap
 				'.harness-runner/checkpoints/US-xxx.checkpoint.json',
 			],
 			commands: [
-				'Harness Runner: 初始化项目约束',
-				'Harness Runner: 为故事添加上下文',
-				'Harness Runner: 刷新源码上下文索引',
-				'Harness Runner: 生成 Agent Map',
+				'HARNESS: 初始化项目约束',
+				'HARNESS: 为故事添加上下文',
+				'HARNESS: 刷新源码上下文索引',
+				'HARNESS: 生成 Agent Map',
 			],
 			outputs: ['Confirmed scope, reusable modules, allowed paths, and missing knowledge gaps.'],
 		},
@@ -319,7 +319,7 @@ function buildRunbook(projectConstraints: GeneratedProjectConstraints): AgentMap
 			title: 'Reset',
 			summary: 'End the story by clearing implicit session assumptions, relying on persisted artifacts, and using reset only for explicit recovery or reruns.',
 			inputs: ['Latest structured artifacts', 'Completion signal expectations'],
-			commands: ['Harness Runner: 重置故事', 'Update the relevant entry in .harness-runner/story-status.json when the story is truly complete'],
+			commands: ['HARNESS: 重置故事', 'Update the relevant entry in .harness-runner/story-status.json when the story is truly complete'],
 			outputs: ['Fresh next-session handoff with no hidden state dependency.'],
 		},
 	];

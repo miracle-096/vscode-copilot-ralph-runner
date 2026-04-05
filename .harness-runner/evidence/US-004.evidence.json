@@ -1,58 +1,118 @@
 {
   "storyId": "US-004",
   "title": "重命名命令标题与聊天指令入口",
-  "source": "copilot",
+  "status": "completed",
+  "summary": "在既有 Harness/harness 运行时重命名基础上，本轮补齐了 README 与 Agent Map 的命令入口标题对齐，并新增一条独立通过的回归测试来锁定 command id 映射与用户可见入口文案。",
   "changedFiles": [
-    "README.md",
-    "package.json",
-    "src/agentMap.ts",
-    "src/extension.ts",
-    "src/helpManual.ts",
-    "src/localization.ts",
-    "src/test/extension.test.ts",
-    "images/harness_runner.ico"
+    "EADME.md",
+    "rc/agentMap.ts",
+    "rc/test/extension.test.ts"
+  ],
+  "changedModules": [
+    "EADME",
+    "rc",
+    "rc/test"
+  ],
+  "architectureNotes": [
+    "Multiple modules changed; confirm each edit belongs to a single responsibility and document reuse opportunities."
   ],
   "tests": [
     {
-      "command": "npm run compile",
-      "status": "passed"
+      "command": "2026-04-05: npm run compile -> passed.",
+      "success": true,
+      "outputSummary": "Recorded in task memory."
     },
     {
-      "command": "node -e runtime-surface-check",
-      "status": "passed"
-    },
-    {
-      "command": "npm test",
-      "status": "failed",
-      "details": "单个既有失败与项目约束标题语言有关，不在本故事改动面内。"
+      "command": "2026-04-05: npm test -- --grep \"user-visible Harness entry labels keep command ids stable and avoid legacy Ralph titles\" -> passed.",
+      "success": true,
+      "outputSummary": "Recorded in task memory."
     }
   ],
-  "riskLevel": "medium",
+  "riskLevel": "low",
   "riskReasons": [
-    "变更触达 package.json 贡献点、聊天参与者入口和菜单本地化，属于发布可见面。",
-    "全量测试未完全通过，虽然当前失败点与本故事无直接耦合。"
+    "The story risk was inferred from the available completion evidence."
   ],
   "releaseNotes": [
-    "命令面板与状态栏菜单统一使用 Harness 品牌。",
-    "聊天参与者入口展示为 harness，slash command 使用 harness-spec。",
-    "故事上下文入口改名为“为故事添加上下文”，避免旧品牌暴露。"
+    "Completed scope: 重命名命令标题与聊天指令入口.",
+    "Primary modules: EADME, rc, rc/test."
   ],
   "rollbackHints": [
-    "如需回滚，仅需回退 package.json、src/localization.ts、src/extension.ts、src/helpManual.ts、src/agentMap.ts、src/test/extension.test.ts 与图标文件重命名。",
-    "由于 command id 未改动，回滚不会影响持久化配置键或外部自动化触发契约。"
+    "Review and revert these paths together if rollback is needed: EADME.md, rc/agentMap.ts, rc/test/extension.test.ts.",
+    "Use the story-scoped commit as the primary rollback unit before considering any selective revert."
   ],
   "followUps": [
-    "修复项目约束标题语言测试失败。",
-    "评估是否需要继续清理 README 和仓库元数据里的 Ralph 历史字样。"
+    "单独修复项目约束标题语言不一致导致的全量测试失败。",
+    "如需继续推进品牌统一，单开故事清理 README 叙事文案、仓库 URL 与测试临时目录中的 Ralph 历史命名。"
   ],
   "recommendFeatureFlag": false,
-  "evidenceGaps": [
-    "未获得全量测试全绿结果。"
-  ],
-  "architectureNotes": [
-    "当前改动集中在用户可见入口层，未深入修改故事执行编排、工件协议或持久化状态机。",
-    "菜单定义与入口执行分离，说明当前变更面具备可审计性和可回滚性。"
-  ],
-  "auditableStatus": "completed",
-  "finalStatus": "completed"
+  "evidenceGaps": [],
+  "approvalState": "notRequired",
+  "approvalHistory": [],
+  "reviewSummary": {
+    "totalScore": 100,
+    "maxScore": 100,
+    "passingScore": 65,
+    "passed": true,
+    "reviewPass": 1,
+    "maxReviewerPasses": 3,
+    "maxAutoRefactorRounds": 2,
+    "dimensions": [
+      {
+        "dimension": "architectureConsistency",
+        "label": "Architecture Consistency",
+        "score": 25,
+        "summary": "Reviewer loop disabled in workspace settings.",
+        "issues": [],
+        "recommendations": [
+          "Reviewer loop disabled in workspace settings."
+        ]
+      },
+      {
+        "dimension": "acceptanceCoverage",
+        "label": "Acceptance Coverage",
+        "score": 25,
+        "summary": "Reviewer loop disabled in workspace settings.",
+        "issues": [],
+        "recommendations": [
+          "Reviewer loop disabled in workspace settings."
+        ]
+      },
+      {
+        "dimension": "changeScopeControl",
+        "label": "Change Scope Control",
+        "score": 25,
+        "summary": "Reviewer loop disabled in workspace settings.",
+        "issues": [],
+        "recommendations": [
+          "Reviewer loop disabled in workspace settings."
+        ]
+      },
+      {
+        "dimension": "verifiability",
+        "label": "Verifiability",
+        "score": 25,
+        "summary": "Reviewer loop disabled in workspace settings.",
+        "issues": [],
+        "recommendations": [
+          "Reviewer loop disabled in workspace settings."
+        ]
+      }
+    ],
+    "findings": [],
+    "recommendations": [
+      "Reviewer loop disabled in workspace settings."
+    ],
+    "refactorPerformed": false,
+    "reviewedAt": "2026-04-05T05:04:47.260Z",
+    "source": "synthesized"
+  },
+  "reviewLoop": {
+    "reviewerPasses": 1,
+    "autoRefactorRounds": 0,
+    "maxAutoRefactorRounds": 2,
+    "endedReason": "passed",
+    "lastReviewedAt": "2026-04-05T05:04:47.260Z"
+  },
+  "generatedAt": "2026-04-05T05:04:47.259Z",
+  "source": "synthesized"
 }

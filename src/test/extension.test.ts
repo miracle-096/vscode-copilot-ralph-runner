@@ -217,6 +217,88 @@ suite('Extension Test Suite', () => {
 			assert.strictEqual(contributedParticipants.some(participant => participant.commands?.some(command => command.name === 'harness-spec' && command.description?.includes('auto-send the ready-to-use final version to Copilot Chat'))), true);
 	});
 
+		test('user-visible Harness entry labels keep command ids stable and avoid legacy Ralph titles', () => {
+			const packageJsonPath = path.resolve(__dirname, '../../package.json');
+			const readmePath = path.resolve(__dirname, '../../README.md');
+			const agentMapPath = path.resolve(__dirname, '../../src/agentMap.ts');
+			const packageJson = JSON.parse(fs.readFileSync(packageJsonPath, 'utf8')) as {
+				contributes?: {
+					commands?: Array<{ command: string; title: string; }>;
+					chatParticipants?: Array<{
+						id: string;
+						name: string;
+						fullName?: string;
+						commands?: Array<{ name: string; description?: string; }>;
+					}>;
+				};
+			};
+			const commandTitleById = new Map((packageJson.contributes?.commands ?? []).map(command => [command.command, command.title]));
+			const expectedCommandTitles = new Map<string, string>([
+				['harness-runner.start', 'HARNESS: 开始执行'],
+				['harness-runner.stop', 'HARNESS: 停止执行'],
+				['harness-runner.status', 'HARNESS: 查看状态'],
+				['harness-runner.reviewStoryApproval', 'HARNESS: 审批故事'],
+				['harness-runner.resetStep', 'HARNESS: 重置故事'],
+				['harness-runner.initProjectConstraints', 'HARNESS: 初始化项目约束'],
+				['harness-runner.refreshSourceContextIndex', 'HARNESS: 刷新源码上下文索引'],
+				['harness-runner.previewSourceContextRecall', 'HARNESS: 为故事添加上下文'],
+				['harness-runner.generateAgentMap', 'HARNESS: 生成 Agent Map'],
+				['harness-runner.recordDesignContext', 'HARNESS: 界面设计描述'],
+				['harness-runner.openSettings', 'HARNESS: 打开设置'],
+				['harness-runner.showMenu', 'HARNESS: 显示菜单'],
+				['harness-runner.quickStart', 'HARNESS: 生成 PRD'],
+				['harness-runner.appendUserStories', 'HARNESS: 追加用户故事'],
+			]);
+
+			for (const [commandId, expectedTitle] of expectedCommandTitles) {
+				assert.strictEqual(commandTitleById.get(commandId), expectedTitle);
+			}
+
+			const contributedParticipant = packageJson.contributes?.chatParticipants?.find(participant => participant.id === 'recent-graduates.harness-runner');
+			assert.ok(contributedParticipant);
+			assert.strictEqual(contributedParticipant?.name, 'harness');
+			assert.strictEqual(contributedParticipant?.fullName, 'Harness Runner');
+			assert.strictEqual(contributedParticipant?.commands?.some(command => command.name === 'harness-spec'), true);
+
+			const chinesePack = getHarnessLanguagePack('Chinese');
+			const constraintsItems = buildHarnessMenuQuickPickItems(chinesePack, 'constraints');
+			assert.strictEqual(chinesePack.statusBar.idleText.includes('Harness Runner'), true);
+			assert.strictEqual(chinesePack.statusBar.runningText.includes('Harness Runner'), true);
+			assert.strictEqual(chinesePack.statusBar.pendingApprovalsText(2).includes('Harness Runner'), true);
+			assert.strictEqual(constraintsItems.some(item => item.label.includes('RALPH')), false);
+			assert.strictEqual(constraintsItems.some(item => item.label.includes('为故事添加上下文')), true);
+			assert.strictEqual(chinesePack.chatSpec.missingConstraints.includes('@harness /harness-spec'), true);
+
+			const readme = fs.readFileSync(readmePath, 'utf8');
+			const agentMapSource = fs.readFileSync(agentMapPath, 'utf8');
+			const legacyReadmeLabels = [
+				'`RALPH: 开始执行`',
+				'`RALPH: 停止执行`',
+				'`RALPH: 查看状态`',
+				'`RALPH: 审批高风险故事`',
+				'`RALPH: 重置故事`',
+				'`RALPH: 初始化项目约束`',
+				'`RALPH: 刷新源码上下文索引`',
+				'`RALPH: 界面设计描述`',
+				'`RALPH: 生成 PRD`',
+				'`RALPH: 追加用户故事`',
+				'`RALPH: 打开设置`',
+				'`RALPH: 显示菜单`',
+			];
+			for (const legacyLabel of legacyReadmeLabels) {
+				assert.strictEqual(readme.includes(legacyLabel), false);
+			}
+			assert.strictEqual(readme.includes('`HARNESS: 为故事添加上下文`'), true);
+			assert.strictEqual(readme.includes('`HARNESS: 审批故事`'), true);
+			assert.strictEqual(readme.includes('`@harness /harness-spec <你的需求>`'), true);
+			assert.strictEqual(agentMapSource.includes('HARNESS: 初始化项目约束'), true);
+			assert.strictEqual(agentMapSource.includes('HARNESS: 为故事添加上下文'), true);
+			assert.strictEqual(agentMapSource.includes('HARNESS: 刷新源码上下文索引'), true);
+			assert.strictEqual(agentMapSource.includes('HARNESS: 生成 Agent Map'), true);
+			assert.strictEqual(agentMapSource.includes('HARNESS: 重置故事'), true);
+			assert.strictEqual(agentMapSource.includes('Harness Runner: 初始化项目约束'), false);
+		});
+
 	test('approval prompt mode resolves with workspace override first, then global fallback', () => {
 		assert.strictEqual(resolveWorkspaceApprovalPromptMode(undefined), 'default');
 		assert.strictEqual(resolveWorkspaceApprovalPromptMode({
