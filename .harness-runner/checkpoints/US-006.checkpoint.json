@@ -1,0 +1,98 @@
+{
+  "storyId": "US-006",
+  "title": "新增 Harness 约束设置二级菜单",
+  "status": "completed",
+  "stageGoal": "在一级菜单中新增 Harness 约束设置，并将配置执行检查、初始化项目约束、界面设计描述、刷新源码上下文索引、生成 Agent Map 统一放入该二级目录中，保持命令路由不变且每一级都有返回入口。",
+  "summary": "完成 US-006 的故事级收口：确认一级菜单提供 Harness 约束设置入口，并将执行检查、项目约束、设计描述、故事上下文、源码上下文索引与 Agent Map 统一收敛到该二级菜单；本次续跑补齐了菜单结构文档、刷新了 Agent Map 工件，并写入可审计的故事产物。",
+  "architectureNotes": [],
+  "keyDecisions": [
+    "沿用现有分层菜单框架，不新建额外命令或替换命令 id，只通过 constraints 子菜单组织约束相关入口。",
+    "将预览故事源上下文统一保留为命令 id harness-runner.previewSourceContextRecall，但用户可见文案维持为“为故事添加上下文”。",
+    "把知识新鲜度补救放在本次故事收口内处理，重新生成 Agent Map 工件而不是只记录 stale-warning。",
+    "在源码实现已经存在于当前基线的前提下，本次续跑重点放在文档、验证和故事产物闭环，而不是重复改写菜单生产代码。"
+  ],
+  "confirmedConstraints": [
+    "未修改 prd.json。",
+    "保持命令路由不变，仍使用既有 harness-runner.* command id。",
+    "构建与验证继续使用 npm 管理的 TypeScript/VS Code 扩展脚本。",
+    "故事完成前已写入 task memory、execution checkpoint、story evidence 和 completion signal。",
+    "Git 提交信息使用中文 conventional commit。",
+    "prd.json remained read-only during task execution."
+  ],
+  "unresolvedRisks": [
+    "US-006 的核心菜单实现与测试在本次恢复执行前已经存在于当前 HEAD，本轮主要做了文档补齐、知识工件刷新和故事级收口；Reviewer 应结合 src/localization.ts、src/extension.ts、src/helpManual.ts 与 src/test/extension.test.ts 复核实际实现面。",
+    "当前 showCommandMenu 仍是执行一个命令后退出 Quick Pick；如果未来要求执行后留在当前子菜单，需要单独变更交互语义并补新测试。"
+  ],
+  "nextStoryPrerequisites": [
+    "如果后续继续扩展约束类入口，优先继续挂到 constraints 节点下，避免重新把一级菜单压平。",
+    "如需让 README 与帮助面板展示完全相同的菜单树摘要，可后续抽取共享的菜单说明片段，减少双处维护。"
+  ],
+  "resumeRecommendation": "Resume from the next pending story after reviewing the persisted task memory and checkpoint for US-006.",
+  "reviewSummary": {
+    "totalScore": 100,
+    "maxScore": 100,
+    "passingScore": 65,
+    "passed": true,
+    "reviewPass": 1,
+    "maxReviewerPasses": 3,
+    "maxAutoRefactorRounds": 2,
+    "dimensions": [
+      {
+        "dimension": "architectureConsistency",
+        "label": "Architecture Consistency",
+        "score": 25,
+        "summary": "Reviewer loop disabled in workspace settings.",
+        "issues": [],
+        "recommendations": [
+          "Reviewer loop disabled in workspace settings."
+        ]
+      },
+      {
+        "dimension": "acceptanceCoverage",
+        "label": "Acceptance Coverage",
+        "score": 25,
+        "summary": "Reviewer loop disabled in workspace settings.",
+        "issues": [],
+        "recommendations": [
+          "Reviewer loop disabled in workspace settings."
+        ]
+      },
+      {
+        "dimension": "changeScopeControl",
+        "label": "Change Scope Control",
+        "score": 25,
+        "summary": "Reviewer loop disabled in workspace settings.",
+        "issues": [],
+        "recommendations": [
+          "Reviewer loop disabled in workspace settings."
+        ]
+      },
+      {
+        "dimension": "verifiability",
+        "label": "Verifiability",
+        "score": 25,
+        "summary": "Reviewer loop disabled in workspace settings.",
+        "issues": [],
+        "recommendations": [
+          "Reviewer loop disabled in workspace settings."
+        ]
+      }
+    ],
+    "findings": [],
+    "recommendations": [
+      "Reviewer loop disabled in workspace settings."
+    ],
+    "refactorPerformed": false,
+    "reviewedAt": "2026-04-05T07:13:44.838Z",
+    "source": "synthesized"
+  },
+  "reviewLoop": {
+    "reviewerPasses": 1,
+    "autoRefactorRounds": 0,
+    "maxAutoRefactorRounds": 2,
+    "endedReason": "passed",
+    "lastReviewedAt": "2026-04-05T07:13:44.838Z"
+  },
+  "updatedAt": "2026-04-05T07:13:44.739Z",
+  "source": "synthesized"
+}
