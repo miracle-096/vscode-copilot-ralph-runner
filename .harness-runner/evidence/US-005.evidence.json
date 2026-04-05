@@ -1,0 +1,111 @@
+{
+  "storyId": "US-005",
+  "title": "抽象可扩展的分层菜单框架",
+  "status": "pendingRelease",
+  "summary": "完成分层菜单框架的故事级收口：将命令入口整理为可扩展的菜单树模型，补充了分层菜单说明，并新增回归测试以锁定一级菜单、子菜单、返回导航和既有命令可达性。",
+  "changedFiles": [
+    "(unable to determine changed files automatically)"
+  ],
+  "changedModules": [],
+  "architectureNotes": [],
+  "tests": [
+    {
+      "command": "npm run test",
+      "success": false,
+      "outputSummary": "- Resolving version...\n√ Validated version: 1.114.0\n√ Found existing install in d:\\Workspace\\vscode-copilot-ralph-runner\\.vscode-test\\vscode-win32-x64-archive-1.114.0\n(node:13500) [DEP0190] DeprecationWarning: Passing args to a child process with shell option true can lead to security vulnerabilities, as the arguments are not escaped, only concatenated.\n(Use `node --trace-deprecation ...` to show where the warning was created)\n[main 2026-04-05T05:09:17.030Z] Error: Error mutex already exists\n    at hs.installMutex (file:///d:/Workspace/vscode-copilot-ralph-runner/.vscode-test/vscode-win32-x64-archive-1.114.0/e7fb5e96c0/resources/app/out/main.js:591:24942)\n2 tests failed.\n> harness-runner@0.0.9 pretest\n> npm run compile-tests && npm run compile && npm run lint\n\n\n> harness-runner@0.0.9 compile-tests\n> tsc -p . --outDir out\n\n\n> harness-runner@0.0.9 compile\n> npm run check-types && npm run lint && node esbuild.js\n\n\n> harness-runner@0.0.9 check-types\n> tsc --noEmit\n\n\n> harness-runner@0.0.9 lint\n> eslint src\n\n[watch] build started\n[watch] build finished\n\n> harness-runner@0.0.9 lint\n> eslint src\n\n\n> harness-runner@0.0.9 test\n> vscode-test\n\n\r\n[main 2026-04-05T05:09:17.042Z] update#setState disabled\n[main 2026-04-05T05:09:17.042Z] update#ctor - updates are disabled by the environment\nStarted local extension host with pid 29272.\nLoading development extension at d:\\Workspace\\vscode-copilot-ralph-runner\nSettings Sync: Account status changed from uninitialized to unavailable\n\n  Extension Test Suite\n    √ Sample test\n    √ Package exposes a single user-facing UI design command\n    √ user-visible Harness entry labels keep command ids stable and avoid legacy Ralph titles\n    √ approval prompt mode resolves with workspace override first, then global fallback\n    √ runner active when persisted inprogress exists even if in-memory loop is not running\n    √ reviewer settings resolve with workspace override first, then global fallback\n    √ reviewer setting normalizers clamp invalid values safely\n    √ localized menus expose nested submenus with explicit back items\n    √ menu tree keeps legacy commands reachable through layered branches\n    √ replay range starts from the selected failed story and keeps priority order\n    √ root menu order normalization removes invalid entries and appends missing defaults\n    √ menu navigation resolves deeper submenu entry, back navigation, and commands\n    √ workspace-pinned reviewer settings are persisted into .vscode/settings.json\n    √ Harness help documents cover introduction and split manual flows\n    √ Agent map generation writes overview and knowledge catalog with explicit gaps (64ms)\n    √ Pending design-match stories should come from prd story status, not runtime progress files\n    √ Task status parser tolerates concatenated or noisy completion signals\n    √ Standalone Copilot waits do not abort just because the runner is idle\n    √ Structured run log classifies polling output as noise and keeps actionable summaries\n    √ Run log persists key output summaries as plain text\n    √ Editable project constraints round-trip preserves sections\n    √ Generated project constraints normalize invalid fields safely\n    √ Editable project constraints override generated fields deterministically\n    √ Workspace scan produces generated and editable project constraints\n    1) Project constraint initialization writes readable artifacts for prompt injection\n    √ Project constraints initialization prompt includes scan baseline, provided rules, and output targets\n    √ Project constraint chat advice prompt produces a final copy-ready request format\n    √ Project constraint chat advice prompt can attach knowledge freshness reminders\n    √ Project constraint chat response extraction prefers the final request code block\n    √ Workspace scan can generate git rules from configured language\n    √ Design context sidecar can be written and read per story\n    √ Design context normalization and validation handle invalid inputs safely\n    √ Design context prompt summary emphasizes implementation constraints\n    √ Layered design context supports project, screen, module, and story overrides\n    √ Shared design context artifacts can be written and read independently\n    √ Visual design draft prompt includes target artifact, visual inputs, and completion signal\n    √ Visual design draft prompt supports reusable draft creation without a story\n    √ Batch design matching prompt tells Copilot to omit unrelated stories\n    √ Batch design matching result keeps only allowed story-reference pairs\n    √ Story design context suggestion prompt emphasizes shared context and delta-only output\n    √ Story design context override keeps only deltas beyond shared context\n    √ Execution-time design context synthesis uses shared visual context and story metadata\n    √ Execution-time design context synthesis falls back to story metadata when shared context is missing\n    √ Story-level design context detection excludes shared-only artifacts\n    √ Explicit story inheritsFrom references pull linked shared context into resolution\n    √ Review draft prefers linked shared context and keeps story-specific checks compact\n    √ Review draft without shared context seeds a lightweight story-specific summary\n    √ Prompt summary for linked shared context keeps inherited layers visible\n    √ Available shared design context targets include explicit linked scopes\n    √ Scoped design context helper can write and read a shared screen draft\n    √ Story prompt completion contract requires task memory, checkpoint, and evidence before completed signal\n    √ Reviewer and refactor prompts encode the bounded review loop contract\n    √ Story prompt composition uses deterministic ordered sections and bounds long context\n    √ Story prompt can include machine policy gates between checkpoint and current story\n    √ Story prompt can include knowledge freshness checks before checkpoint and policy gates\n    √ Prompt composition omits empty optional sections safely\n    √ Synthesized story review keeps scoring bounded and actionable\n    √ Task memory, checkpoint, and evidence preserve review metadata on round-trip\n    √ Policy config merges legacy compatibility rules without overriding the schema\n    √ Completion policy blocks dangerous story-specific path edits after baseline diffing\n    √ Completion policy can require at least one relevant test command to pass\n    √ Knowledge checks distinguish stale docs, missing module knowledge, and runbook gaps (49ms)\n    √ Knowledge-check policy rule can block completion on warning findings\n    √ Policy command output decoder recovers Chinese text from Windows shell bytes\n    √ Story evidence artifact can be synthesized, written, and validated for auditable completion\n    2) Story evidence approval decisions persist review history and auditable status changes\n    √ Legacy evidence artifacts without approval fields remain compatible after normalization\n    √ Story evidence validation rejects unresolved approval state for completed stories\n    √ Story evidence validation rejects silent low-risk completion when tests or critical evidence are missing\n    √ Task memory artifact can be written, read, and indexed per story\n    √ Task memory normalization, validation, and rebuild handle invalid input safely\n    √ Synthesized task memory produces a valid fallback artifact\n    √ Execution checkpoint artifact can be written, overwritten, and recovered per story\n    √ Source context index reuses project scan signals and persists a lightweight artifact (71ms)\n    √ Source context index degrades safely when optional files or git history are missing\n    √ Source context recall scores keywords, modules, files, and task-memory hints together\n    √ Recent checkpoint selection prefers the current story and otherwise falls back to the latest valid checkpoint\n    √ Task memory recall ranks related memories and summarizes bounded prior work\n    √ Context-aware prompt composes persisted constraints, design context, and recalled prior work together (58ms)\n  77 passing (594ms)\n  2 failing\n  1) Extension Test Suite\n       Project constraint initialization writes readable artifacts for prompt injection:\n\n      AssertionError [ERR_ASSERTION]: Expected values to be strictly equal:\n+ actual - expected\n\n+ 'Harness 项目约束'\n- 'Harness Project Constraints'\n           ^\n\n      + expected - actual\n\n      -Harness 项目约束\n      +Harness Project Constraints\n      \n  \tat Context.<anonymous> (d:\\Workspace\\vscode-copilot-ralph-runner\\out\\test\\extension.test.js:587:20)\n  \tat process.processImmediate (node:internal/timers:484:21)\n\n  2) Extension Test Suite\n       Story evidence approval decisions persist review history and auditable status changes:\n\n      AssertionError [ERR_ASSERTION]: Expected values to be strictly equal:\n+ actual - expected\n\n+ 'pendingRelease'\n- 'completed'\n\n      + expected - actual\n\n      -pendingRelease\n      +completed\n      \n  \tat Context.<anonymous> (d:\\Workspace\\vscode-copilot-ralph-runner\\out\\test\\extension.test.js:1923:16)\n  \tat process.processImmediate (node:internal/timers:484:21)\n\n[main 2026-04-05T05:09:19.244Z] Extension host with pid 29272 exited with code: 0, signal: unknown.\nExit code:   1"
+    },
+    {
+      "command": "npm run pretest",
+      "success": true,
+      "outputSummary": "> harness-runner@0.0.9 pretest\n> npm run compile-tests && npm run compile && npm run lint\n\n\n> harness-runner@0.0.9 compile-tests\n> tsc -p . --outDir out\n\n\n> harness-runner@0.0.9 compile\n> npm run check-types && npm run lint && node esbuild.js\n\n\n> harness-runner@0.0.9 check-types\n> tsc --noEmit\n\n\n> harness-runner@0.0.9 lint\n> eslint src\n\n[watch] build started\n[watch] build finished\n\n> harness-runner@0.0.9 lint\n> eslint src"
+    }
+  ],
+  "riskLevel": "high",
+  "riskReasons": [
+    "Incomplete changed-file evidence reduces rollback confidence."
+  ],
+  "releaseNotes": [
+    "Completed scope: 抽象可扩展的分层菜单框架."
+  ],
+  "rollbackHints": [
+    "Review and revert these paths together if rollback is needed: (unable to determine changed files automatically).",
+    "Use the story-scoped commit as the primary rollback unit before considering any selective revert."
+  ],
+  "followUps": [
+    "若后续新增三级及更深层菜单，继续沿用 menu.nodes 扩展并补齐分支级可达性测试。",
+    "如需把菜单排序能力扩展到子菜单层级，应单独评估配置结构，避免与现有 rootMenuOrder 语义混淆。"
+  ],
+  "recommendFeatureFlag": false,
+  "evidenceGaps": [
+    "Changed file scope could not be fully determined."
+  ],
+  "approvalState": "pending",
+  "approvalHistory": [],
+  "reviewSummary": {
+    "totalScore": 100,
+    "maxScore": 100,
+    "passingScore": 65,
+    "passed": true,
+    "reviewPass": 1,
+    "maxReviewerPasses": 3,
+    "maxAutoRefactorRounds": 2,
+    "dimensions": [
+      {
+        "dimension": "architectureConsistency",
+        "label": "Architecture Consistency",
+        "score": 25,
+        "summary": "Reviewer loop disabled in workspace settings.",
+        "issues": [],
+        "recommendations": [
+          "Reviewer loop disabled in workspace settings."
+        ]
+      },
+      {
+        "dimension": "acceptanceCoverage",
+        "label": "Acceptance Coverage",
+        "score": 25,
+        "summary": "Reviewer loop disabled in workspace settings.",
+        "issues": [],
+        "recommendations": [
+          "Reviewer loop disabled in workspace settings."
+        ]
+      },
+      {
+        "dimension": "changeScopeControl",
+        "label": "Change Scope Control",
+        "score": 25,
+        "summary": "Reviewer loop disabled in workspace settings.",
+        "issues": [],
+        "recommendations": [
+          "Reviewer loop disabled in workspace settings."
+        ]
+      },
+      {
+        "dimension": "verifiability",
+        "label": "Verifiability",
+        "score": 25,
+        "summary": "Reviewer loop disabled in workspace settings.",
+        "issues": [],
+        "recommendations": [
+          "Reviewer loop disabled in workspace settings."
+        ]
+      }
+    ],
+    "findings": [],
+    "recommendations": [
+      "Reviewer loop disabled in workspace settings."
+    ],
+    "refactorPerformed": false,
+    "reviewedAt": "2026-04-05T05:09:24.697Z",
+    "source": "synthesized"
+  },
+  "reviewLoop": {
+    "reviewerPasses": 1,
+    "autoRefactorRounds": 0,
+    "maxAutoRefactorRounds": 2,
+    "endedReason": "passed",
+    "lastReviewedAt": "2026-04-05T05:09:24.697Z"
+  },
+  "generatedAt": "2026-04-05T05:09:24.696Z",
+  "source": "synthesized"
+}

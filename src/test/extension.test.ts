@@ -385,6 +385,41 @@ suite('Extension Test Suite', () => {
 			assert.strictEqual(executionItems.some(item => item.menuItem.kind === 'command' && item.menuItem.command === 'harness-runner.rerunFailedStory' && item.label.includes('重新执行失败故事')), true);
 	});
 
+	test('menu tree keeps legacy commands reachable through layered branches', () => {
+		const chinesePack = getHarnessLanguagePack('Chinese');
+		const expectedCommandsByMenu = new Map<string, string[]>([
+			['planning', ['harness-runner.quickStart', 'harness-runner.appendUserStories']],
+			['guides', ['harness-runner.showIntroduction', 'harness-runner.showUsageGuide']],
+			['constraints', [
+				'harness-runner.configurePolicyGates',
+				'harness-runner.initProjectConstraints',
+				'harness-runner.recordDesignContext',
+				'harness-runner.previewSourceContextRecall',
+				'harness-runner.refreshSourceContextIndex',
+				'harness-runner.generateAgentMap',
+			]],
+			['execution', [
+				'harness-runner.start',
+				'harness-runner.rerunFailedStory',
+				'harness-runner.stop',
+				'harness-runner.status',
+				'harness-runner.reviewStoryApproval',
+				'harness-runner.resetStep',
+			]],
+			['settings', ['harness-runner.openSettings', 'harness-runner.customizeMenuOrder']],
+		]);
+
+		for (const [menuId, expectedCommands] of expectedCommandsByMenu) {
+			const commands = buildHarnessMenuQuickPickItems(chinesePack, menuId)
+				.flatMap(item => item.menuItem.kind === 'command' ? [item.menuItem.command] : []);
+			assert.deepStrictEqual(commands, expectedCommands);
+		}
+
+		const rootSubmenus = buildHarnessMenuQuickPickItems(chinesePack, chinesePack.menu.rootId)
+			.flatMap(item => item.menuItem.kind === 'submenu' ? [item.menuItem.target] : []);
+		assert.deepStrictEqual(rootSubmenus, ['planning', 'constraints', 'execution', 'settings']);
+	});
+
 		test('replay range starts from the selected failed story and keeps priority order', () => {
 			const prd = {
 				project: 'Harness Runner',

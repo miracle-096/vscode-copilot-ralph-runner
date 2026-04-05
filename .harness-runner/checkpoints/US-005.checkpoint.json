@@ -1,0 +1,97 @@
+{
+  "storyId": "US-005",
+  "title": "抽象可扩展的分层菜单框架",
+  "status": "completed",
+  "stageGoal": "将当前扁平化一级菜单重构为支持一级、二级及更深层返回导航的菜单框架，为后续新增 Harness 约束设置、Harness-runner 指南和设置子菜单提供统一入口。",
+  "summary": "完成分层菜单框架的故事级收口：将命令入口整理为可扩展的菜单树模型，补充了分层菜单说明，并新增回归测试以锁定一级菜单、子菜单、返回导航和既有命令可达性。",
+  "architectureNotes": [],
+  "keyDecisions": [
+    "保留 command id 作为稳定触发契约，把层级结构抽象为菜单节点而不是拆成多个 showQuickPick 流程。",
+    "把返回上一级视为显式菜单项，由每个非根节点自行声明，保证二级及更深层菜单共享同一导航规则。",
+    "一级菜单只暴露 submenu，不再把设置、帮助或约束相关命令直接扁平铺在根菜单。",
+    "补充一条按分支断言命令可达性的测试，锁定原有命令在分层菜单重构后仍可被定位和触发。"
+  ],
+  "confirmedConstraints": [
+    "未修改 prd.json。",
+    "构建与验证继续使用 npm 管理的 TypeScript/VS Code 扩展脚本。",
+    "故事完成前已写入 task memory、execution checkpoint、story evidence 和 completion signal。",
+    "Git 提交信息使用中文 conventional commit。",
+    "prd.json remained read-only during task execution."
+  ],
+  "unresolvedRisks": [
+    "菜单框架的核心生产代码在本次执行前已经存在于当前基线，本轮主要补了文档、回归测试和故事工件；Reviewer 应复核 package.json、src/localization.ts 与 src/extension.ts 的一致性。",
+    "showCommandMenu 仍采用单次选中即退出的 Quick Pick 交互，若后续需要命令执行后自动留在当前层级，应单开故事处理交互策略。"
+  ],
+  "nextStoryPrerequisites": [
+    "若后续新增三级及更深层菜单，继续沿用 menu.nodes 扩展并补齐分支级可达性测试。",
+    "如需把菜单排序能力扩展到子菜单层级，应单独评估配置结构，避免与现有 rootMenuOrder 语义混淆。"
+  ],
+  "resumeRecommendation": "Resume from the next pending story after reviewing the persisted task memory and checkpoint for US-005.",
+  "reviewSummary": {
+    "totalScore": 100,
+    "maxScore": 100,
+    "passingScore": 65,
+    "passed": true,
+    "reviewPass": 1,
+    "maxReviewerPasses": 3,
+    "maxAutoRefactorRounds": 2,
+    "dimensions": [
+      {
+        "dimension": "architectureConsistency",
+        "label": "Architecture Consistency",
+        "score": 25,
+        "summary": "Reviewer loop disabled in workspace settings.",
+        "issues": [],
+        "recommendations": [
+          "Reviewer loop disabled in workspace settings."
+        ]
+      },
+      {
+        "dimension": "acceptanceCoverage",
+        "label": "Acceptance Coverage",
+        "score": 25,
+        "summary": "Reviewer loop disabled in workspace settings.",
+        "issues": [],
+        "recommendations": [
+          "Reviewer loop disabled in workspace settings."
+        ]
+      },
+      {
+        "dimension": "changeScopeControl",
+        "label": "Change Scope Control",
+        "score": 25,
+        "summary": "Reviewer loop disabled in workspace settings.",
+        "issues": [],
+        "recommendations": [
+          "Reviewer loop disabled in workspace settings."
+        ]
+      },
+      {
+        "dimension": "verifiability",
+        "label": "Verifiability",
+        "score": 25,
+        "summary": "Reviewer loop disabled in workspace settings.",
+        "issues": [],
+        "recommendations": [
+          "Reviewer loop disabled in workspace settings."
+        ]
+      }
+    ],
+    "findings": [],
+    "recommendations": [
+      "Reviewer loop disabled in workspace settings."
+    ],
+    "refactorPerformed": false,
+    "reviewedAt": "2026-04-05T05:09:24.697Z",
+    "source": "synthesized"
+  },
+  "reviewLoop": {
+    "reviewerPasses": 1,
+    "autoRefactorRounds": 0,
+    "maxAutoRefactorRounds": 2,
+    "endedReason": "passed",
+    "lastReviewedAt": "2026-04-05T05:09:24.697Z"
+  },
+  "updatedAt": "2026-04-05T05:09:10.514Z",
+  "source": "synthesized"
+}

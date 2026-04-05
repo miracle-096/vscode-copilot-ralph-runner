@@ -1,0 +1,132 @@
+{
+  "storyId": "US-005",
+  "title": "抽象可扩展的分层菜单框架",
+  "summary": "完成分层菜单框架的故事级收口：将命令入口整理为可扩展的菜单树模型，补充了分层菜单说明，并新增回归测试以锁定一级菜单、子菜单、返回导航和既有命令可达性。",
+  "changedFiles": [
+    "package.json",
+    "src/extension.ts",
+    "src/localization.ts",
+    "README.md",
+    "src/test/extension.test.ts",
+    ".harness-runner/memory/US-005.json",
+    ".harness-runner/checkpoints/US-005.checkpoint.json",
+    ".harness-runner/evidence/US-005.evidence.json",
+    ".harness-runner/story-status.json"
+  ],
+  "changedModules": [
+    "菜单树本地化定义",
+    "菜单导航与一级菜单排序",
+    "命令面板文档说明",
+    "菜单分层回归测试",
+    "故事工件与完成信号"
+  ],
+  "architectureNotes": [
+    "菜单定义继续收敛在 src/localization.ts 的 menu.nodes 中，由节点描述 command、submenu 和 back 三类入口，避免在 extension.ts 中散落硬编码分支。",
+    "src/extension.ts 只负责把菜单节点渲染成 Quick Pick、维护 menuStack 并根据节点类型执行导航或命令，职责边界清晰。",
+    "一级菜单排序仍作为根节点特例保留在 extension.ts，通过 rootMenuOrder 设置只影响根级 submenu 顺序，不干扰子菜单和命令绑定。",
+    "README 与测试分别承担操作说明和可回归验证，不把运行时逻辑耦合进文档层；若未来继续扩展三级菜单，只需增补 menu.nodes 与测试映射。",
+    "回滚 seam 明确集中在 package.json、src/localization.ts、src/extension.ts 与 README/src/test/extension.test.ts 这一组菜单入口文件。"
+  ],
+  "keyDecisions": [
+    "保留 command id 作为稳定触发契约，把层级结构抽象为菜单节点而不是拆成多个 showQuickPick 流程。",
+    "把返回上一级视为显式菜单项，由每个非根节点自行声明，保证二级及更深层菜单共享同一导航规则。",
+    "一级菜单只暴露 submenu，不再把设置、帮助或约束相关命令直接扁平铺在根菜单。",
+    "补充一条按分支断言命令可达性的测试，锁定原有命令在分层菜单重构后仍可被定位和触发。"
+  ],
+  "patternsUsed": [],
+  "constraintsConfirmed": [
+    "未修改 prd.json。",
+    "构建与验证继续使用 npm 管理的 TypeScript/VS Code 扩展脚本。",
+    "故事完成前已写入 task memory、execution checkpoint、story evidence 和 completion signal。",
+    "Git 提交信息使用中文 conventional commit。"
+  ],
+  "testsRun": [
+    "2026-04-05: npm run compile -> passed.",
+    "2026-04-05: npm test -- --grep \"localized menus expose nested submenus with explicit back items|menu tree keeps legacy commands reachable through layered branches|menu navigation resolves deeper submenu entry, back navigation, and commands|root menu order normalization removes invalid entries and appends missing defaults\" -> passed."
+  ],
+  "risks": [
+    "菜单框架的核心生产代码在本次执行前已经存在于当前基线，本轮主要补了文档、回归测试和故事工件；Reviewer 应复核 package.json、src/localization.ts 与 src/extension.ts 的一致性。",
+    "showCommandMenu 仍采用单次选中即退出的 Quick Pick 交互，若后续需要命令执行后自动留在当前层级，应单开故事处理交互策略。"
+  ],
+  "followUps": [
+    "若后续新增三级及更深层菜单，继续沿用 menu.nodes 扩展并补齐分支级可达性测试。",
+    "如需把菜单排序能力扩展到子菜单层级，应单独评估配置结构，避免与现有 rootMenuOrder 语义混淆。"
+  ],
+  "searchKeywords": [
+    "HarnessMenuItem",
+    "buildHarnessMenuQuickPickItems",
+    "resolveHarnessMenuSelection",
+    "rootMenuOrder",
+    "规划与入门",
+    "Harness 约束设置",
+    "指南与帮助"
+  ],
+  "relatedStories": [],
+  "reviewSummary": {
+    "totalScore": 100,
+    "maxScore": 100,
+    "passingScore": 65,
+    "passed": true,
+    "reviewPass": 1,
+    "maxReviewerPasses": 3,
+    "maxAutoRefactorRounds": 2,
+    "dimensions": [
+      {
+        "dimension": "architectureConsistency",
+        "label": "Architecture Consistency",
+        "score": 25,
+        "summary": "Reviewer loop disabled in workspace settings.",
+        "issues": [],
+        "recommendations": [
+          "Reviewer loop disabled in workspace settings."
+        ]
+      },
+      {
+        "dimension": "acceptanceCoverage",
+        "label": "Acceptance Coverage",
+        "score": 25,
+        "summary": "Reviewer loop disabled in workspace settings.",
+        "issues": [],
+        "recommendations": [
+          "Reviewer loop disabled in workspace settings."
+        ]
+      },
+      {
+        "dimension": "changeScopeControl",
+        "label": "Change Scope Control",
+        "score": 25,
+        "summary": "Reviewer loop disabled in workspace settings.",
+        "issues": [],
+        "recommendations": [
+          "Reviewer loop disabled in workspace settings."
+        ]
+      },
+      {
+        "dimension": "verifiability",
+        "label": "Verifiability",
+        "score": 25,
+        "summary": "Reviewer loop disabled in workspace settings.",
+        "issues": [],
+        "recommendations": [
+          "Reviewer loop disabled in workspace settings."
+        ]
+      }
+    ],
+    "findings": [],
+    "recommendations": [
+      "Reviewer loop disabled in workspace settings."
+    ],
+    "refactorPerformed": false,
+    "reviewedAt": "2026-04-05T05:09:24.697Z",
+    "source": "synthesized"
+  },
+  "reviewLoop": {
+    "reviewerPasses": 1,
+    "autoRefactorRounds": 0,
+    "maxAutoRefactorRounds": 2,
+    "endedReason": "passed",
+    "lastReviewedAt": "2026-04-05T05:09:24.697Z"
+  },
+  "createdAt": "2026-04-05T05:09:10.477Z",
+  "source": "copilot"
+}
