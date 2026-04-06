@@ -40,5 +40,5 @@
   "configuration.language.description": "切换 Harness Runner 的运行时语言。修改后若要更新项目约束中的语言相关规则，需要重新初始化项目约束。",
   "configuration.language.enum.chinese": "插件运行时操作文案使用中文，并在初始化项目约束时生成中文 Git 提交规则。",
   "configuration.language.enum.english": "插件运行时操作文案使用英文，并在初始化项目约束时生成英文 Git 提交规则。",
-  "configuration.rootMenuOrder.markdownDescription": "自定义一级菜单顺序。可用值依次为 `planning`、`guides`、`constraints`、`execution`、`settings`；缺失或重复值会在运行时自动回退到默认顺序。"
+  "configuration.rootMenuOrder.markdownDescription": "自定义一级菜单顺序。可用值依次为 `quickStart`、`appendUserStories`、`guides`、`constraints`、`execution`、`settings`；旧的 `planning` 值会在运行时自动映射为两个规划命令，缺失或重复值会自动回退到默认顺序。"
 }

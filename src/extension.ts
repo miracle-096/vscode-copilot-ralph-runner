@@ -274,6 +274,13 @@ function getLanguagePack() {
 }
 
 const HARNESS_ROOT_MENU_ORDER_SETTING = 'rootMenuOrder';
+const HARNESS_ROOT_MENU_COMMAND_ORDER_KEYS: Record<string, string> = {
+	'harness-runner.quickStart': 'quickStart',
+	'harness-runner.appendUserStories': 'appendUserStories',
+};
+const HARNESS_ROOT_MENU_LEGACY_ORDER_ALIASES: Record<string, readonly string[]> = {
+	planning: ['quickStart', 'appendUserStories'],
+};
 
 export interface HarnessMenuQuickPickEntry extends vscode.QuickPickItem {
 	menuItem: HarnessMenuItem;
@@ -289,8 +296,20 @@ function getHarnessMenuNode(languagePack: HarnessLanguagePack, menuId: string): 
 
 function getHarnessRootMenuIds(languagePack: HarnessLanguagePack): string[] {
 	return getHarnessMenuNode(languagePack, languagePack.menu.rootId).items.flatMap(menuItem =>
-		menuItem.kind === 'submenu' ? [menuItem.target] : []
+		getHarnessRootMenuItemOrderKey(menuItem)
+			? [getHarnessRootMenuItemOrderKey(menuItem)!]
+			: []
 	);
+}
+
+function getHarnessRootMenuItemOrderKey(menuItem: HarnessMenuItem): string | undefined {
+	if (menuItem.kind === 'submenu') {
+		return menuItem.target;
+	}
+	if (menuItem.kind === 'command') {
+		return HARNESS_ROOT_MENU_COMMAND_ORDER_KEYS[menuItem.command] ?? menuItem.command;
+	}
+	return undefined;
 }
 
 export function normalizeHarnessRootMenuOrder(configuredValue: unknown, defaultOrder: readonly string[]): string[] {
@@ -302,11 +321,14 @@ export function normalizeHarnessRootMenuOrder(configuredValue: unknown, defaultO
 	const validTargets = new Set(defaultOrder);
 
 	for (const target of configuredOrder) {
-		if (!validTargets.has(target) || seen.has(target)) {
-			continue;
+		const expandedTargets = HARNESS_ROOT_MENU_LEGACY_ORDER_ALIASES[target] ?? [target];
+		for (const expandedTarget of expandedTargets) {
+			if (!validTargets.has(expandedTarget) || seen.has(expandedTarget)) {
+				continue;
+			}
+			seen.add(expandedTarget);
+			normalized.push(expandedTarget);
 		}
-		seen.add(target);
-		normalized.push(target);
 	}
 
 	for (const target of defaultOrder) {
@@ -337,7 +359,7 @@ function getHarnessMenuItems(languagePack: HarnessLanguagePack, menuId: string):
 		.map((menuItem, index) => ({
 			menuItem,
 			index,
-			order: menuItem.kind === 'submenu' ? (orderMap.get(menuItem.target) ?? configuredOrder.length + index) : configuredOrder.length + index,
+			order: orderMap.get(getHarnessRootMenuItemOrderKey(menuItem) ?? '') ?? configuredOrder.length + index,
 		}))
 		.sort((left, right) => left.order - right.order || left.index - right.index)
 		.map(entry => entry.menuItem);
@@ -357,13 +379,18 @@ function stripHarnessMenuLabelDecoration(label: string): string {
 
 function buildHarnessRootMenuOrderEditorItems(languagePack: HarnessLanguagePack): HarnessMenuOrderEditorItem[] {
 	return buildHarnessMenuQuickPickItems(languagePack, languagePack.menu.rootId)
-		.flatMap(entry => entry.menuItem.kind === 'submenu'
-			? [{
-				target: entry.menuItem.target,
+		.flatMap(entry => {
+			const target = getHarnessRootMenuItemOrderKey(entry.menuItem);
+			if (!target) {
+				return [];
+			}
+
+			return [{
+				target,
 				label: stripHarnessMenuLabelDecoration(entry.label),
 				description: entry.description ?? '',
-			}]
-			: []);
+			}];
+		});
 }
 
 async function showHarnessMenuOrderEditor(

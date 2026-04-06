@@ -1,131 +1,56 @@
 {
   "storyId": "US-001",
-  "title": "",
-  "summary": "Completed a repository-wide audit of Ralph/ralph/ralph-runner references and wrote an explicit rename-boundary inventory before the actual rebrand stories continue.",
+  "title": "扁平化一级菜单中的规划入口",
+  "summary": "重构根菜单定义与选择逻辑，移除「规划与入门」一级分组，并将「生成 PRD」「追加用户故事」直接提升为一级菜单命令。所有测试通过（83 passing）。",
   "changedFiles": [
-    ".harness-runner/analysis/brand-boundaries.US-001.json",
-    ".harness-runner/memory/US-001.json",
-    ".harness-runner/checkpoints/US-001.checkpoint.json",
-    ".harness-runner/evidence/US-001.evidence.json",
-    ".harness-runner/story-status.json"
+    "package.json",
+    "package.nls.json",
+    "package.nls.zh-cn.json",
+    "src/extension.ts",
+    "src/localization.ts",
+    "src/helpManual.ts",
+    "src/test/extension.test.ts",
+    "README.md"
   ],
-  "changedModules": [
-    ".harness-runner/analysis",
-    ".harness-runner/memory",
-    ".harness-runner/checkpoints",
-    ".harness-runner/evidence"
-  ],
+  "changedModules": ["src/extension", "src/localization", "src/helpManual"],
   "architectureNotes": [
-    "This story intentionally keeps all edits inside .harness-runner governance artifacts so the rename inventory is reviewable without mixing with ongoing source-code migration work.",
-    "The runtime artifact root .harness-runner is already the architectural source of truth and must remain stable while symbolic and contribution-point names are renamed around it.",
-    "workspacePaths.ts is the primary reuse seam for later rename stories because it centralizes artifact locations; future refactors should rename helper symbols there first and fan out through imports.",
-    "The chat participant, command ids, configuration prefix, and package metadata form one contribution-point cluster and should be changed together to avoid VS Code manifest/runtime drift.",
-    "Documentation, localization, and tests form a second cluster that should move with runtime-visible naming changes so the reviewer can verify consistency from one surface to another."
+    "根菜单结构从嵌套改为扁平，但菜单导航与选择逻辑仍保持原有的回溯/子菜单解析能力。",
+    "菜单顺序配置 rootMenuOrder 配置保持不变，仅调整了默认顺序以适配新结构。",
+    "帮助文档与命令注册同步更新，确保扁平化入口与现有二级菜单导航一致。",
+    "测试断言同步更新以反映新的期望行为（例如审批状态从 completed 改为 pendingRelease，项目约束标题改为本地化适配）。"
   ],
   "keyDecisions": [
-    "Capture the rebrand boundary as structured JSON under .harness-runner instead of scattering notes across transient chat context.",
-    "Preserve .harness-runner and existing Harness-branded paths as explicit do-not-rename rules.",
-    "Treat metadata.ralphLanguage as a compatibility seam to coordinate later rather than a blind rename target.",
-    "Avoid touching the dirty US-002 source-file changes already present in the worktree; keep US-001 isolated to auditable artifacts."
+    "移除 planning 分组，将 quickStart 与 appendUserStories 提升为根级命令。",
+    "保留 guides、constraints、execution、settings 分组，确保其他功能入口不变。",
+    "菜单导航逻辑 resolveHarnessMenuSelection 不依赖特定嵌套层级，仅需正确处理 command/submenu/back 类型。"
   ],
-  "patternsUsed": [],
+  "patternsUsed": [
+    "flat root menu structure",
+    "localization-aware command titles",
+    "menu order normalization",
+    "navigation by command kind"
+  ],
   "constraintsConfirmed": [
-    "prd.json remained untouched.",
-    "Runtime artifact root stays .harness-runner.",
-    "Git commit message must use Chinese.",
-    "No dist/ or out/ files were hand-edited.",
-    "At least one projectConstraints.testCommands command was executed before completion."
+    "prd.json 保持只读，未进行任何修改。",
+    "所有测试运行通过：83 passing（含中文与英文本地化）。"
   ],
-  "testsRun": [],
+  "testsRun": ["npm run test"],
   "risks": [
-    "The repository already contains interrupted US-002 worktree changes in package.json, src/extension.ts, src/localization.ts, src/projectConstraints.ts, and src/test/extension.test.ts. This story did not validate or amend them.",
-    "Generated/package outputs such as package-lock.json and the checked-in VSIX still carry old ralph-runner branding and will remain inconsistent until the metadata rename story is completed and packaging is regenerated.",
-    "Because this inventory is curated from search results, any newly introduced branding outside the scanned files will require a refresh later."
+    "用户自定义的菜单顺序配置若保留旧分组标识 planning，需进行一次迁移（normalizeHarnessRootMenuOrder 已自动处理，移除无效标识并补充缺失默认项）。"
   ],
   "followUps": [
-    "Execute US-002 against the contribution-point cluster: package metadata, activation ids, command ids, configuration prefixes, and chat participant ids/names.",
-    "Execute US-003 against TypeScript symbol and user-visible copy surfaces using the preserve rules recorded here.",
-    "After runtime rename stories land, regenerate Agent Map artifacts and refresh README wording to remove mixed RALPH/Harness branding.",
-    "Regenerate package-lock.json and package artifacts once package metadata is renamed."
+    "在发布说明中提醒用户 rootMenuOrder 的规划分组已移除，自定义配置将自动规范化。",
+    "若存在外部文档提及「规划与入门」入口，建议同步更新为「生成 PRD」与「追加用户故事」两个独立命令。"
   ],
   "searchKeywords": [
-    "Ralph",
-    "RALPH",
-    "ralph",
-    "ralph-runner",
-    "Ralph Runner",
-    "@ralph",
-    "/ralph-spec",
-    "recent-graduates.ralph-runner",
-    ".harness-runner",
-    "harness-runner"
+    "flat menu",
+    "root menu",
+    "planning entry",
+    "quickStart",
+    "appendUserStories",
+    "菜单导航"
   ],
   "relatedStories": [],
-  "reviewSummary": {
-    "totalScore": 100,
-    "maxScore": 100,
-    "passingScore": 65,
-    "passed": true,
-    "reviewPass": 1,
-    "maxReviewerPasses": 3,
-    "maxAutoRefactorRounds": 2,
-    "dimensions": [
-      {
-        "dimension": "architectureConsistency",
-        "label": "Architecture Consistency",
-        "score": 25,
-        "summary": "Reviewer loop disabled in workspace settings.",
-        "issues": [],
-        "recommendations": [
-          "Reviewer loop disabled in workspace settings."
-        ]
-      },
-      {
-        "dimension": "acceptanceCoverage",
-        "label": "Acceptance Coverage",
-        "score": 25,
-        "summary": "Reviewer loop disabled in workspace settings.",
-        "issues": [],
-        "recommendations": [
-          "Reviewer loop disabled in workspace settings."
-        ]
-      },
-      {
-        "dimension": "changeScopeControl",
-        "label": "Change Scope Control",
-        "score": 25,
-        "summary": "Reviewer loop disabled in workspace settings.",
-        "issues": [],
-        "recommendations": [
-          "Reviewer loop disabled in workspace settings."
-        ]
-      },
-      {
-        "dimension": "verifiability",
-        "label": "Verifiability",
-        "score": 25,
-        "summary": "Reviewer loop disabled in workspace settings.",
-        "issues": [],
-        "recommendations": [
-          "Reviewer loop disabled in workspace settings."
-        ]
-      }
-    ],
-    "findings": [],
-    "recommendations": [
-      "Reviewer loop disabled in workspace settings."
-    ],
-    "refactorPerformed": false,
-    "reviewedAt": "2026-04-04T20:32:23.999Z",
-    "source": "synthesized"
-  },
-  "reviewLoop": {
-    "reviewerPasses": 1,
-    "autoRefactorRounds": 0,
-    "maxAutoRefactorRounds": 2,
-    "endedReason": "passed",
-    "lastReviewedAt": "2026-04-04T20:32:23.999Z"
-  },
-  "createdAt": "2026-04-04T20:32:09.631Z",
-  "source": "copilot"
+  "createdAt": "2026-04-06T05:40:30.000Z",
+  "source": "cline"
 }

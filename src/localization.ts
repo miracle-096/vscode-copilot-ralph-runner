@@ -809,21 +809,14 @@ const CHINESE_PACK: HarnessLanguagePack = {
 		rootId: 'root',
 		nodes: {
 			root: {
-				placeholder: 'Harness Runner：选择一个菜单',
+				placeholder: 'Harness Runner：选择一个命令或菜单',
 				items: [
-					{ kind: 'submenu', target: 'planning', label: '$(zap)  规划与入门', description: '集中处理 PRD 生成、故事追加和帮助文档入口' },
+					{ kind: 'command', command: 'harness-runner.quickStart', label: '$(zap)  生成 PRD', description: '通过 Cline 生成 prd.json' },
+					{ kind: 'command', command: 'harness-runner.appendUserStories', label: '$(diff-added)  追加用户故事', description: '通过 Cline 基于现有 prd.json 追加新的用户故事' },
 					{ kind: 'submenu', target: 'guides', label: '$(library)  Harness Runner 指南', description: '统一查看 Harness Runner 介绍、推荐流程和后续扩展资料入口' },
 					{ kind: 'submenu', target: 'constraints', label: '$(symbol-key)  Harness 约束设置', description: '统一进入执行检查、项目约束、设计描述、故事上下文和 Agent Map 相关能力' },
 					{ kind: 'submenu', target: 'execution', label: '$(rocket)  执行与审批', description: '集中触发开始、停止、状态查看、审批和故事重置' },
 					{ kind: 'submenu', target: 'settings', label: '$(gear)  设置', description: '统一进入运行设置、打开设置和菜单排序入口' },
-				],
-			},
-			planning: {
-				placeholder: '规划与入门：选择一个命令',
-				items: [
-					{ kind: 'back', label: '$(arrow-left)  返回上一级', description: '回到 Harness Runner 主菜单' },
-					{ kind: 'command', command: 'harness-runner.quickStart', label: '$(zap)  生成 PRD', description: '通过 Cline 生成 prd.json' },
-					{ kind: 'command', command: 'harness-runner.appendUserStories', label: '$(diff-added)  追加用户故事', description: '通过 Cline 基于现有 prd.json 追加新的用户故事' },
 				],
 			},
 			guides: {
@@ -868,15 +861,15 @@ const CHINESE_PACK: HarnessLanguagePack = {
 		},
 		customizeOrder: {
 			title: '自定义一级菜单排序',
-			description: '拖拽卡片以调整 Harness Runner 一级菜单的显示顺序。',
-			instructions: '拖拽卡片后点击“保存”会立即写入工作区设置并刷新主菜单；点击“取消”或直接关闭窗口不会保存。',
+			description: '拖拽卡片以调整 Harness Runner 一级入口的显示顺序。',
+			instructions: '拖拽卡片后点击“保存”会立即写入工作区设置并刷新主菜单；点击“取消”或直接关闭窗口不会保存。旧的 planning 排序值会在运行时自动迁移为新的一级入口顺序。',
 			unsavedChanges: '检测到未保存的排序变更。',
 			save: '保存',
 			cancel: '取消',
 			reset: '恢复当前顺序',
-			invalidOrder: 'HARNESS：无法保存一级菜单排序，拖拽结果无效。',
+			invalidOrder: 'HARNESS：无法保存一级入口排序，拖拽结果无效。',
 			positionLabel: (currentStep, totalSteps) => `第 ${currentStep} 项，共 ${totalSteps} 项`,
-			saved: 'HARNESS：一级菜单排序已更新。',
+			saved: 'HARNESS：一级入口排序已更新。',
 		},
 	},
 	help: {
@@ -1278,21 +1271,14 @@ const ENGLISH_PACK: HarnessLanguagePack = {
 		rootId: 'root',
 		nodes: {
 			root: {
-				placeholder: 'Harness Runner: choose a menu',
+				placeholder: 'Harness Runner: choose a command or menu',
 				items: [
-					{ kind: 'submenu', target: 'planning', label: '$(zap)  Planning & Onboarding', description: 'Open PRD generation, story append, and help entries from one place' },
+					{ kind: 'command', command: 'harness-runner.quickStart', label: '$(zap)  Generate PRD', description: 'Use Cline to generate prd.json' },
+					{ kind: 'command', command: 'harness-runner.appendUserStories', label: '$(diff-added)  Append User Stories', description: 'Use Cline to append new user stories to the existing prd.json' },
 					{ kind: 'submenu', target: 'guides', label: '$(library)  Harness Runner Guide', description: 'Read the unified Harness Runner guide for product framing, workflow, and future reference material' },
 					{ kind: 'submenu', target: 'constraints', label: '$(symbol-key)  Harness Constraint Settings', description: 'Open run checks, project constraints, design notes, story context, and Agent Map flows from one place' },
 					{ kind: 'submenu', target: 'execution', label: '$(rocket)  Execution & Review', description: 'Trigger start, stop, status, approvals, and story reset actions from one place' },
 					{ kind: 'submenu', target: 'settings', label: '$(gear)  Settings', description: 'Open runner settings, VS Code settings, and menu ordering from one place' },
-				],
-			},
-			planning: {
-				placeholder: 'Planning & Onboarding: choose a command',
-				items: [
-					{ kind: 'back', label: '$(arrow-left)  Back', description: 'Return to the Harness Runner main menu' },
-					{ kind: 'command', command: 'harness-runner.quickStart', label: '$(zap)  Generate PRD', description: 'Use Cline to generate prd.json' },
-					{ kind: 'command', command: 'harness-runner.appendUserStories', label: '$(diff-added)  Append User Stories', description: 'Use Cline to append new user stories to the existing prd.json' },
 				],
 			},
 			guides: {
@@ -1319,10 +1305,10 @@ const ENGLISH_PACK: HarnessLanguagePack = {
 				items: [
 					{ kind: 'back', label: '$(arrow-left)  Back', description: 'Return to the Harness Runner main menu' },
 					{ kind: 'command', command: 'harness-runner.start', label: '$(play)  Start', description: 'Start or resume the automated task loop' },
-						{ kind: 'command', command: 'harness-runner.rerunFailedStory', label: '$(debug-rerun)  Rerun Failed Story', description: 'Choose a failed story and restart execution from that story onward' },
+					{ kind: 'command', command: 'harness-runner.rerunFailedStory', label: '$(debug-rerun)  Rerun Failed Story', description: 'Choose a failed story and restart execution from that story onward' },
 					{ kind: 'command', command: 'harness-runner.stop', label: '$(debug-stop)  Stop', description: 'Cancel the current run' },
 					{ kind: 'command', command: 'harness-runner.status', label: '$(info)  Show Status', description: 'Show a summary of user story progress' },
-						{ kind: 'command', command: 'harness-runner.reviewStoryApproval', label: '$(pass-filled)  Review Approval', description: 'Approve, reject, or annotate stories waiting for manual approval' },
+					{ kind: 'command', command: 'harness-runner.reviewStoryApproval', label: '$(pass-filled)  Review Approval', description: 'Approve, reject, or annotate stories waiting for manual approval' },
 					{ kind: 'command', command: 'harness-runner.resetStep', label: '$(debug-restart)  Reset Story', description: 'Reset a completed or failed user story' },
 				],
 			},
@@ -1337,15 +1323,15 @@ const ENGLISH_PACK: HarnessLanguagePack = {
 		},
 		customizeOrder: {
 			title: 'Customize Top-Level Menu Order',
-			description: 'Drag cards to rearrange the top-level Harness Runner menu groups.',
-			instructions: 'Drag cards into a new order, then choose Save to write workspace settings and refresh the main menu immediately. Cancel or closing the editor does not save changes.',
+			description: 'Drag cards to rearrange the top-level Harness Runner entries.',
+			instructions: 'Drag cards into a new order, then choose Save to write workspace settings and refresh the main menu immediately. Cancel or closing the editor does not save changes. Older planning values automatically fall back to the new root-entry order.',
 			unsavedChanges: 'There are unsaved menu order changes.',
 			save: 'Save',
 			cancel: 'Cancel',
 			reset: 'Reset Current Order',
-			invalidOrder: 'HARNESS: Unable to save the top-level menu order because the drag result was invalid.',
+			invalidOrder: 'HARNESS: Unable to save the top-level entry order because the drag result was invalid.',
 			positionLabel: (currentStep, totalSteps) => `Item ${currentStep} of ${totalSteps}`,
-			saved: 'HARNESS: Top-level menu order updated.',
+			saved: 'HARNESS: Top-level entry order updated.',
 		},
 	},
 	help: {

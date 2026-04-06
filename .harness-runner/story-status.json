@@ -1,15 +1,3 @@
 {
-  "US-001": "completed",
-  "US-002": "completed",
-  "US-003": "completed",
-  "US-004": "completed",
-  "US-005": "completed",
-  "US-006": "completed",
-  "US-007": "completed",
-  "US-008": "completed",
-  "US-009": "completed",
-  "US-010": "completed",
-  "US-011": "completed",
-  "US-012": "completed",
-  "US-013": "failed"
+  "US-001": "inprogress"
 }

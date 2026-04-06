@@ -128,10 +128,10 @@ function getChineseGuideContent(): HarnessGuideContent {
 					{
 						title: '一级菜单怎么分工',
 						paragraphs: [
-							'Harness 状态栏按钮和快捷键 Alt+R 都会打开主菜单。当前一级菜单按规划与入门、Harness Runner 指南、Harness 约束设置、执行与审批和设置分组，设置相关动作统一收纳到 settings 子菜单中。'
+							'Harness 状态栏按钮和快捷键 Alt+R 都会打开主菜单。当前一级菜单直接提供“生成 PRD”“追加用户故事”两个规划命令，其余能力再按 Harness Runner 指南、Harness 约束设置、执行与审批和设置分组，避免常用规划入口还要多点一步。'
 						],
 						bullets: [
-							'规划与入门：生成 PRD、追加用户故事',
+							'一级直达命令：生成 PRD、追加用户故事',
 							'Harness Runner 指南：查看统一指南入口',
 							'Harness 约束设置：执行检查、项目约束、设计描述、故事上下文、源码上下文和 Agent Map',
 							'执行与审批：开始、停止、状态、审批、重置和失败故事重跑',
@@ -164,8 +164,8 @@ function getChineseGuideContent(): HarnessGuideContent {
 							'如果当前工作区还没有 prd.json，建议先把 Harness 当作“计划和执行编排器”来使用，先建立故事骨架，再逐步补齐约束和上下文。'
 						],
 						steps: [
-							'打开规划与入门，执行“生成 PRD”，先让项目目标和里程碑结构化。',
-							'如需补充计划，再执行“追加用户故事”。',
+							'在一级菜单直接执行“生成 PRD”，先让项目目标和里程碑结构化。',
+							'如需补充计划，再在一级菜单直接执行“追加用户故事”。',
 							'进入“Harness 约束设置”，执行“初始化项目约束”，让 Harness 扫描脚本、目录、README 和配置。',
 							'必要时补“生成 Agent Map”或“配置执行检查”，先把护栏和知识目录搭好，再进入实现循环。',
 							'继续执行“为故事添加上下文”或“刷新源码上下文索引”，让后续故事能复用入口文件、模块提示和热点路径。',
@@ -330,10 +330,10 @@ function getEnglishGuideContent(): HarnessGuideContent {
 					{
 						title: 'How The Top-Level Menu Is Split',
 						paragraphs: [
-							'The status bar button and Alt+R open the main menu. The top level is split into Planning & Onboarding, Harness Runner Guide, Harness Constraint Settings, Execution & Review, and Settings. Settings-related actions live under a dedicated Settings submenu so opening VS Code settings and customizing the top-level menu order do not crowd the root menu.'
+							'The status bar button and Alt+R open the main menu. The top level now exposes Generate PRD and Append User Stories as direct commands, then groups the remaining flows under Harness Runner Guide, Harness Constraint Settings, Execution & Review, and Settings. This keeps the most common planning actions one click away while still keeping the rest of the product surface tidy.'
 						],
 						bullets: [
-							'Planning & Onboarding: generate the PRD and append stories',
+							'Direct root commands: Generate PRD and Append User Stories',
 							'Harness Runner Guide: open the unified guide entry',
 							'Harness Constraint Settings: run checks, constraints, design notes, story context, source context, and Agent Map',
 							'Execution & Review: start, stop, inspect status, approve, reset, and rerun failed stories',
@@ -366,8 +366,8 @@ function getEnglishGuideContent(): HarnessGuideContent {
 							'When the workspace does not have prd.json yet, treat Harness Runner as your planning and execution orchestrator. Build the story skeleton first, then add constraints and context.'
 						],
 						steps: [
-							'Open Planning & Onboarding and run Generate PRD.',
-							'Use Append User Stories when you need to expand the plan.',
+							'Run Generate PRD directly from the top-level menu.',
+							'Use Append User Stories directly from the top level when you need to expand the plan.',
 							'Open Harness Constraint Settings and initialize project constraints.',
 							'Add Agent Map or run checks early when you want the guardrails and knowledge surface in place before implementation.',
 							'Add story context or refresh the source-context index so future stories can reuse entry points and hotspot paths.',

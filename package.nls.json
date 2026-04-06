@@ -40,5 +40,5 @@
   "configuration.language.description": "Switch the Harness Runner runtime language. Reinitialize project constraints afterward if you want language-dependent rules to refresh.",
   "configuration.language.enum.chinese": "Use Chinese for runtime UI copy and generate Chinese Git commit rules during project-constraint initialization.",
   "configuration.language.enum.english": "Use English for runtime UI copy and generate English Git commit rules during project-constraint initialization.",
-  "configuration.rootMenuOrder.markdownDescription": "Customize the top-level menu order. Valid values are `planning`, `guides`, `constraints`, `execution`, and `settings`; missing or duplicate values automatically fall back to the default order at runtime."
+  "configuration.rootMenuOrder.markdownDescription": "Customize the top-level menu order. Valid values are `quickStart`, `appendUserStories`, `guides`, `constraints`, `execution`, and `settings`; older `planning` values automatically map to the two root planning commands at runtime, and missing or duplicate values fall back to the default order."
 }

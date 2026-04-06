@@ -310,9 +310,9 @@
           "type": "array",
           "items": {
             "type": "string",
-            "enum": ["planning", "guides", "constraints", "execution", "settings"]
+            "enum": ["quickStart", "appendUserStories", "guides", "constraints", "execution", "settings"]
           },
-          "default": ["planning", "guides", "constraints", "execution", "settings"],
+          "default": ["quickStart", "appendUserStories", "guides", "constraints", "execution", "settings"],
           "markdownDescription": "%configuration.rootMenuOrder.markdownDescription%"
         }
       }
