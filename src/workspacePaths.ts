@@ -6,7 +6,6 @@ export const PRD_DIR = '.prd';
 export const DESIGN_CONTEXT_DIR = 'design-context';
 export const DESIGN_CONTEXT_SHARED_DIR = 'shared';
 export const PRD_FILENAME = 'prd.json';
-export const PROGRESS_FILENAME = 'progress.txt';
 export const STORY_STATUS_FILENAME = 'story-status.json';
 export const PROJECT_CONSTRAINTS_FILENAME = 'project-constraints.md';
 export const GENERATED_PROJECT_CONSTRAINTS_FILENAME = 'project-constraints.generated.json';

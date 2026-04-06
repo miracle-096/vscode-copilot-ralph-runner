@@ -584,6 +584,7 @@ export interface PolicyViolation {
 	summary: string;
 	details: string[];
 	nextSteps: string[];
+	remediable?: boolean;
 }
 
 export interface PolicyCommandExecutionResult {

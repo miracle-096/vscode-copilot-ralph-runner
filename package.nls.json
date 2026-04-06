@@ -30,6 +30,7 @@
   "configuration.recalledTaskMemoryLimit.description": "Maximum number of related task-memory entries to inject or preview for each story.",
   "configuration.policyGates.markdownDescription": "Automatic policy rules. When enabled, Harness Runner checks the configured preflight and completion rules before a story starts and before completion is accepted. The `knowledge-check` rule can use Agent Map freshness, module knowledge gaps, and runbook coverage gaps as advisory or blocking signals. Legacy `requireProjectConstraintsBeforeRun` and `requireDesignContextForTaggedStories` settings are still read for compatibility but are no longer shown separately.",
   "configuration.policyGateCommandTimeoutMs.description": "Timeout in milliseconds for policy-gate build, test, or validation commands.",
+  "configuration.policyGateAutoFixRounds.description": "Maximum number of auto-fix rounds allowed after a completion gate failure. Defaults to 1.",
   "configuration.approvalPromptMode.description": "Approval prompt mode. Harness Runner reads this value using workspace override first, then falls back to User settings, and keeps using that mode in new Cline tasks.",
   "configuration.approvalPromptMode.enum.default": "Use the workspace override when present; otherwise fall back to User settings. Show an approval notification after a high-risk story completes.",
   "configuration.approvalPromptMode.enum.bypass": "Use the workspace override when present; otherwise fall back to User settings. Open the approval flow directly after a high-risk story completes.",

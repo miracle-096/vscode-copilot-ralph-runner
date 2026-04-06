@@ -125,7 +125,6 @@ import {
 } from './types';
 import {
 	PRD_FILENAME,
-	PROGRESS_FILENAME,
 	HARNESS_RUNNER_DIR,
 	STORY_STATUS_FILENAME,
 	ensureDesignContextSuggestionDirectory,
@@ -160,6 +159,13 @@ import {
 	HarnessMenuOrderEditorItem,
 	normalizeHarnessMenuOrderEditorPayload,
 } from './menuOrderEditor';
+import {
+	buildExecutionCheckpointConfigHtml,
+	ExecutionCheckpointConfigState,
+	PolicyRuleItem,
+	StoryCheckpointInfo,
+	ConstantParamInfo,
+} from './executionCheckpointConfig';
 
 interface ClineAPI {
 	startNewTask(task?: string, images?: string[]): Promise<void>;
@@ -729,27 +735,13 @@ class HarnessStateManager {
 
 	/**
 	 * Resolve the latest execution status for a story.
-	 * Falls back to progress.txt and transient signal entries when needed.
+	 * Falls back to transient signal entries when needed.
 	 */
 	static getStoryExecutionStatus(workspaceRoot: string, taskId: string): StoryExecutionStatus | 'none' {
 		const statusMap = HarnessStateManager.readStoryStatusMap(workspaceRoot);
 		const mappedStatus = statusMap[taskId];
 		if (mappedStatus) {
 			return mappedStatus;
-		}
-
-		const progressEntry = getStoryProgress(workspaceRoot, taskId);
-		if (progressEntry?.status === 'done') {
-			return 'completed';
-		}
-		if (progressEntry?.status === 'pending-review') {
-			return 'pendingReview';
-		}
-		if (progressEntry?.status === 'pending-release') {
-			return 'pendingRelease';
-		}
-		if (progressEntry?.status === 'failed') {
-			return 'failed';
 		}
 
 		const taskSignal = HarnessStateManager.getTaskSignalStatus(workspaceRoot, taskId);
@@ -920,100 +912,6 @@ function getNextUserStoryIdFromPrd(stories: UserStory[]): string {
 	return `US-${String(maxNumericId + 1).padStart(3, '0')}`;
 }
 
-// ── Progress File Operations ─────────────────────────────────────────────────
-// progress.txt tracks which user stories have been completed or failed.
-// Each line is: <storyId> | <status> | <timestamp> | <notes>
-// e.g.: US-001 | done | 2026-02-24 12:00:00 | Completed successfully
-
-interface ProgressEntry {
-	id: string;
-	status: 'done' | 'failed' | 'pending-review' | 'pending-release';
-	timestamp: string;
-	notes: string;
-}
-
-function getProgressPath(workspaceRoot: string): string {
-	return path.join(workspaceRoot, PROGRESS_FILENAME);
-}
-
-function readProgress(workspaceRoot: string): ProgressEntry[] {
-	const progressPath = getProgressPath(workspaceRoot);
-	if (!fs.existsSync(progressPath)) { return []; }
-
-	try {
-		const content = fs.readFileSync(progressPath, 'utf-8');
-		const entries: ProgressEntry[] = [];
-
-		for (const line of content.split('\n')) {
-			const trimmed = line.trim();
-			if (!trimmed || trimmed.startsWith('#')) { continue; }
-
-			const parts = trimmed.split('|').map((part: string) => part.trim());
-			if (parts.length >= 2) {
-				const normalizedStatus = normalizeProgressStatus(parts[1]);
-				if (!normalizedStatus) {
-					continue;
-				}
-				entries.push({
-					id: parts[0],
-					status: normalizedStatus,
-					timestamp: parts[2] || '',
-					notes: parts[3] || '',
-				});
-			}
-		}
-
-		return entries;
-	} catch {
-		return [];
-	}
-}
-
-function writeProgressEntry(workspaceRoot: string, id: string, status: 'done' | 'failed' | 'pending-review' | 'pending-release', notes: string): void {
-	const progressPath = getProgressPath(workspaceRoot);
-	const timestamp = new Date().toISOString().replace('T', ' ').slice(0, 19);
-	const line = `${id} | ${status} | ${timestamp} | ${notes}`;
-
-	let content = '';
-	if (fs.existsSync(progressPath)) {
-		content = fs.readFileSync(progressPath, 'utf-8');
-
-		// Remove any existing entry for this id so we don't duplicate
-		const lines = content.split('\n').filter((lineText: string) => {
-			const trimmed = lineText.trim();
-			if (!trimmed || trimmed.startsWith('#')) { return true; }
-			const entryId = trimmed.split('|')[0].trim();
-			return entryId !== id;
-		});
-		content = lines.join('\n');
-	} else {
-		content = '# Harness Runner Progress\n# Format: <storyId> | <status> | <timestamp> | <notes>\n';
-	}
-
-	if (!content.endsWith('\n')) { content += '\n'; }
-	content += line + '\n';
-
-	fs.writeFileSync(progressPath, content, 'utf-8');
-}
-
-function removeProgressEntry(workspaceRoot: string, id: string): void {
-	const progressPath = getProgressPath(workspaceRoot);
-	if (!fs.existsSync(progressPath)) { return; }
-
-	const content = fs.readFileSync(progressPath, 'utf-8');
-	const lines = content.split('\n').filter((lineText: string) => {
-		const trimmed = lineText.trim();
-		if (!trimmed || trimmed.startsWith('#')) { return true; }
-		const entryId = trimmed.split('|')[0].trim();
-		return entryId !== id;
-	});
-	fs.writeFileSync(progressPath, lines.join('\n') + '\n', 'utf-8');
-}
-
-function getStoryProgress(workspaceRoot: string, storyId: string): ProgressEntry | undefined {
-	const entries = readProgress(workspaceRoot);
-	return entries.find(e => e.id === storyId);
-}
 
 function findNextPendingStory(prd: PrdFile, workspaceRoot: string): UserStory | null {
 	// Sort by priority (ascending — lower number = higher priority)
@@ -1044,13 +942,6 @@ export function isHarnessRunnerActive(workspaceRoot: string | undefined, runnerR
 	}
 
 	return HarnessStateManager.getInProgressTaskId(workspaceRoot) !== null;
-}
-
-function normalizeProgressStatus(value: string): ProgressEntry['status'] | undefined {
-	if (value === 'done' || value === 'failed' || value === 'pending-review' || value === 'pending-release') {
-		return value;
-	}
-	return undefined;
 }
 
 // ── Globals ─────────────────────────────────────────────────────────────────
@@ -1304,14 +1195,6 @@ async function startHarnessRunner(): Promise<void> {
 			HarnessStateManager.setCompleted(workspaceRoot, nextStory.id);
 			HarnessStateManager.setStoryExecutionStatus(workspaceRoot, nextStory.id, executionResult.evidence.artifact.status);
 
-			// Write completion to progress.txt (prd.json is never modified)
-			writeProgressEntry(
-				workspaceRoot,
-				nextStory.id,
-				mapStoryStatusToProgressStatus(executionResult.evidence.artifact.status),
-				buildStoryCompletionNote(executionResult)
-			);
-
 			log(`✅ Story ${nextStory.id} finalized as ${executionResult.evidence.artifact.status} with task memory (${executionResult.taskMemory.source}), checkpoint (${executionResult.checkpoint.source}), and evidence (${executionResult.evidence.source}).`);
 			activeRunLog?.finalize('completed', `Story ${nextStory.id} finalized as ${executionResult.evidence.artifact.status}.`);
 			await maybePromptForManualApproval(workspaceRoot, nextStory, executionResult.evidence.artifact);
@@ -1356,8 +1239,6 @@ async function startHarnessRunner(): Promise<void> {
 			HarnessStateManager.setCompleted(workspaceRoot, nextStory.id);
 			HarnessStateManager.setStoryExecutionStatus(workspaceRoot, nextStory.id, 'failed');
 
-			// Write failure to progress.txt (prd.json is never modified)
-			writeProgressEntry(workspaceRoot, nextStory.id, 'failed', `${errMsg}; checkpoint persisted (${failedCheckpoint.source})`);
 			activeRunLog?.finalize('failed', `Story ${nextStory.id} failed with an unrecovered error.`);
 			vscode.window.showErrorMessage(`HARNESS：${nextStory.id} 执行失败，已停止自动运行。`);
 			break;
@@ -1569,6 +1450,97 @@ interface StoryExecutionArtifacts {
 	evidence: StoryEvidencePersistenceResult;
 }
 
+function getPolicyAutoFixRounds(): number {
+	return vscode.workspace.getConfiguration('harness-runner').get<number>('policyGateAutoFixRounds', 1);
+}
+
+
+interface PolicyAutoFixResult {
+	ok: boolean;
+	summary?: string;
+	rounds: number;
+}
+
+async function runCompletionPolicyWithAutoFix(
+	story: UserStory,
+	workspaceRoot: string,
+	maxRounds: number,
+): Promise<PolicyAutoFixResult> {
+	let rounds = 0;
+	let lastResult = evaluateCompletionPolicyGates(workspaceRoot, story);
+
+	while (!lastResult.ok && rounds < maxRounds) {
+		const hasRemediableViolations = lastResult.violations.some(v => v.remediable !== false);
+		if (!hasRemediableViolations) {
+			log(`  Policy violations for ${story.id} are not auto-fixable; aborting auto-fix loop.`);
+			for (const line of summarizePolicyViolations(lastResult)) {
+				log(`  ${line}`);
+			}
+			return { ok: false, summary: lastResult.violations.map(v => v.summary).join('; '), rounds };
+		}
+
+		rounds += 1;
+		log(`  Policy auto-fix round ${rounds}/${maxRounds} for ${story.id}.`);
+		activeRunLog?.recordEvent({
+			phase: 'completion-gates',
+			category: 'diagnostic',
+			kind: 'failure',
+			title: 'policy-auto-fix',
+			summary: `Attempting policy auto-fix round ${rounds}/${maxRounds} for ${story.id}.`,
+			details: lastResult.violations.map(v => v.summary),
+		});
+
+		const fixPrompt = buildPromptForPolicyFix(story, workspaceRoot, lastResult);
+		await sendToCline(fixPrompt, story.id, workspaceRoot);
+
+		// Re-evaluate after the fix
+		lastResult = evaluateCompletionPolicyGates(workspaceRoot, story);
+		if (lastResult.ok) {
+			log(`  Policy auto-fix round ${rounds} succeeded for ${story.id}.`);
+			activeRunLog?.recordEvent({
+				phase: 'completion-gates',
+				category: 'signal',
+				kind: 'summary',
+				title: 'policy-auto-fix-success',
+				summary: `Policy auto-fix round ${rounds} succeeded for ${story.id}.`,
+				details: [],
+			});
+			return { ok: true, rounds };
+		}
+	}
+
+	if (!lastResult.ok) {
+		log(`  Policy auto-fix failed after ${rounds} rounds for ${story.id}.`);
+		for (const line of summarizePolicyViolations(lastResult)) {
+			log(`  ${line}`);
+		}
+	}
+
+	return { ok: lastResult.ok, summary: lastResult.ok ? undefined : lastResult.violations.map(v => v.summary).join('; '), rounds };
+}
+
+function buildPromptForPolicyFix(story: UserStory, workspaceRoot: string, policyResult: ReturnType<typeof evaluateCompletionPolicyGates>): string {
+	const languagePack = getLanguagePack();
+	const violationSummary = policyResult.violations.map(v => {
+		const lines = [`Rule: ${v.ruleId} - ${v.title}`, `Summary: ${v.summary}`];
+		for (const detail of v.details) {
+			lines.push(`  Detail: ${detail}`);
+		}
+		for (const nextStep of v.nextSteps) {
+			lines.push(`  Next Step: ${nextStep}`);
+		}
+		return lines.join('\n');
+	}).join('\n\n');
+
+	return [
+		languagePack.language === 'Chinese' ? '门禁校验失败，请修复以下问题：' : 'Policy gate failed. Please fix the following issues:',
+		'',
+		violationSummary,
+		'',
+		languagePack.language === 'Chinese' ? '修复完成后，确保所有相关的工件都已更新，并重新写出完成信号。' : 'After fixing, ensure all related artifacts are updated and the completion signal is written again.',
+	].join('\n');
+}
+
 async function executeStory(story: UserStory, workspaceRoot: string): Promise<{
 	taskMemory: TaskMemoryPersistenceResult;
 	checkpoint: ExecutionCheckpointPersistenceResult;
@@ -1587,10 +1559,13 @@ async function executeStory(story: UserStory, workspaceRoot: string): Promise<{
 	});
 	log(`  Delegating user story to Cline...`);
 	await sendToCline(prompt, story.id, workspaceRoot);
-	const completionPolicyResult = evaluateCompletionPolicyGates(workspaceRoot, story);
-	if (!completionPolicyResult.ok) {
-		throw new Error(`Policy gates blocked completion for ${story.id}`);
+
+	const policyAutoFixRounds = getPolicyAutoFixRounds();
+	const completionResult = await runCompletionPolicyWithAutoFix(story, workspaceRoot, policyAutoFixRounds);
+	if (!completionResult.ok) {
+		throw new Error(`Policy gates blocked completion for ${story.id}: ${completionResult.summary}`);
 	}
+
 	activeRunLog?.transitionPhase('artifact-persistence', `Persisting story artifacts for ${story.id}.`);
 	let artifacts = refreshStoryExecutionArtifacts(story, workspaceRoot);
 	log(`  Task memory ready for ${story.id}: ${artifacts.taskMemory.filePath} (${artifacts.taskMemory.source})`);
@@ -2266,12 +2241,20 @@ async function stopActiveClineSession(): Promise<boolean> {
 	activeClineSessionStartedAt = null;
 
 	const cline = await getClineApi();
-	if (!cline?.pressSecondaryButton) {
+	if (!cline) {
 		return false;
 	}
 
 	try {
-		await cline.pressSecondaryButton();
+		// Try to send a stop message first (more reliable for stopping current task)
+		if (cline.sendMessage) {
+			await cline.sendMessage('STOP');
+		}
+		// Also press the secondary button (stop button)
+		if (cline.pressSecondaryButton) {
+			await cline.pressSecondaryButton();
+		}
+		await cline.startNewTask(""); // Ensure a fresh task to fully clear context
 		return true;
 	} catch (error: unknown) {
 		const message = error instanceof Error ? error.message : String(error);
@@ -2995,16 +2978,6 @@ function getCompletionPolicyExecutedTestCommands(workspaceRoot: string, story: U
 	}));
 }
 
-function mapStoryStatusToProgressStatus(status: Extract<StoryExecutionStatus, 'completed' | 'pendingReview' | 'pendingRelease'>): ProgressEntry['status'] {
-	if (status === 'pendingReview') {
-		return 'pending-review';
-	}
-	if (status === 'pendingRelease') {
-		return 'pending-release';
-	}
-	return 'done';
-}
-
 function buildStoryCompletionNote(executionResult: {
 	taskMemory: TaskMemoryPersistenceResult;
 	checkpoint: ExecutionCheckpointPersistenceResult;
@@ -3264,12 +3237,6 @@ async function reviewStoryApproval(targetStoryId?: string): Promise<void> {
 	writeStoryEvidence(workspaceRoot, candidate.story.id, updatedEvidence);
 	HarnessStateManager.setCompleted(workspaceRoot, candidate.story.id);
 	HarnessStateManager.setStoryExecutionStatus(workspaceRoot, candidate.story.id, updatedEvidence.status);
-	writeProgressEntry(
-		workspaceRoot,
-		candidate.story.id,
-		mapStoryStatusToProgressStatus(updatedEvidence.status),
-		buildApprovalProgressNote(updatedEvidence, action)
-	);
 
 	log(`Approval updated for ${candidate.story.id}: action=${action}; status=${updatedEvidence.status}; approval=${updatedEvidence.approvalState}.`);
 	const message = languagePack.approval.updated(
@@ -3294,9 +3261,8 @@ async function resetStory(): Promise<void> {
 		return;
 	}
 
-	const progress = readProgress(workspaceRoot);
-	const trackedIds = new Set(progress.map(e => e.id));
-	const trackedStories = prd.userStories.filter(s => trackedIds.has(s.id));
+	const statusMap = HarnessStateManager.readStoryStatusMap(workspaceRoot);
+	const trackedStories = prd.userStories.filter(s => s.id in statusMap);
 
 	if (trackedStories.length === 0) {
 		vscode.window.showInformationMessage(languagePack.reset.noTrackedStories);
@@ -3304,10 +3270,10 @@ async function resetStory(): Promise<void> {
 	}
 
 	const items = trackedStories.map(s => {
-		const entry = progress.find(e => e.id === s.id);
+		const status = statusMap[s.id];
 		return {
 			label: `${s.id} — ${s.title}`,
-			description: entry ? `[${entry.status}] ${entry.notes}` : '',
+			description: getLocalizedStoryStatus(status, languagePack.language),
 			storyId: s.id
 		};
 	});
@@ -3317,8 +3283,6 @@ async function resetStory(): Promise<void> {
 	});
 
 	if (selection) {
-		removeProgressEntry(workspaceRoot, selection.storyId);
-		// Also clear the .harness-runner status file if present
 		HarnessStateManager.clearStalledTask(workspaceRoot, selection.storyId);
 		HarnessStateManager.clearStoryExecutionStatus(workspaceRoot, selection.storyId);
 		try {
@@ -3336,7 +3300,6 @@ async function resetStory(): Promise<void> {
 }
 
 function clearStoryForReplay(workspaceRoot: string, storyId: string): void {
-	removeProgressEntry(workspaceRoot, storyId);
 	HarnessStateManager.clearStalledTask(workspaceRoot, storyId);
 	HarnessStateManager.clearStoryExecutionStatus(workspaceRoot, storyId);
 	clearPolicyBaseline(workspaceRoot, storyId);
@@ -3380,14 +3343,11 @@ async function rerunFailedStory(): Promise<void> {
 	}
 
 	const selection = await vscode.window.showQuickPick(
-		failedStories.map(story => {
-			const progressEntry = getStoryProgress(workspaceRoot, story.id);
-			return {
-				label: `${story.id} — ${story.title}`,
-				description: progressEntry ? progressEntry.notes : languagePack.status.failed(1),
-				storyId: story.id,
-			};
-		}),
+		failedStories.map(story => ({
+			label: `${story.id} — ${story.title}`,
+			description: languagePack.status.failed(1),
+			storyId: story.id,
+		})),
 		{
 			placeHolder: languagePack.reset.rerunPlaceholder,
 		}
@@ -5169,136 +5129,207 @@ async function configurePolicyGates(): Promise<void> {
 	}
 
 	const cfg = vscode.workspace.getConfiguration('harness-runner');
-	const scopeSelection = await vscode.window.showQuickPick([
-		{
-			label: languagePack.policyConfig.scopeUserLabel,
-			description: languagePack.policyConfig.scopeUserDescription,
-			target: vscode.ConfigurationTarget.Global,
-		},
-		{
-			label: languagePack.policyConfig.scopeWorkspaceLabel,
-			description: languagePack.policyConfig.scopeWorkspaceDescription,
-			target: vscode.ConfigurationTarget.Workspace,
-		},
-	], {
-		title: languagePack.policyConfig.title,
-		placeHolder: languagePack.policyConfig.scopePlaceholder,
-	});
-	if (!scopeSelection) {
-		return;
-	}
-
-	const rawPolicyConfig = normalizePolicyConfig(cfg.get<unknown>('policyGates', undefined));
 	const effectivePolicyConfig = buildEffectivePolicyConfig(cfg.get<unknown>('policyGates', undefined), {
 		requireProjectConstraintsBeforeRun: cfg.get<boolean>('requireProjectConstraintsBeforeRun', false),
 		requireDesignContextForTaggedStories: cfg.get<boolean>('requireDesignContextForTaggedStories', false),
 	});
 	const currentConfig = getConfig();
-	const enabledSelection = await vscode.window.showQuickPick([
-		{ label: languagePack.policyConfig.enabledLabel, description: languagePack.policyConfig.enabledDescription, value: true },
-		{ label: languagePack.policyConfig.disabledLabel, description: languagePack.policyConfig.disabledDescription, value: false },
-	], {
-		title: languagePack.policyConfig.title,
-		placeHolder: languagePack.policyConfig.enablePlaceholder,
-	});
-	if (!enabledSelection) {
-		return;
-	}
-
 	const currentEnabledRuleIds = new Set(getEnabledBuiltinPolicyRuleIds(effectivePolicyConfig));
-	const ruleSelections = await vscode.window.showQuickPick(buildPolicyRuleQuickPickItems(languagePack, currentEnabledRuleIds), {
-		title: languagePack.policyConfig.title,
-		placeHolder: languagePack.policyConfig.rulesPlaceholder,
-		canPickMany: true,
-		ignoreFocusOut: true,
-	});
-	if (!ruleSelections) {
-		return;
-	}
 
-	const approvalModeSelection = await vscode.window.showQuickPick([
-		{ label: languagePack.policyConfig.approvalModes.default.label, description: languagePack.policyConfig.approvalModes.default.description, value: 'default' as ApprovalPromptMode },
-		{ label: languagePack.policyConfig.approvalModes.bypass.label, description: languagePack.policyConfig.approvalModes.bypass.description, value: 'bypass' as ApprovalPromptMode },
-		{ label: languagePack.policyConfig.approvalModes.autopilot.label, description: languagePack.policyConfig.approvalModes.autopilot.description, value: 'autopilot' as ApprovalPromptMode },
-	], {
-		title: languagePack.policyConfig.title,
-		placeHolder: languagePack.policyConfig.approvalModePlaceholder,
-	});
-	if (!approvalModeSelection) {
-		return;
-	}
+	const rules: PolicyRuleItem[] = [
+		{
+			id: 'require-project-constraints',
+			label: languagePack.policyConfig.ruleLabels.requireProjectConstraints,
+			description: languagePack.policyConfig.ruleDescriptions.requireProjectConstraints,
+			enabled: currentEnabledRuleIds.has('require-project-constraints'),
+			phase: 'preflight',
+		},
+		{
+			id: 'require-design-context',
+			label: languagePack.policyConfig.ruleLabels.requireDesignContext,
+			description: languagePack.policyConfig.ruleDescriptions.requireDesignContext,
+			enabled: currentEnabledRuleIds.has('require-design-context'),
+			phase: 'preflight',
+		},
+		{
+			id: 'protect-dangerous-paths',
+			label: languagePack.policyConfig.ruleLabels.protectDangerousPaths,
+			description: languagePack.policyConfig.ruleDescriptions.protectDangerousPaths,
+			enabled: currentEnabledRuleIds.has('protect-dangerous-paths'),
+			phase: 'completion',
+		},
+		{
+			id: 'require-relevant-tests',
+			label: languagePack.policyConfig.ruleLabels.requireRelevantTests,
+			description: languagePack.policyConfig.ruleDescriptions.requireRelevantTests,
+			enabled: currentEnabledRuleIds.has('require-relevant-tests'),
+			phase: 'completion',
+		},
+		{
+			id: 'require-task-memory-artifact',
+			label: languagePack.policyConfig.ruleLabels.requireTaskMemory,
+			description: languagePack.policyConfig.ruleDescriptions.requireTaskMemory,
+			enabled: currentEnabledRuleIds.has('require-task-memory-artifact'),
+			phase: 'completion',
+		},
+		{
+			id: 'require-execution-checkpoint-artifact',
+			label: languagePack.policyConfig.ruleLabels.requireExecutionCheckpoint,
+			description: languagePack.policyConfig.ruleDescriptions.requireExecutionCheckpoint,
+			enabled: currentEnabledRuleIds.has('require-execution-checkpoint-artifact'),
+			phase: 'completion',
+		},
+		{
+			id: 'require-story-evidence-artifact',
+			label: languagePack.policyConfig.ruleLabels.requireStoryEvidence,
+			description: languagePack.policyConfig.ruleDescriptions.requireStoryEvidence,
+			enabled: currentEnabledRuleIds.has('require-story-evidence-artifact'),
+			phase: 'completion',
+		},
+	];
 
-	const reviewerLoopSelection = await vscode.window.showQuickPick([
-		{ label: languagePack.policyConfig.reviewerLoopEnabledLabel, description: languagePack.policyConfig.reviewerLoopEnabledDescription, value: true },
-		{ label: languagePack.policyConfig.reviewerLoopDisabledLabel, description: languagePack.policyConfig.reviewerLoopDisabledDescription, value: false },
-	], {
-		title: languagePack.policyConfig.title,
-		placeHolder: languagePack.policyConfig.reviewerLoopPlaceholder,
-	});
-	if (!reviewerLoopSelection) {
-		return;
-	}
+	// Gather story execution status for display in webview
+	const prd = parsePrd(workspaceRoot);
+	const stories: StoryCheckpointInfo[] = prd ? prd.userStories.map(story => {
+		const status = HarnessStateManager.getStoryExecutionStatus(workspaceRoot, story.id);
+		const evidence = readStoryEvidence(workspaceRoot, story.id);
+		const checkpoint = readExecutionCheckpoint(workspaceRoot, story.id);
+		return {
+			id: story.id,
+			title: story.title,
+			status: status as StoryCheckpointInfo['status'],
+			priority: story.priority,
+		lastCheckpoint: checkpoint ? {
+			status: checkpoint.status,
+			updatedAt: checkpoint.updatedAt,
+			summary: checkpoint.summary,
+		} : evidence ? {
+			status: evidence.status,
+			updatedAt: evidence.generatedAt,
+			summary: evidence.summary,
+		} : undefined,
+		};
+	}) : [];
 
-	const reviewerPassingScore = await promptForWorkspacePinnedInteger({
-		title: languagePack.policyConfig.title,
-		prompt: languagePack.policyConfig.reviewerPassingScorePrompt,
-		placeHolder: languagePack.policyConfig.reviewerPassingScorePlaceholder,
-		initialValue: String(currentConfig.REVIEW_PASSING_SCORE),
-		minimum: 1,
-		maximum: 100,
-		validationMessage: languagePack.policyConfig.reviewerPassingScoreValidation,
-	});
-	if (reviewerPassingScore === undefined) {
-		return;
-	}
+	// Build constant params from current config
+	const constantParams: ConstantParamInfo[] = [
+		{ key: 'maxAutonomousLoops', label: '最大自主循环次数', value: currentConfig.MAX_AUTONOMOUS_LOOPS, description: '单次启动最多自动执行的故事循环数', category: 'general' },
+		{ key: 'loopDelayMs', label: '循环间隔延迟', value: currentConfig.LOOP_DELAY_MS, description: '每个故事执行完成后的等待时间（毫秒）', category: 'execution' },
+		{ key: 'executionTimeoutMs', label: '执行超时', value: currentConfig.EXECUTION_TIMEOUT_MS, description: '等待 Cline 完成单个故事的最大时间（毫秒）', category: 'execution' },
+		{ key: 'executionMinWaitMs', label: '最小等待时间', value: currentConfig.EXECUTION_MIN_WAIT_MS, description: '首次检查 Cline 完成状态前的最小等待时间（毫秒）', category: 'execution' },
+		{ key: 'approvalPromptMode', label: '审批提示模式', value: currentConfig.APPROVAL_PROMPT_MODE, description: '审批流程的提示模式：default/bypass/autopilot', category: 'policy' },
+		{ key: 'enableReviewerLoop', label: '启用审核循环', value: currentConfig.ENABLE_REVIEWER_LOOP, description: '是否启用 Reviewer Agent 审核流程', category: 'review' },
+		{ key: 'reviewPassingScore', label: '审核通过分数', value: currentConfig.REVIEW_PASSING_SCORE, description: 'Reviewer 评分的通过阈值（1-100）', category: 'review' },
+		{ key: 'maxAutoRefactorRounds', label: '最大自动修复轮数', value: currentConfig.MAX_AUTO_REFACTOR_ROUNDS, description: '审核不通过时自动修复的最大轮数', category: 'review' },
+		{ key: 'policyGateAutoFixRounds', label: '策略门禁自动修复轮数', value: cfg.get<number>('policyGateAutoFixRounds', 1), description: '策略门禁检查失败后自动修复的最大轮数（0-5）', category: 'policy' },
+		{ key: 'autoInjectProjectConstraints', label: '自动注入项目约束', value: currentConfig.AUTO_INJECT_PROJECT_CONSTRAINTS, description: '执行故事时是否自动注入项目约束', category: 'general' },
+		{ key: 'autoInjectDesignContext', label: '自动注入设计上下文', value: currentConfig.AUTO_INJECT_DESIGN_CONTEXT, description: '执行故事时是否自动注入设计上下文', category: 'general' },
+		{ key: 'autoRecallTaskMemory', label: '自动回忆任务记忆', value: currentConfig.AUTO_RECALL_TASK_MEMORY, description: '执行故事时是否自动回忆相关任务记忆', category: 'general' },
+		{ key: 'autoCommitGit', label: '自动 Git 提交', value: currentConfig.AUTO_COMMIT_GIT, description: '故事完成后是否自动创建 Git 提交', category: 'general' },
+		{ key: 'recalledTaskMemoryLimit', label: '任务记忆回忆限制', value: currentConfig.RECALLED_TASK_MEMORY_LIMIT, description: '每次执行时最多回忆的相关任务记忆数量', category: 'general' },
+	];
 
-	const reviewerAutoRefactorRounds = await promptForWorkspacePinnedInteger({
-		title: languagePack.policyConfig.title,
-		prompt: languagePack.policyConfig.autoRefactorRoundsPrompt,
-		placeHolder: languagePack.policyConfig.autoRefactorRoundsPlaceholder,
-		initialValue: String(currentConfig.MAX_AUTO_REFACTOR_ROUNDS),
-		minimum: 0,
-		validationMessage: languagePack.policyConfig.autoRefactorRoundsValidation,
-	});
-	if (reviewerAutoRefactorRounds === undefined) {
-		return;
-	}
+	const configState: ExecutionCheckpointConfigState = {
+		enabled: effectivePolicyConfig.enabled,
+		rules,
+		approvalMode: currentConfig.APPROVAL_PROMPT_MODE,
+		reviewerLoopEnabled: currentConfig.ENABLE_REVIEWER_LOOP,
+		reviewerPassingScore: currentConfig.REVIEW_PASSING_SCORE,
+		maxAutoRefactorRounds: currentConfig.MAX_AUTO_REFACTOR_ROUNDS,
+		policyGateAutoFixRounds: cfg.get<number>('policyGateAutoFixRounds', 1),
+		stories,
+		constantParams,
+	};
 
-	const updatedPolicyConfig = applyBuiltinRuleSelections(
-		rawPolicyConfig,
-		enabledSelection.value,
-		new Set(ruleSelections.map(item => item.ruleId))
+	const panel = vscode.window.createWebviewPanel(
+		'harnessExecutionCheckpointConfig',
+		languagePack.policyConfig.title,
+		vscode.ViewColumn.Active,
+		{
+			enableScripts: true,
+			retainContextWhenHidden: false,
+		}
 	);
-	await cfg.update('policyGates', updatedPolicyConfig, scopeSelection.target);
-	await cfg.update('requireProjectConstraintsBeforeRun', undefined, scopeSelection.target);
-	await cfg.update('requireDesignContextForTaggedStories', undefined, scopeSelection.target);
-	await cfg.update('approvalPromptMode', approvalModeSelection.value, scopeSelection.target);
-	await cfg.update('enableReviewerLoop', reviewerLoopSelection.value, scopeSelection.target);
-	await cfg.update('reviewPassingScore', reviewerPassingScore, scopeSelection.target);
-	await cfg.update('maxAutoRefactorRounds', reviewerAutoRefactorRounds, scopeSelection.target);
-	if (scopeSelection.target === vscode.ConfigurationTarget.Workspace) {
-		persistWorkspacePinnedRunnerSettingsFile(workspaceRoot, {
-			approvalPromptMode: approvalModeSelection.value,
-			enableReviewerLoop: reviewerLoopSelection.value,
-			reviewPassingScore: reviewerPassingScore,
-			maxAutoRefactorRounds: reviewerAutoRefactorRounds,
-		});
-	}
-	if (scopeSelection.target === vscode.ConfigurationTarget.Global) {
-		await cfg.update('policyGates', undefined, vscode.ConfigurationTarget.Workspace);
-		await cfg.update('requireProjectConstraintsBeforeRun', undefined, vscode.ConfigurationTarget.Workspace);
-		await cfg.update('requireDesignContextForTaggedStories', undefined, vscode.ConfigurationTarget.Workspace);
-		await cfg.update('approvalPromptMode', undefined, vscode.ConfigurationTarget.Workspace);
-		await cfg.update('enableReviewerLoop', undefined, vscode.ConfigurationTarget.Workspace);
-		await cfg.update('reviewPassingScore', undefined, vscode.ConfigurationTarget.Workspace);
-		await cfg.update('maxAutoRefactorRounds', undefined, vscode.ConfigurationTarget.Workspace);
-	}
-	updateStatusBar(isRunning ? 'running' : 'idle');
+	panel.iconPath = new vscode.ThemeIcon('settings-gear');
+	panel.webview.html = buildExecutionCheckpointConfigHtml(configState, languagePack, panel.webview.cspSource);
 
-	const action = await vscode.window.showInformationMessage(languagePack.policyConfig.saved, languagePack.policyConfig.openSettings);
-	if (action === languagePack.policyConfig.openSettings) {
-		await vscode.commands.executeCommand('workbench.action.openSettings', 'harness-runner.policyGates');
-	}
+	const disposables: vscode.Disposable[] = [];
+	const finish = () => {
+		while (disposables.length > 0) {
+			disposables.pop()?.dispose();
+		}
+	};
+
+	disposables.push(panel.onDidDispose(() => finish()));
+	disposables.push(panel.webview.onDidReceiveMessage(async message => {
+		if (message?.type === 'cancel') {
+			panel.dispose();
+			return;
+		}
+
+		if (message?.type !== 'save') {
+			return;
+		}
+
+		const config = message.config as {
+			scope: 'Global' | 'Workspace';
+			enabled: boolean;
+			enabledRuleIds: string[];
+			approvalMode: ApprovalPromptMode;
+			reviewerLoopEnabled: boolean;
+			reviewerPassingScore: number;
+			maxAutoRefactorRounds: number;
+			policyGateAutoFixRounds: number;
+		};
+
+		const scopeTarget = config.scope === 'Global'
+			? vscode.ConfigurationTarget.Global
+			: vscode.ConfigurationTarget.Workspace;
+
+		const rawPolicyConfig = normalizePolicyConfig(cfg.get<unknown>('policyGates', undefined));
+		const updatedPolicyConfig = applyBuiltinRuleSelections(
+			rawPolicyConfig,
+			config.enabled,
+			new Set(config.enabledRuleIds)
+		);
+
+		await cfg.update('policyGates', updatedPolicyConfig, scopeTarget);
+		await cfg.update('requireProjectConstraintsBeforeRun', undefined, scopeTarget);
+		await cfg.update('requireDesignContextForTaggedStories', undefined, scopeTarget);
+		await cfg.update('approvalPromptMode', config.approvalMode, scopeTarget);
+		await cfg.update('enableReviewerLoop', config.reviewerLoopEnabled, scopeTarget);
+		await cfg.update('reviewPassingScore', config.reviewerPassingScore, scopeTarget);
+		await cfg.update('maxAutoRefactorRounds', config.maxAutoRefactorRounds, scopeTarget);
+		await cfg.update('policyGateAutoFixRounds', config.policyGateAutoFixRounds, scopeTarget);
+
+		if (scopeTarget === vscode.ConfigurationTarget.Workspace) {
+			persistWorkspacePinnedRunnerSettingsFile(workspaceRoot, {
+				approvalPromptMode: config.approvalMode,
+				enableReviewerLoop: config.reviewerLoopEnabled,
+				reviewPassingScore: config.reviewerPassingScore,
+				maxAutoRefactorRounds: config.maxAutoRefactorRounds,
+			});
+		}
+		if (scopeTarget === vscode.ConfigurationTarget.Global) {
+			await cfg.update('policyGates', undefined, vscode.ConfigurationTarget.Workspace);
+			await cfg.update('requireProjectConstraintsBeforeRun', undefined, vscode.ConfigurationTarget.Workspace);
+			await cfg.update('requireDesignContextForTaggedStories', undefined, vscode.ConfigurationTarget.Workspace);
+			await cfg.update('approvalPromptMode', undefined, vscode.ConfigurationTarget.Workspace);
+			await cfg.update('enableReviewerLoop', undefined, vscode.ConfigurationTarget.Workspace);
+			await cfg.update('reviewPassingScore', undefined, vscode.ConfigurationTarget.Workspace);
+			await cfg.update('maxAutoRefactorRounds', undefined, vscode.ConfigurationTarget.Workspace);
+			await cfg.update('policyGateAutoFixRounds', undefined, vscode.ConfigurationTarget.Workspace);
+		}
+
+		updateStatusBar(isRunning ? 'running' : 'idle');
+		panel.webview.postMessage({ type: 'success', text: languagePack.policyConfig.saved });
+
+		const action = await vscode.window.showInformationMessage(languagePack.policyConfig.saved, languagePack.policyConfig.openSettings);
+		if (action === languagePack.policyConfig.openSettings) {
+			await vscode.commands.executeCommand('workbench.action.openSettings', 'harness-runner.policyGates');
+		}
+		panel.dispose();
+	}));
 }
 
 function buildPolicyRuleQuickPickItems(languagePack: ReturnType<typeof getLanguagePack>, enabledRuleIds: Set<string>) {

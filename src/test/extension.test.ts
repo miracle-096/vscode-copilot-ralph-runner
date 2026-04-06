@@ -118,7 +118,7 @@ import {
 	readStoryRunLog,
 	summarizeCommandOutput,
 } from '../runLog';
-import { buildHarnessGuideDocument, getHarnessGuideContent } from '../helpManual';
+import { buildHarnessGuideDocument } from '../helpManual';
 import { getHarnessLanguagePack } from '../localization';
 import {
 	buildHarnessMenuOrderEditorHtml,
@@ -634,30 +634,22 @@ assert.deepStrictEqual(rootGuideResolution.nextMenuStack, ['root']);
 			assert.strictEqual('ralph-runner.reviewPassingScore' in persisted, false);
 	});
 
-	test('Harness guide merges introduction and workflows into chapter-based content', () => {
-		const chineseGuide = getHarnessGuideContent('Chinese');
+	test('Harness guide renders simplified section-based content', () => {
 		const chineseGuideDocument = buildHarnessGuideDocument('Chinese');
 		const englishGuideDocument = buildHarnessGuideDocument('English');
-		const engineeringChapter = chineseGuide.chapters.find(chapter => chapter.id === 'harness-engineering');
 
-		assert.strictEqual(chineseGuide.title, 'Harness Runner 指南');
-		assert.ok(chineseGuide.chapters.some(chapter => chapter.title === '理解 Harness Runner'));
-		assert.ok(chineseGuide.chapters.some(chapter => chapter.title === 'Harness 的工程化含义'));
-		assert.ok(chineseGuide.chapters.some(chapter => chapter.title === '推荐使用流程'));
-		assert.ok(chineseGuide.chapters.some(chapter => chapter.title === '资料吸收与后续扩展'));
-		assert.ok(engineeringChapter);
-		assert.ok(engineeringChapter?.sections.some(section => section.title === 'Harness Engineering 在解决什么'));
-		assert.ok(engineeringChapter?.sections.some(section => section.bullets?.includes('复杂任务要靠分块推进、显式 handoff 和外置状态，而不是把所有工作塞进一个会话')));
-		assert.ok(chineseGuideDocument.html.includes('<h2>目录</h2>'));
-		assert.ok(chineseGuideDocument.html.includes('章节 1'));
-		assert.ok(chineseGuideDocument.html.includes('<details id="overview" class="chapter-shell guide-toggle">'));
-		assert.ok(chineseGuideDocument.html.includes('<details class="card section-card guide-toggle" data-section-index="1">'));
-		assert.strictEqual(chineseGuideDocument.html.includes('<details id="overview" class="chapter-shell guide-toggle" open>'), false);
-		assert.ok(chineseGuideDocument.html.includes('data-target-chapter="overview"'));
-		assert.ok(chineseGuideDocument.html.includes('Harness Runner 指南：查看统一指南入口'));
-		assert.ok(englishGuideDocument.html.includes('Recommended Workflows'));
-		assert.ok(englishGuideDocument.html.includes('Harness Runner Guide'));
-		assert.ok(englishGuideDocument.html.includes('What Harness Engineering Means Here'));
+		assert.ok(chineseGuideDocument.title === 'Harness Runner 指南');
+		assert.ok(chineseGuideDocument.html.includes('什么是 Harness，为什么需要它'));
+		assert.ok(chineseGuideDocument.html.includes('插件包含哪些 Harness 模块，运行流程是怎样的'));
+		assert.ok(chineseGuideDocument.html.includes('如何开始使用'));
+		assert.ok(chineseGuideDocument.html.includes('.harness-runner/'));
+		assert.ok(chineseGuideDocument.html.includes('人类掌舵，智能体执行'));
+
+		assert.ok(englishGuideDocument.title === 'Harness Runner Guide');
+		assert.ok(englishGuideDocument.html.includes('What Is Harness and Why You Need It'));
+		assert.ok(englishGuideDocument.html.includes('What Harness Modules Exist and How the Flow Works'));
+		assert.ok(englishGuideDocument.html.includes('How to Get Started'));
+		assert.ok(englishGuideDocument.html.includes('human steers, agent executes'));
 		assert.ok(englishGuideDocument.html.includes('human steer, agent execute'));
 		assert.ok(englishGuideDocument.html.includes('How The Guardrails Map To This Extension'));
 		assert.ok(englishGuideDocument.html.includes('Rules For Future Source Integration'));

@@ -2,7 +2,7 @@
   "name": "harness-runner",
   "displayName": "Harness Runner",
   "description": "Autonomous task runner — reads prd.json user stories, tracks progress inline, and drives Cline to execute each story in an auditable execution loop",
-  "version": "0.0.9",
+  "version": "1.0.0",
   "publisher": "recent-graduates",
   "repository": {
     "type": "git",
@@ -267,6 +267,13 @@
           "minimum": 1000,
           "description": "%configuration.policyGateCommandTimeoutMs.description%"
         },
+        "harness-runner.policyGateAutoFixRounds": {
+          "type": "number",
+          "default": 1,
+          "minimum": 0,
+          "maximum": 5,
+          "description": "%configuration.policyGateAutoFixRounds.description%"
+        },
         "harness-runner.approvalPromptMode": {
           "type": "string",
           "default": "default",
@@ -346,5 +353,8 @@
     "@vscode/test-cli": "^0.0.12",
     "@vscode/test-electron": "^2.5.2"
   },
-  "icon": "images/harness_runner.ico"
+  "icon": "images/harness_runner.ico",
+  "extensionDependencies": [
+    "saoudrizwan.claude-dev"
+  ]
 }

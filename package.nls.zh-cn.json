@@ -30,6 +30,7 @@
   "configuration.recalledTaskMemoryLimit.description": "每个故事最多注入或预览的相关任务记忆条目数量。",
   "configuration.policyGates.markdownDescription": "自动检查规则。开启后，Harness Runner 会在故事开始前和完成前按这里的 preflight/completion 规则检查；其中 `knowledge-check` 可把 Agent Map 新鲜度、模块知识缺口和运行说明覆盖缺口作为 advisory 或 gate 使用。旧的 `requireProjectConstraintsBeforeRun` 和 `requireDesignContextForTaggedStories` 仍会兼容读取，但不再单独展示。",
   "configuration.policyGateCommandTimeoutMs.description": "自动检查在执行测试或构建命令时的超时时间，单位为毫秒。",
+  "configuration.policyGateAutoFixRounds.description": "门禁校验失败后，允许自动委托 Cline 修复的最大轮数。默认值为 1。",
   "configuration.approvalPromptMode.description": "审批提示模式。Harness Runner 按“工作区覆盖优先、否则回退到 User 全局设置”的顺序读取该值，并在新开 Cline 任务时继续按该模式处理审批交互。",
   "configuration.approvalPromptMode.enum.default": "当前工作区若存在覆盖则优先使用；否则回退到 User 全局设置。高风险故事完成后显示审批提示，可选择打开审批流或证据包。",
   "configuration.approvalPromptMode.enum.bypass": "当前工作区若存在覆盖则优先使用；否则回退到 User 全局设置。高风险故事完成后直接进入审批流，跳过中间提示。",
