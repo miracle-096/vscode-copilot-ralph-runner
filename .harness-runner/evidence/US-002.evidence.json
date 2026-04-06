@@ -1,125 +1,49 @@
 {
   "storyId": "US-002",
-  "title": "重命名扩展元数据与配置命名空间",
+  "title": "将 Harness Runner 指南改为一级直达入口并适配菜单排序",
   "status": "completed",
-  "summary": "Renamed the extension contribution-point surface from ralph-runner to harness-runner across package metadata, command ids, chat participant ids/names, configuration keys, runtime registration, localized menu links, tests, and README guidance while preserving .harness-runner as the runtime artifact root.",
+  "summary": "Promoted showGuide to root-level command and added runtime compatibility for legacy 'guides' entries in harness-runner.rootMenuOrder. Change is runtime-only and keeps package.json/localization keys stable. Existing tests remain passing.",
   "changedFiles": [
-    "harness-runner/story-status.json",
-    "EADME.md"
+    "src/extension.ts",
+    "src/test/extension.test.ts",
+    ".harness-runner/memory/US-002.json",
+    ".harness-runner/checkpoints/US-002.checkpoint.json",
+    ".harness-runner/evidence/US-002.evidence.json",
+    ".harness-runner/story-status.json"
   ],
   "changedModules": [
-    "harness-runner",
-    "EADME"
+    "extension",
+    "test"
   ],
-  "architectureNotes": [
-    "Multiple modules changed; confirm each edit belongs to a single responsibility and document reuse opportunities."
-  ],
-  "tests": [],
-  "riskLevel": "high",
-  "riskReasons": [
-    "Missing passing tests increases change risk."
-  ],
-  "releaseNotes": [
-    "Completed scope: 重命名扩展元数据与配置命名空间.",
-    "Primary modules: harness-runner, EADME."
-  ],
-  "rollbackHints": [
-    "Review and revert these paths together if rollback is needed: harness-runner/story-status.json, EADME.md.",
-    "Use the story-scoped commit as the primary rollback unit before considering any selective revert."
-  ],
-  "followUps": [
-    "Regenerate the packaged VSIX and decide whether the repository slug should be renamed or intentionally left as-is.",
-    "Refresh .harness-runner project-constraints and Agent Map artifacts so operator guidance reflects the new harness-runner package namespace.",
-    "Continue the broader user-visible brand sweep in later stories for remaining RALPH copy that is outside this contribution-point rename scope."
-  ],
-  "recommendFeatureFlag": false,
-  "evidenceGaps": [
-    "No passing tests were recorded for this story."
-  ],
-  "approvalState": "approved",
-  "approvalUpdatedAt": "2026-04-05T01:59:02.949Z",
-  "approvalSummary": "approved at 2026-04-05T01:59:02.949Z; status=completed",
-  "approvalHistory": [
+  "tests": [
     {
-      "action": "approved",
-      "createdAt": "2026-04-05T01:58:39.935Z",
-      "actor": "user",
-      "fromStatus": "pendingReview",
-      "toStatus": "pendingRelease"
-    },
-    {
-      "action": "approved",
-      "createdAt": "2026-04-05T01:59:02.949Z",
-      "actor": "user",
-      "fromStatus": "pendingRelease",
-      "toStatus": "completed"
+      "command": "npm test --silent",
+      "success": true,
+      "outputSummary": "83 passing"
     }
   ],
-  "reviewSummary": {
-    "totalScore": 100,
-    "maxScore": 100,
-    "passingScore": 65,
-    "passed": true,
-    "reviewPass": 1,
-    "maxReviewerPasses": 3,
-    "maxAutoRefactorRounds": 2,
-    "dimensions": [
-      {
-        "dimension": "architectureConsistency",
-        "label": "Architecture Consistency",
-        "score": 25,
-        "summary": "Reviewer loop disabled in workspace settings.",
-        "issues": [],
-        "recommendations": [
-          "Reviewer loop disabled in workspace settings."
-        ]
-      },
-      {
-        "dimension": "acceptanceCoverage",
-        "label": "Acceptance Coverage",
-        "score": 25,
-        "summary": "Reviewer loop disabled in workspace settings.",
-        "issues": [],
-        "recommendations": [
-          "Reviewer loop disabled in workspace settings."
-        ]
-      },
-      {
-        "dimension": "changeScopeControl",
-        "label": "Change Scope Control",
-        "score": 25,
-        "summary": "Reviewer loop disabled in workspace settings.",
-        "issues": [],
-        "recommendations": [
-          "Reviewer loop disabled in workspace settings."
-        ]
-      },
-      {
-        "dimension": "verifiability",
-        "label": "Verifiability",
-        "score": 25,
-        "summary": "Reviewer loop disabled in workspace settings.",
-        "issues": [],
-        "recommendations": [
-          "Reviewer loop disabled in workspace settings."
-        ]
-      }
-    ],
-    "findings": [],
-    "recommendations": [
-      "Reviewer loop disabled in workspace settings."
-    ],
-    "refactorPerformed": false,
-    "reviewedAt": "2026-04-04T20:39:48.248Z",
-    "source": "synthesized"
+  "riskLevel": "low",
+  "riskReasons": [
+    "Runtime-only menu presentation change; no package.json or prd.json edits.",
+    "Edge-case workspace settings mixing legacy alias and canonical keys may require extra normalization in future."
+  ],
+  "releaseNotes": [
+    "Expose 'HARNESS: Harness Runner 指南' as a root-level command. Users with existing workspace settings using the legacy 'guides' token will keep their configured menu order via runtime injection."
+  ],
+  "rollbackHints": [
+    "Revert the commit to restore previous behavior. Workspace settings remain intact and will display canonical entries unless alias injection is re-enabled."
+  ],
+  "architectureNotes": {
+    "moduleBoundaries": "Ordering and alias handling localized to src/extension.ts; localization and menu editor remain unchanged.",
+    "responsibilityClarity": "Menu composition and ordering handled in extension; menuOrderEditor handles editing payload validation."
   },
-  "reviewLoop": {
-    "reviewerPasses": 1,
-    "autoRefactorRounds": 0,
-    "maxAutoRefactorRounds": 2,
-    "endedReason": "passed",
-    "lastReviewedAt": "2026-04-04T20:39:48.248Z"
-  },
-  "generatedAt": "2026-04-04T20:39:48.247Z",
-  "source": "synthesized"
+  "followUps": [
+    "Add a regression test covering persisted 'guides' in workspace settings.",
+    "Consider extracting alias mapping into a reusable utility for menu-related code paths."
+  ],
+  "recommendFeatureFlag": false,
+  "evidenceGaps": [],
+  "auditableStatus": "final",
+  "source": "cline",
+  "createdAt": "2026-04-06T07:27:00.000Z"
 }

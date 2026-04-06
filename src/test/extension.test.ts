@@ -235,8 +235,8 @@ suite('Extension Test Suite', () => {
 				default?: string[];
 				markdownDescription?: string;
 			};
-			assert.deepStrictEqual(rootMenuOrderConfig.items?.enum, ['quickStart', 'appendUserStories', 'guides', 'constraints', 'execution', 'settings']);
-			assert.deepStrictEqual(rootMenuOrderConfig.default, ['quickStart', 'appendUserStories', 'guides', 'constraints', 'execution', 'settings']);
+assert.deepStrictEqual(rootMenuOrderConfig.items?.enum, ['quickStart', 'appendUserStories', 'showGuide', 'constraints', 'execution', 'settings']);
+assert.deepStrictEqual(rootMenuOrderConfig.default, ['quickStart', 'appendUserStories', 'showGuide', 'constraints', 'execution', 'settings']);
 			assert.strictEqual(resolveManifestString(rootMenuOrderConfig.markdownDescription, englishLocalization)?.includes('quickStart'), true);
 			assert.strictEqual('harness-runner.requireProjectConstraintsBeforeRun' in (packageJson.contributes?.configuration?.properties ?? {}), false);
 			assert.strictEqual('harness-runner.requireDesignContextForTaggedStories' in (packageJson.contributes?.configuration?.properties ?? {}), false);
@@ -396,7 +396,7 @@ suite('Extension Test Suite', () => {
 		const rootItems = buildHarnessMenuQuickPickItems(chinesePack, chinesePack.menu.rootId);
 		const quickStartEntry = rootItems.find(item => item.menuItem.kind === 'command' && item.menuItem.command === 'harness-runner.quickStart');
 		const appendStoriesEntry = rootItems.find(item => item.menuItem.kind === 'command' && item.menuItem.command === 'harness-runner.appendUserStories');
-		const guidesEntry = rootItems.find(item => item.menuItem.kind === 'submenu' && item.menuItem.target === 'guides');
+const guidesEntry = rootItems.find(item => item.menuItem.kind === 'command' && item.menuItem.command === 'harness-runner.showGuide');
 		const constraintsEntry = rootItems.find(item => item.menuItem.kind === 'submenu' && item.menuItem.target === 'constraints');
 		const settingsEntry = rootItems.find(item => item.menuItem.kind === 'submenu' && item.menuItem.target === 'settings');
 		assert.ok(quickStartEntry);
@@ -425,10 +425,9 @@ suite('Extension Test Suite', () => {
 			assert.strictEqual(executionItems.some(item => item.menuItem.kind === 'command' && item.menuItem.command === 'harness-runner.rerunFailedStory' && item.label.includes('重新执行失败故事')), true);
 	});
 
-	test('menu tree keeps root commands and grouped submenu commands reachable', () => {
+		test('menu tree keeps root commands and grouped submenu commands reachable', () => {
 		const chinesePack = getHarnessLanguagePack('Chinese');
 		const expectedCommandsByMenu = new Map<string, string[]>([
-			['guides', ['harness-runner.showGuide']],
 			['constraints', [
 				'harness-runner.configurePolicyGates',
 				'harness-runner.initProjectConstraints',
@@ -437,9 +436,9 @@ suite('Extension Test Suite', () => {
 				'harness-runner.refreshSourceContextIndex',
 				'harness-runner.generateAgentMap',
 			]],
-			['execution', [
-				'harness-runner.start',
-				'harness-runner.rerunFailedStory',
+['execution', [
+'harness-runner.start',
+'harness-runner.rerunFailedStory',
 				'harness-runner.stop',
 				'harness-runner.status',
 				'harness-runner.reviewStoryApproval',
@@ -448,9 +447,9 @@ suite('Extension Test Suite', () => {
 			['settings', ['harness-runner.openSettings', 'harness-runner.customizeMenuOrder']],
 		]);
 
-		const rootCommands = buildHarnessMenuQuickPickItems(chinesePack, chinesePack.menu.rootId)
-			.flatMap(item => item.menuItem.kind === 'command' ? [item.menuItem.command] : []);
-		assert.deepStrictEqual(rootCommands, ['harness-runner.quickStart', 'harness-runner.appendUserStories']);
+const rootCommands = buildHarnessMenuQuickPickItems(chinesePack, chinesePack.menu.rootId)
+.flatMap(item => item.menuItem.kind === 'command' ? [item.menuItem.command] : []);
+assert.deepStrictEqual(rootCommands, ['harness-runner.quickStart', 'harness-runner.appendUserStories', 'harness-runner.showGuide']);
 
 		for (const [menuId, expectedCommands] of expectedCommandsByMenu) {
 			const commands = buildHarnessMenuQuickPickItems(chinesePack, menuId)
@@ -460,7 +459,7 @@ suite('Extension Test Suite', () => {
 
 		const rootSubmenus = buildHarnessMenuQuickPickItems(chinesePack, chinesePack.menu.rootId)
 			.flatMap(item => item.menuItem.kind === 'submenu' ? [item.menuItem.target] : []);
-		assert.deepStrictEqual([...rootSubmenus].sort(), ['constraints', 'execution', 'guides', 'settings']);
+assert.deepStrictEqual([...rootSubmenus].sort(), ['constraints', 'execution', 'settings']);
 	});
 
 		test('replay range starts from the selected failed story and keeps priority order', () => {
@@ -597,20 +596,11 @@ suite('Extension Test Suite', () => {
 		assert.strictEqual(quickStartResolution.command, 'harness-runner.quickStart');
 		assert.deepStrictEqual(quickStartResolution.nextMenuStack, ['root']);
 
-		const rootGuidesEntry = rootItems.find(item => item.menuItem.kind === 'submenu' && item.menuItem.target === 'guides');
-		assert.ok(rootGuidesEntry);
-		const guideResolution = resolveHarnessMenuSelection(englishPack, [englishPack.menu.rootId], rootGuidesEntry!.menuItem);
-		assert.deepStrictEqual(guideResolution.nextMenuStack, ['root', 'guides']);
-
-		const backEntry = buildHarnessMenuQuickPickItems(englishPack, 'guides')[0];
-		const backResolution = resolveHarnessMenuSelection(englishPack, guideResolution.nextMenuStack, backEntry.menuItem);
-		assert.deepStrictEqual(backResolution.nextMenuStack, ['root']);
-
-		const guideEntry = buildHarnessMenuQuickPickItems(englishPack, 'guides').find(item => item.menuItem.kind === 'command' && item.menuItem.command === 'harness-runner.showGuide');
-		assert.ok(guideEntry);
-		const commandResolution = resolveHarnessMenuSelection(englishPack, guideResolution.nextMenuStack, guideEntry!.menuItem);
-		assert.strictEqual(commandResolution.command, 'harness-runner.showGuide');
-		assert.deepStrictEqual(commandResolution.nextMenuStack, ['root', 'guides']);
+const rootGuideEntry = rootItems.find(item => item.menuItem.kind === 'command' && item.menuItem.command === 'harness-runner.showGuide');
+assert.ok(rootGuideEntry);
+const rootGuideResolution = resolveHarnessMenuSelection(englishPack, [englishPack.menu.rootId], rootGuideEntry!.menuItem);
+assert.strictEqual(rootGuideResolution.command, 'harness-runner.showGuide');
+assert.deepStrictEqual(rootGuideResolution.nextMenuStack, ['root']);
 	});
 
 	test('workspace-pinned reviewer settings are persisted into .vscode/settings.json', () => {
