@@ -15,7 +15,9 @@ dist-ssr
 *.local
 
 # Harness Runner task state
-.harness-runner/
+# .harness-runner/
+# prd.json
+# progress.txt
 
 # Editor directories and files
 .vscode/*
@@ -29,6 +31,4 @@ dist-ssr
 *.sln
 *.sw?
 
-prd.json
-progress.txt
 harness-engineering

@@ -1,0 +1,96 @@
+{
+  "version": 1,
+  "generatedAt": "2026-04-06T07:59:55.357Z",
+  "workspaceRootName": "vscode-copilot-ralph-runner",
+  "sourceDirectories": [
+    "src",
+    "src/test"
+  ],
+  "testDirectories": [
+    "src/test",
+    ".vscode-test"
+  ],
+  "buildScripts": [
+    "npm run compile",
+    "npm run package",
+    "npm run vscode:prepublish",
+    "npm run pretest",
+    "npm run test",
+    "npm run lint",
+    "npm run check-types"
+  ],
+  "keyEntryFiles": [
+    "src/extension.ts",
+    "src/types.ts",
+    "src/projectConstraints.ts",
+    "src/promptContext.ts",
+    "src/taskMemory.ts",
+    "src/executionCheckpoint.ts",
+    "src/sourceContext.ts",
+    "esbuild.js",
+    "package.json",
+    "tsconfig.json",
+    "eslint.config.mjs",
+    "README.md",
+    "./dist/extension.js"
+  ],
+  "reusableModuleHints": [
+    "src/agentMap.ts",
+    "src/designContext.ts",
+    "src/executionCheckpoint.ts",
+    "src/helpManual.ts",
+    "src/knowledgeCheck.ts",
+    "src/localization.ts",
+    "src/menuOrderEditor.ts",
+    "src/policyGate.ts",
+    "src/projectConstraints.ts",
+    "src/promptContext.ts",
+    "src/runLog.ts",
+    "src/sourceContext.ts"
+  ],
+  "typeDefinitionHints": [
+    "src/agentMap.ts#GenerateAgentMapResult",
+    "src/designContext.ts#DesignContextValidationResult",
+    "src/designContext.ts#VisualDesignContextDraftPromptInput",
+    "src/designContext.ts#StoryDesignContextSuggestionPromptInput",
+    "src/designContext.ts#StoryDesignContextBatchMatchPromptInput",
+    "src/designContext.ts#StoryDesignContextBatchMatchDecision",
+    "src/designContext.ts#StoryDesignContextBatchMatchResult",
+    "src/designContext.ts#ExecutionDesignContextSynthesisOptions",
+    "src/designContext.ts#SharedDesignContextTarget",
+    "src/designContext.ts#ReviewStoryDesignContextDraftOptions",
+    "src/executionCheckpoint.ts#ExecutionCheckpointValidationResult",
+    "src/executionCheckpoint.ts#SynthesizedExecutionCheckpointOptions"
+  ],
+  "hotspotPaths": [
+    "src/test/extension.test.ts",
+    "README.md",
+    "src/extension.ts",
+    "src/localization.ts",
+    "package.json",
+    "src/helpManual.ts",
+    "src/types.ts",
+    "src/promptContext.ts"
+  ],
+  "metadata": {
+    "packageJsonName": "harness-runner",
+    "eslintConfigPath": "eslint.config.mjs",
+    "topLevelDirectories": [
+      ".git",
+      ".harness-runner",
+      ".vscode",
+      ".vscode-test",
+      "dist",
+      "images",
+      "node_modules",
+      "out",
+      "src"
+    ],
+    "sourceDirectories": [
+      "src",
+      "src/test"
+    ],
+    "hasReadme": true,
+    "scanSource": "project-constraints-baseline"
+  }
+}

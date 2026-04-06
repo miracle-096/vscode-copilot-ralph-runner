@@ -1,0 +1,94 @@
+{
+  "version": 1,
+  "updatedAt": "2026-04-06T08:11:48.694Z",
+  "entries": [
+    {
+      "storyId": "US-004",
+      "title": "",
+      "changedFiles": [
+        "src/extension.ts",
+        "src/localization.ts",
+        "package.nls.json",
+        "package.nls.zh-cn.json",
+        ".harness-runner/memory/US-004.json",
+        ".harness-runner/checkpoints/US-004.checkpoint.json",
+        ".harness-runner/evidence/US-004.evidence.json",
+        ".harness-runner/story-status.json"
+      ],
+      "changedModules": [
+        "extension",
+        "localization",
+        "storyEvidence",
+        "i18n"
+      ],
+      "searchKeywords": [
+        "status bar",
+        "status icons",
+        "execution",
+        "approval",
+        "harness runner",
+        "US-004"
+      ],
+      "relatedStories": [],
+      "createdAt": "2026-04-06T08:03:06.388Z",
+      "memoryPath": "d:\\workspace\\vscode-copilot-ralph-runner\\.harness-runner\\memory\\US-004.json"
+    },
+    {
+      "storyId": "US-003",
+      "title": "",
+      "changedFiles": [
+        "src/localization.ts",
+        "src/helpManual.ts",
+        "README.md",
+        "package.nls.json",
+        "package.nls.zh-cn.json"
+      ],
+      "changedModules": [
+        "localization",
+        "helpManual",
+        "documentation"
+      ],
+      "searchKeywords": [
+        "Planning & Quickstart",
+        "规划与入门",
+        "Generate PRD",
+        "Append User Stories",
+        "root menu",
+        "showGuide"
+      ],
+      "relatedStories": [],
+      "createdAt": "2026-04-06T07:52:10.201Z",
+      "memoryPath": "d:\\workspace\\vscode-copilot-ralph-runner\\.harness-runner\\memory\\US-003.json"
+    },
+    {
+      "storyId": "US-001",
+      "title": "扁平化一级菜单中的规划入口",
+      "changedFiles": [
+        "package.json",
+        "package.nls.json",
+        "package.nls.zh-cn.json",
+        "src/extension.ts",
+        "src/localization.ts",
+        "src/helpManual.ts",
+        "src/test/extension.test.ts",
+        "README.md"
+      ],
+      "changedModules": [
+        "src/extension",
+        "src/localization",
+        "src/helpManual"
+      ],
+      "searchKeywords": [
+        "flat menu",
+        "root menu",
+        "planning entry",
+        "quickStart",
+        "appendUserStories",
+        "菜单导航"
+      ],
+      "relatedStories": [],
+      "createdAt": "2026-04-06T05:40:30.000Z",
+      "memoryPath": "d:\\workspace\\vscode-copilot-ralph-runner\\.harness-runner\\memory\\US-001.json"
+    }
+  ]
+}

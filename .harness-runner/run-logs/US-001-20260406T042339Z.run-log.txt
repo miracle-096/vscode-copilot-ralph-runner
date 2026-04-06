@@ -1,0 +1,17 @@
+RUN US-001-20260406T042339Z
+Story: US-001 - 扁平化一级菜单中的规划入口
+Started: 2026-04-06T04:23:39.965Z
+
+[2026-04-06T04:23:39.965Z] [startup] [signal] Run log created: d:/workspace/vscode-copilot-ralph-runner/.harness-runner/run-logs/US-001-20260406T042339Z.run-log.txt
+[2026-04-06T04:23:40.074Z] [startup] [signal] Source context index refreshed (before US-001): d:/workspace/vscode-copilot-ralph-runner/.harness-runner/source-context-index.json
+[2026-04-06T04:23:40.091Z] [preflight] [diagnostic] Policy gates blocked US-001 before execution.
+[2026-04-06T04:23:40.091Z] [preflight] [diagnostic] - Require project rules before start blocked US-001.
+[2026-04-06T04:23:40.091Z] [preflight] [signal] detail: Missing required artifact: project constraints.
+[2026-04-06T04:23:40.093Z] [preflight] [signal] detail: Expected artifact path: d:/workspace/vscode-copilot-ralph-runner/.harness-runner/project-constraints.generated.json and d:/workspace/vscode-copilot-ralph-runner/.harness-runner/project-constraints.md
+[2026-04-06T04:23:40.094Z] [preflight] [signal] next: Run the project-constraints initialization flow before starting the story.
+
+Finished: 2026-04-06T04:23:40.094Z
+Status: blocked
+Summary: Preflight policy gates blocked US-001.
+DurationMs: 129
+SkippedNoise: 0

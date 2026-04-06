@@ -1,0 +1,349 @@
+{
+  "version": 1,
+  "generatedAt": "2026-04-06T04:33:20.792Z",
+  "workspaceRootName": "vscode-copilot-ralph-runner",
+  "sections": [
+    {
+      "id": "project-entry",
+      "title": "Project Entry Points",
+      "items": [
+        {
+          "id": "package-json",
+          "label": "package.json",
+          "path": "package.json",
+          "kind": "document",
+          "exists": true,
+          "summary": "Package metadata, scripts, commands, and extension contributions.",
+          "requiredFor": [
+            "project-overview",
+            "rule-entries"
+          ],
+          "freshnessTarget": "manual",
+          "sourceSignals": [
+            "document",
+            "manual"
+          ],
+          "lastModified": "2026-04-06T03:08:08.960Z"
+        },
+        {
+          "id": "prd",
+          "label": "PRD",
+          "path": "prd.json",
+          "kind": "document",
+          "exists": true,
+          "summary": "Source of truth for project intent, branch name, and user stories.",
+          "requiredFor": [
+            "project-overview",
+            "story-execution"
+          ],
+          "freshnessTarget": "manual",
+          "sourceSignals": [
+            "document",
+            "manual"
+          ],
+          "lastModified": "2026-04-06T04:21:43.955Z"
+        },
+        {
+          "id": "readme",
+          "label": "README",
+          "path": "README.md",
+          "kind": "document",
+          "exists": true,
+          "summary": "Repository overview, workflow, and artifact descriptions.",
+          "requiredFor": [
+            "project-overview",
+            "runbook"
+          ],
+          "freshnessTarget": "manual",
+          "sourceSignals": [
+            "document",
+            "manual"
+          ],
+          "lastModified": "2026-04-06T03:08:08.956Z"
+        }
+      ]
+    },
+    {
+      "id": "rules-and-context",
+      "title": "Rules and Context Inputs",
+      "items": [
+        {
+          "id": "design-context-dir",
+          "label": "Design context directory",
+          "path": ".prd/design-context",
+          "kind": "directory",
+          "exists": false,
+          "summary": "Shared and story-level design notes.",
+          "requiredFor": [
+            "rule-entries",
+            "story-execution"
+          ],
+          "freshnessTarget": "per-story",
+          "sourceSignals": [
+            "directory",
+            "per-story"
+          ],
+          "missingReason": "Design context directory does not exist yet."
+        },
+        {
+          "id": "editable-constraints",
+          "label": "Editable project constraints",
+          "path": ".harness-runner/project-constraints.md",
+          "kind": "document",
+          "exists": true,
+          "summary": "Human-maintained repository rules that should override generated assumptions.",
+          "requiredFor": [
+            "rule-entries",
+            "runbook"
+          ],
+          "freshnessTarget": "manual",
+          "sourceSignals": [
+            "document",
+            "manual"
+          ],
+          "lastModified": "2026-04-06T04:30:01.259Z"
+        },
+        {
+          "id": "generated-constraints",
+          "label": "Generated project constraints",
+          "path": ".harness-runner/project-constraints.generated.json",
+          "kind": "artifact",
+          "exists": true,
+          "summary": "Machine-readable constraints baseline for prompts and policy checks.",
+          "requiredFor": [
+            "rule-entries",
+            "runbook"
+          ],
+          "freshnessTarget": "on-demand",
+          "sourceSignals": [
+            "artifact",
+            "on-demand"
+          ],
+          "lastModified": "2026-04-06T04:30:00.398Z"
+        },
+        {
+          "id": "project-design-context",
+          "label": "Project design context",
+          "path": ".prd/design-context/shared/project.design.json",
+          "kind": "artifact",
+          "exists": false,
+          "summary": "Shared design context for project-wide UI constraints.",
+          "requiredFor": [
+            "design-context"
+          ],
+          "freshnessTarget": "per-story",
+          "sourceSignals": [
+            "artifact",
+            "per-story"
+          ],
+          "missingReason": "Project design context does not exist yet."
+        },
+        {
+          "id": "source-context",
+          "label": "Source context index",
+          "path": ".harness-runner/source-context-index.json",
+          "kind": "artifact",
+          "exists": true,
+          "summary": "Lightweight module and hotspot map reused during story recall.",
+          "requiredFor": [
+            "module-map",
+            "runbook"
+          ],
+          "freshnessTarget": "on-demand",
+          "sourceSignals": [
+            "artifact",
+            "on-demand"
+          ],
+          "lastModified": "2026-04-06T04:33:16.148Z"
+        }
+      ]
+    },
+    {
+      "id": "handoff-artifacts",
+      "title": "Execution Handoff Artifacts",
+      "items": [
+        {
+          "id": "checkpoint-dir",
+          "label": "Execution checkpoint directory",
+          "path": ".harness-runner/checkpoints",
+          "kind": "directory",
+          "exists": false,
+          "summary": "Per-story resume snapshots for interrupted or completed work.",
+          "requiredFor": [
+            "checkpoint"
+          ],
+          "freshnessTarget": "per-story",
+          "sourceSignals": [
+            "directory",
+            "per-story"
+          ],
+          "missingReason": "Execution checkpoint directory does not exist yet."
+        },
+        {
+          "id": "progress-log",
+          "label": "Progress log",
+          "path": "progress.txt",
+          "kind": "artifact",
+          "exists": false,
+          "summary": "Append-only execution log that records story outcomes.",
+          "requiredFor": [
+            "runbook",
+            "release"
+          ],
+          "freshnessTarget": "continuous",
+          "sourceSignals": [
+            "artifact",
+            "continuous"
+          ],
+          "missingReason": "Progress log does not exist yet."
+        },
+        {
+          "id": "evidence-dir",
+          "label": "Story evidence directory",
+          "path": ".harness-runner/evidence",
+          "kind": "directory",
+          "exists": false,
+          "summary": "Per-story evidence packs for testing, risk, and approval history.",
+          "requiredFor": [
+            "checkpoint",
+            "release"
+          ],
+          "freshnessTarget": "per-story",
+          "sourceSignals": [
+            "directory",
+            "per-story"
+          ],
+          "missingReason": "Story evidence directory does not exist yet."
+        },
+        {
+          "id": "story-status",
+          "label": "Story status registry",
+          "path": ".harness-runner/story-status.json",
+          "kind": "artifact",
+          "exists": false,
+          "summary": "Durable story status table used instead of task lock files for completion truth.",
+          "requiredFor": [
+            "runbook",
+            "release"
+          ],
+          "freshnessTarget": "continuous",
+          "sourceSignals": [
+            "artifact",
+            "continuous"
+          ],
+          "missingReason": "Story status registry does not exist yet."
+        },
+        {
+          "id": "task-memory-dir",
+          "label": "Task memory directory",
+          "path": ".harness-runner/memory",
+          "kind": "directory",
+          "exists": false,
+          "summary": "Per-story memory artifacts for prior work recall.",
+          "requiredFor": [
+            "checkpoint"
+          ],
+          "freshnessTarget": "per-story",
+          "sourceSignals": [
+            "directory",
+            "per-story"
+          ],
+          "missingReason": "Task memory directory does not exist yet."
+        }
+      ]
+    }
+  ],
+  "gaps": [
+    {
+      "id": "missing-project-design-context",
+      "label": "Missing shared project design context",
+      "detail": "No shared project-level design context exists yet. UI-sensitive stories may need to infer design guidance at execution time.",
+      "severity": "info",
+      "expectedPath": ".prd/design-context/shared/project.design.json",
+      "sourceSignals": [
+        "design context"
+      ]
+    }
+  ],
+  "freshnessTargets": [
+    {
+      "label": "Design context directory",
+      "path": ".prd/design-context",
+      "freshnessTarget": "per-story",
+      "exists": false
+    },
+    {
+      "label": "Editable project constraints",
+      "path": ".harness-runner/project-constraints.md",
+      "freshnessTarget": "manual",
+      "exists": true
+    },
+    {
+      "label": "Execution checkpoint directory",
+      "path": ".harness-runner/checkpoints",
+      "freshnessTarget": "per-story",
+      "exists": false
+    },
+    {
+      "label": "Generated project constraints",
+      "path": ".harness-runner/project-constraints.generated.json",
+      "freshnessTarget": "on-demand",
+      "exists": true
+    },
+    {
+      "label": "package.json",
+      "path": "package.json",
+      "freshnessTarget": "manual",
+      "exists": true
+    },
+    {
+      "label": "PRD",
+      "path": "prd.json",
+      "freshnessTarget": "manual",
+      "exists": true
+    },
+    {
+      "label": "Progress log",
+      "path": "progress.txt",
+      "freshnessTarget": "continuous",
+      "exists": false
+    },
+    {
+      "label": "Project design context",
+      "path": ".prd/design-context/shared/project.design.json",
+      "freshnessTarget": "per-story",
+      "exists": false
+    },
+    {
+      "label": "README",
+      "path": "README.md",
+      "freshnessTarget": "manual",
+      "exists": true
+    },
+    {
+      "label": "Source context index",
+      "path": ".harness-runner/source-context-index.json",
+      "freshnessTarget": "on-demand",
+      "exists": true
+    },
+    {
+      "label": "Story evidence directory",
+      "path": ".harness-runner/evidence",
+      "freshnessTarget": "per-story",
+      "exists": false
+    },
+    {
+      "label": "Story status registry",
+      "path": ".harness-runner/story-status.json",
+      "freshnessTarget": "continuous",
+      "exists": false
+    },
+    {
+      "label": "Task memory directory",
+      "path": ".harness-runner/memory",
+      "freshnessTarget": "per-story",
+      "exists": false
+    }
+  ],
+  "source": "cline"
+}
