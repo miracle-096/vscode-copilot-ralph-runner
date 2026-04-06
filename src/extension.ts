@@ -146,12 +146,14 @@ import {
 	getTaskMemoryPath as resolveTaskMemoryPath,
 } from './workspacePaths';
 import {
-	HarnessLanguagePack,
-	HarnessMenuItem,
-	HarnessMenuNode,
-	getLocalizedStoryStatus,
-	getHarnessLanguagePack,
-	normalizeHarnessLanguage,
+HarnessLanguagePack,
+HarnessMenuItem,
+HarnessMenuNode,
+HarnessMenuCommandItem,
+HarnessMenuSubmenuItem,
+getLocalizedStoryStatus,
+getHarnessLanguagePack,
+normalizeHarnessLanguage,
 } from './localization';
 import {
 	buildHarnessMenuOrderEditorHtml,
@@ -275,11 +277,13 @@ function getLanguagePack() {
 
 const HARNESS_ROOT_MENU_ORDER_SETTING = 'rootMenuOrder';
 const HARNESS_ROOT_MENU_COMMAND_ORDER_KEYS: Record<string, string> = {
-	'harness-runner.quickStart': 'quickStart',
-	'harness-runner.appendUserStories': 'appendUserStories',
+'harness-runner.quickStart': 'quickStart',
+'harness-runner.appendUserStories': 'appendUserStories',
+'harness-runner.showGuide': 'showGuide',
 };
 const HARNESS_ROOT_MENU_LEGACY_ORDER_ALIASES: Record<string, readonly string[]> = {
-	planning: ['quickStart', 'appendUserStories'],
+planning: ['quickStart', 'appendUserStories'],
+guides: ['showGuide'],
 };
 
 export interface HarnessMenuQuickPickEntry extends vscode.QuickPickItem {
@@ -343,26 +347,64 @@ export function normalizeHarnessRootMenuOrder(configuredValue: unknown, defaultO
 }
 
 function getHarnessMenuItems(languagePack: HarnessLanguagePack, menuId: string): HarnessMenuItem[] {
-	const items = [...getHarnessMenuNode(languagePack, menuId).items];
-	if (menuId !== languagePack.menu.rootId) {
-		return items;
-	}
+let items = [...getHarnessMenuNode(languagePack, menuId).items];
+if (menuId !== languagePack.menu.rootId) {
+return items;
+}
 
-	const defaultOrder = getHarnessRootMenuIds(languagePack);
-	const configuredOrder = normalizeHarnessRootMenuOrder(
-		vscode.workspace.getConfiguration('harness-runner').get(HARNESS_ROOT_MENU_ORDER_SETTING),
-		defaultOrder,
-	);
-	const orderMap = new Map(configuredOrder.map((target, index) => [target, index]));
+// Read raw configured order to detect legacy tokens like 'guides'
+const rawConfigured = vscode.workspace.getConfiguration('harness-runner').get(HARNESS_ROOT_MENU_ORDER_SETTING);
+const rawConfiguredOrder = Array.isArray(rawConfigured) ? rawConfigured.filter((v): v is string => typeof v === 'string') : [];
 
-	return items
-		.map((menuItem, index) => ({
-			menuItem,
-			index,
-			order: orderMap.get(getHarnessRootMenuItemOrderKey(menuItem) ?? '') ?? configuredOrder.length + index,
-		}))
-		.sort((left, right) => left.order - right.order || left.index - right.index)
-		.map(entry => entry.menuItem);
+// Back-compat: if the persisted workspace config used the legacy 'guides' token,
+// expose a 'guides' submenu at the root so the persisted ordering and navigation still work.
+// Also remove the new canonical 'harness-runner.showGuide' command to avoid duplicating entries.
+if (rawConfiguredOrder.includes('guides')) {
+const hasGuidesSubmenu = items.some(i => i.kind === 'submenu' && (i as HarnessMenuSubmenuItem).target === 'guides');
+if (!hasGuidesSubmenu) {
+// remove canonical showGuide command if present
+items = items.filter(i => !(i.kind === 'command' && (i as HarnessMenuCommandItem).command === 'harness-runner.showGuide'));
+
+// build submenu label/description from the guides node if available
+const guidesNode = (languagePack.menu.nodes as Record<string, HarnessMenuNode>)['guides'];
+const fallbackLabel = stripHarnessMenuLabelDecoration('$(book)  Harness Runner Guide');
+const submenuLabel = guidesNode?.items?.find(it => it.kind === 'command')?.label ?? guidesNode?.placeholder ?? fallbackLabel;
+const submenuDescription = guidesNode?.items?.find(it => it.kind === 'command')?.description ?? '';
+items.push({
+kind: 'submenu',
+target: 'guides',
+label: submenuLabel,
+description: submenuDescription,
+});
+}
+}
+
+const defaultOrder = getHarnessRootMenuIds(languagePack);
+const configuredOrder = normalizeHarnessRootMenuOrder(
+vscode.workspace.getConfiguration('harness-runner').get(HARNESS_ROOT_MENU_ORDER_SETTING),
+defaultOrder,
+);
+const orderMap = new Map(configuredOrder.map((target, index) => [target, index]));
+
+// Build alias map from legacy tokens (e.g., 'guides') to canonical configured indices so injected
+// legacy submenu targets can be ordered alongside canonical keys.
+const aliasMap = new Map<string, number>();
+for (const [idx, target] of configuredOrder.entries()) {
+for (const [aliasKey, expansions] of Object.entries(HARNESS_ROOT_MENU_LEGACY_ORDER_ALIASES)) {
+if (expansions.includes(target) && !aliasMap.has(aliasKey)) {
+aliasMap.set(aliasKey, idx);
+}
+}
+}
+
+return items
+.map((menuItem, index) => ({
+menuItem,
+index,
+order: orderMap.get(getHarnessRootMenuItemOrderKey(menuItem) ?? '') ?? aliasMap.get(getHarnessRootMenuItemOrderKey(menuItem) ?? '') ?? configuredOrder.length + index,
+}))
+.sort((left, right) => left.order - right.order || left.index - right.index)
+.map(entry => entry.menuItem);
 }
 
 export function buildHarnessMenuQuickPickItems(languagePack: HarnessLanguagePack, menuId: string): HarnessMenuQuickPickEntry[] {

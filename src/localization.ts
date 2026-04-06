@@ -813,7 +813,7 @@ const CHINESE_PACK: HarnessLanguagePack = {
 				items: [
 					{ kind: 'command', command: 'harness-runner.quickStart', label: '$(zap)  生成 PRD', description: '通过 Cline 生成 prd.json' },
 					{ kind: 'command', command: 'harness-runner.appendUserStories', label: '$(diff-added)  追加用户故事', description: '通过 Cline 基于现有 prd.json 追加新的用户故事' },
-					{ kind: 'submenu', target: 'guides', label: '$(library)  Harness Runner 指南', description: '统一查看 Harness Runner 介绍、推荐流程和后续扩展资料入口' },
+{ kind: 'command', command: 'harness-runner.showGuide', label: '$(book)  Harness Runner 指南', description: '在同一份章节化文档中查看介绍、流程和扩展资料入口' },
 					{ kind: 'submenu', target: 'constraints', label: '$(symbol-key)  Harness 约束设置', description: '统一进入执行检查、项目约束、设计描述、故事上下文和 Agent Map 相关能力' },
 					{ kind: 'submenu', target: 'execution', label: '$(rocket)  执行与审批', description: '集中触发开始、停止、状态查看、审批和故事重置' },
 					{ kind: 'submenu', target: 'settings', label: '$(gear)  设置', description: '统一进入运行设置、打开设置和菜单排序入口' },
@@ -1275,7 +1275,7 @@ const ENGLISH_PACK: HarnessLanguagePack = {
 				items: [
 					{ kind: 'command', command: 'harness-runner.quickStart', label: '$(zap)  Generate PRD', description: 'Use Cline to generate prd.json' },
 					{ kind: 'command', command: 'harness-runner.appendUserStories', label: '$(diff-added)  Append User Stories', description: 'Use Cline to append new user stories to the existing prd.json' },
-					{ kind: 'submenu', target: 'guides', label: '$(library)  Harness Runner Guide', description: 'Read the unified Harness Runner guide for product framing, workflow, and future reference material' },
+{ kind: 'command', command: 'harness-runner.showGuide', label: '$(book)  Harness Runner Guide', description: 'Read the introduction, workflows, and future extension path in one chapter-based document' },
 					{ kind: 'submenu', target: 'constraints', label: '$(symbol-key)  Harness Constraint Settings', description: 'Open run checks, project constraints, design notes, story context, and Agent Map flows from one place' },
 					{ kind: 'submenu', target: 'execution', label: '$(rocket)  Execution & Review', description: 'Trigger start, stop, status, approvals, and story reset actions from one place' },
 					{ kind: 'submenu', target: 'settings', label: '$(gear)  Settings', description: 'Open runner settings, VS Code settings, and menu ordering from one place' },
